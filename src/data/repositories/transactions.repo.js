@@ -159,21 +159,27 @@ async function listTransactions({ keyword, plateNo, billNo, status, paymentStatu
 async function listAllTransactions({ startDate, endDate } = {}) {
   if (!isSupabaseEnabled) {
     let rows = [...store.transactions];
+
     if (startDate) {
       rows = rows.filter((item) => new Date(item.entryAt) >= new Date(startDate));
     }
+
     if (endDate) {
       rows = rows.filter((item) => new Date(item.entryAt) <= new Date(endDate));
     }
-    return rows;
+
+    return rows.map(toTransactionApi);
   }
 
   let query = supabase.from('transactions').select('*');
+
   if (startDate) query = query.gte('entry_at', startDate);
   if (endDate) query = query.lte('entry_at', endDate);
 
   const { data, error } = await query;
+
   if (error) throw error;
+
   return (data || []).map(toTransactionApi);
 }
 

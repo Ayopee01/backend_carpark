@@ -8,6 +8,30 @@ const { authorize } = require('./middlewares/auth.middleware');
 
 const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+
+console.log("✅ APP LOADED");
+console.log("📌 dashboard route path:", require.resolve('./routes/dashboard.routes'));
+console.log("📌 store path:", require.resolve('./data/store'));
+console.log(
+  "📌 dashboard routes stack:",
+  dashboardRoutes.stack?.map((layer, index) => ({
+    index,
+    path: layer.route?.path,
+    methods: layer.route?.methods,
+  }))
+);
+
+console.log(
+  "📌 dashboard routes detail:",
+  dashboardRoutes.stack?.map((layer, index) => ({
+    index,
+    name: layer.name,
+    path: layer.route?.path,
+    methods: layer.route?.methods,
+    regexp: layer.regexp?.toString(),
+    handlePreview: layer.handle?.toString?.().slice(0, 300),
+  }))
+);
 const overviewRoutes = require('./routes/overview.routes');
 const transactionRoutes = require('./routes/transactions.routes');
 const usersRoutes = require('./routes/users.routes');
@@ -50,9 +74,9 @@ app.get('/docs/openapi.json', (req, res) => {
 app.use('/api/v1/kiosk', kioskRoutes); // [NEW] เปิดทางให้ตู้ Kiosk
 
 // --- 🔐 Authentication Middleware ---
-app.use(authMiddleware); 
+app.use(authMiddleware);
 
-app.use('/api/v1/auth', authRoutes); 
+app.use('/api/v1/auth', authRoutes);
 
 // --- 🔐 Private Routes (Auth Required) ---
 app.use(
@@ -96,7 +120,16 @@ app.get('/health/db', async (req, res) => {
   });
 });
 
-app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/api/v1/dashboard', (req, res, next) => {
+  console.log("🟡 APP HIT /api/v1/dashboard before router", {
+    method: req.method,
+    originalUrl: req.originalUrl,
+    path: req.path,
+  });
+
+  next();
+}, dashboardRoutes);
+
 app.use('/api/v1/overview', overviewRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
 app.use('/api/v1/users', authorize(['super_admin']), usersRoutes);

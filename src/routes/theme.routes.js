@@ -36,7 +36,7 @@ const upload = multer({
 });
 
 const DEFAULT_THEME = {
-  themeColor: '#1a73e8',
+  themeColor: '#FFD54F',
   logoUrl: null
 };
 
@@ -85,7 +85,6 @@ router.put('/', async (req, res, next) => {
       primaryColor: undefined,
       secondaryColor: undefined,
       customColor: undefined,
-      themeName: undefined,
       updatedAt: new Date().toISOString()
     };
 

@@ -2,11 +2,242 @@ const { v4: uuidv4 } = require('uuid');
 
 const nowIso = new Date().toISOString();
 
+// ------------------------------- Mock Transactions Helpers -------------------------------
+const MOCK_PLATE_PREFIXES = [
+  "กก", "ขข", "คค", "งง", "จจ", "ฉฉ", "ชช", "ญญ", "ฎฎ", "ณณ",
+  "ทน", "สน", "รน", "พพ", "มม", "นน", "วว", "ศศ", "ษษ", "หห",
+  "ลล", "บก", "ภภ", "ออ", "ฮฮ"
+];
+
+const MOCK_PAYMENT_METHODS = ["cash", "qr", "epay", "transfer"];
+const MOCK_PAYMENT_CHANNELS = ["cashier", "kiosk", "gate", "mobile"];
+const FALLBACK_AMOUNTS = [20, 40, 60, 80, 100, 120, 160];
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function pad4(value) {
+  return String(value).padStart(4, "0");
+}
+
+function makeBangkokDate(year, month, day, hour, minute) {
+  return `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}:00+07:00`;
+}
+
+function addMinutesToBangkokDate(year, month, day, hour, minute, addMinutes) {
+  const date = new Date(Date.UTC(year, month - 1, day, hour - 7, minute));
+  date.setMinutes(date.getMinutes() + addMinutes);
+
+  return date.toISOString();
+}
+
+function getMockUserIds(storeRef) {
+  const users = Array.isArray(storeRef.users) ? storeRef.users : [];
+
+  const superAdmin =
+    users.find((user) => user.role === "super_admin") ||
+    users.find((user) => user.permissions?.includes("transactions")) ||
+    users[0];
+
+  const cashier =
+    users.find((user) => user.username === "cashier") ||
+    users.find((user) => user.name?.toLowerCase?.().includes("cashier")) ||
+    users.find((user) => user.role === "staff") ||
+    superAdmin;
+
+  return {
+    adminId: superAdmin?.id ?? "u1",
+    cashierId: cashier?.id ?? superAdmin?.id ?? "u1",
+  };
+}
+
+function collectPricesFromStore(storeRef) {
+  const possibleRuleGroups = [
+    storeRef.servicePricing?.rules,
+    storeRef.servicePricing?.parkingRules,
+    storeRef.servicePricingConfig?.rules,
+    storeRef.pricing?.rules,
+    storeRef.pricingRules,
+    storeRef.masterData?.pricingRules,
+  ];
+
+  const prices = possibleRuleGroups
+    .flatMap((group) => (Array.isArray(group) ? group : []))
+    .map((rule) =>
+      Number(
+        rule.price ??
+        rule.amount ??
+        rule.rate ??
+        rule.netAmount ??
+        rule.baseAmount
+      )
+    )
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  return prices.length > 0 ? prices : FALLBACK_AMOUNTS;
+}
+
+function getMockStatus(index) {
+  if (index % 7 === 0) return "partially_paid";
+  if (index % 3 === 0) return "pending";
+  return "completed";
+}
+
+function buildMockPayment({
+  index,
+  status,
+  amount,
+  paidAt,
+  method,
+  channel,
+  adminId,
+  cashierId,
+}) {
+  if (status === "pending") {
+    return {
+      payments: [],
+      totalPaid: 0,
+      remainingAmount: amount,
+    };
+  }
+
+  if (status === "partially_paid") {
+    const partialAmount = Math.max(10, Math.floor(amount / 2));
+
+    return {
+      payments: [
+        {
+          id: `pay_mock_${pad4(index)}_partial`,
+          method,
+          channel,
+          amount: partialAmount,
+          paidAt,
+          expiryAt: paidAt,
+          processedBy: channel === "cashier" ? cashierId : adminId,
+        },
+      ],
+      totalPaid: partialAmount,
+      remainingAmount: amount - partialAmount,
+    };
+  }
+
+  return {
+    payments: [
+      {
+        id: `pay_mock_${pad4(index)}`,
+        method,
+        channel,
+        amount,
+        paidAt,
+        expiryAt: paidAt,
+        processedBy: channel === "cashier" ? cashierId : adminId,
+      },
+    ],
+    totalPaid: amount,
+    remainingAmount: 0,
+  };
+}
+
+function buildMonthlyMockTransactions(storeRef) {
+  const now = new Date();
+
+  /**
+   * ใช้เดือน/ปีปัจจุบันของ server
+   * จะได้ข้อมูลตั้งแต่วันที่ 1 ของเดือนนี้ ถึงวันนี้
+   */
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const today = now.getDate();
+
+  const prices = collectPricesFromStore(storeRef);
+  const { adminId, cashierId } = getMockUserIds(storeRef);
+
+  const transactions = [];
+  let runningNo = 1;
+
+  for (let day = 1; day <= today; day += 1) {
+    /**
+     * วันละ 3 รายการ
+     * ทำให้ข้อมูลมีพอสำหรับ pagination, dashboard, filter วันที่ และค้นหาทะเบียน
+     */
+    for (let slot = 0; slot < 3; slot += 1) {
+      const index = runningNo;
+
+      const prefix = MOCK_PLATE_PREFIXES[index % MOCK_PLATE_PREFIXES.length];
+      const plateNumber = String(1000 + ((index * 137) % 9000)).padStart(4, "0");
+
+      const hour = 7 + ((index * 2 + slot) % 12);
+      const minute = (index * 11 + slot * 9) % 60;
+
+      const entryAt = makeBangkokDate(year, month, day, hour, minute);
+
+      const status = getMockStatus(index);
+      const amount = prices[index % prices.length];
+
+      const stayMinutes = 30 + ((index * 17) % 240);
+      const paidAt = addMinutesToBangkokDate(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        Math.min(stayMinutes, 180)
+      );
+
+      const exitAt =
+        status === "completed"
+          ? addMinutesToBangkokDate(year, month, day, hour, minute, stayMinutes)
+          : null;
+
+      const method = MOCK_PAYMENT_METHODS[index % MOCK_PAYMENT_METHODS.length];
+      const channel = MOCK_PAYMENT_CHANNELS[index % MOCK_PAYMENT_CHANNELS.length];
+
+      const paymentData = buildMockPayment({
+        index,
+        status,
+        amount,
+        paidAt,
+        method,
+        channel,
+        adminId,
+        cashierId,
+      });
+
+      const billNo = `PK${year}${pad2(month)}${pad2(day)}${pad4(index)}`;
+
+      transactions.push({
+        id: `mock_${year}${pad2(month)}${pad2(day)}_${pad4(index)}`,
+        billNo,
+        plateNo: `${prefix}-${plateNumber}`,
+        vehicleType: "car",
+        serviceType: "parking",
+        entryAt,
+        exitAt,
+        amount,
+        vat: 0,
+        discount: 0,
+        netAmount: amount,
+        status,
+        createdAt: entryAt,
+        updatedAt: exitAt ?? paidAt ?? entryAt,
+        payments: paymentData.payments,
+        totalPaid: paymentData.totalPaid,
+        remainingAmount: paymentData.remainingAmount,
+      });
+
+      runningNo += 1;
+    }
+  }
+
+  return transactions;
+}
+
 const store = {
   "sessions": {},
   "kiosks": [], // สำหรับเก็บรายชื่อตู้ Kiosk ที่ลงทะเบียนแล้ว
   "themePresets": {
-    "preset1": { "themeColor": "#1a73e8" },
+    "preset1": { "themeColor": "#FFD54F" },
     "preset2": { "themeColor": "#2e7d32" },
     "preset3": { "themeColor": "#d32f2f" },
     "preset4": { "themeColor": "#000000" }
@@ -98,1096 +329,8 @@ const store = {
       "updatedAt": "2026-04-23T10:24:56.405Z"
     }
   ],
-  "transactions": [
-    {
-      "id": "today_1",
-      "billNo": "PK202604230001",
-      "plateNo": "ทน-4383",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T11:47:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T11:47:00+07:00",
-      "updatedAt": "2026-04-23T11:47:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_2",
-      "billNo": "PK202604230002",
-      "plateNo": "ทน-3739",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T13:05:00+07:00",
-      "exitAt": "2026-04-23T14:20:00.000Z",
-      "amount": 80,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 80,
-      "status": "completed",
-      "createdAt": "2026-04-23T13:05:00+07:00",
-      "updatedAt": "2026-04-23T14:20:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_sngh",
-          "method": "cash",
-          "channel": "cashier",
-          "amount": 80,
-          "paidAt": "2026-04-23T14:20:00.000Z",
-          "expiryAt": "2026-04-23T14:20:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 80
-    },
-    {
-      "id": "today_3",
-      "billNo": "PK202604230003",
-      "plateNo": "ทน-9558",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T13:39:00+07:00",
-      "exitAt": "2026-04-23T14:54:00.000Z",
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "completed",
-      "createdAt": "2026-04-23T13:39:00+07:00",
-      "updatedAt": "2026-04-23T14:54:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_v5m6",
-          "method": "qr",
-          "channel": "kiosk",
-          "amount": 60,
-          "paidAt": "2026-04-23T14:54:00.000Z",
-          "expiryAt": "2026-04-23T14:54:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 60
-    },
-    {
-      "id": "today_4",
-      "billNo": "PK202604230004",
-      "plateNo": "ทน-4462",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T11:11:00+07:00",
-      "exitAt": null,
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "pending",
-      "createdAt": "2026-04-23T11:11:00+07:00",
-      "updatedAt": "2026-04-23T11:11:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_5",
-      "billNo": "PK202604230005",
-      "plateNo": "ทน-5162",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:06:00+07:00",
-      "exitAt": "2026-04-23T09:21:00.000Z",
-      "amount": 80,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 80,
-      "status": "completed",
-      "createdAt": "2026-04-23T08:06:00+07:00",
-      "updatedAt": "2026-04-23T09:21:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_fjcd",
-          "method": "qr",
-          "channel": "gate",
-          "amount": 80,
-          "paidAt": "2026-04-23T09:21:00.000Z",
-          "expiryAt": "2026-04-23T09:21:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 80
-    },
-    {
-      "id": "today_6",
-      "billNo": "PK202604230006",
-      "plateNo": "ทน-2489",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T09:41:00+07:00",
-      "exitAt": null,
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "pending",
-      "createdAt": "2026-04-23T09:41:00+07:00",
-      "updatedAt": "2026-04-23T09:41:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_7",
-      "billNo": "PK202604230007",
-      "plateNo": "ทน-6375",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:35:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T12:35:00+07:00",
-      "updatedAt": "2026-04-23T12:35:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_8",
-      "billNo": "PK202604230008",
-      "plateNo": "ทน-5981",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T10:58:00+07:00",
-      "exitAt": null,
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "pending",
-      "createdAt": "2026-04-23T10:58:00+07:00",
-      "updatedAt": "2026-04-23T10:58:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_9",
-      "billNo": "PK202604230009",
-      "plateNo": "ทน-2304",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:43:00+07:00",
-      "exitAt": "2026-04-23T13:58:00.000Z",
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "completed",
-      "createdAt": "2026-04-23T12:43:00+07:00",
-      "updatedAt": "2026-04-23T13:58:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_l71f",
-          "method": "epay",
-          "channel": "mobile",
-          "amount": 20,
-          "paidAt": "2026-04-23T13:58:00.000Z",
-          "expiryAt": "2026-04-23T13:58:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 20
-    },
-    {
-      "id": "today_10",
-      "billNo": "PK202604230010",
-      "plateNo": "ทน-9276",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:53:00+07:00",
-      "exitAt": "2026-04-23T09:08:00.000Z",
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "completed",
-      "createdAt": "2026-04-23T08:53:00+07:00",
-      "updatedAt": "2026-04-23T09:08:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_2aft",
-          "method": "epay",
-          "channel": "gate",
-          "amount": 60,
-          "paidAt": "2026-04-23T09:08:00.000Z",
-          "expiryAt": "2026-04-23T09:08:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 60
-    },
-    {
-      "id": "today_11",
-      "billNo": "PK202604230011",
-      "plateNo": "ทน-7966",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:27:00+07:00",
-      "exitAt": "2026-04-23T13:42:00.000Z",
-      "amount": 100,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 100,
-      "status": "completed",
-      "createdAt": "2026-04-23T12:27:00+07:00",
-      "updatedAt": "2026-04-23T13:42:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_era0",
-          "method": "qr",
-          "channel": "kiosk",
-          "amount": 100,
-          "paidAt": "2026-04-23T13:42:00.000Z",
-          "expiryAt": "2026-04-23T13:42:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 100
-    },
-    {
-      "id": "today_12",
-      "billNo": "PK202604230012",
-      "plateNo": "ทน-9461",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:19:00+07:00",
-      "exitAt": "2026-04-23T13:34:00.000Z",
-      "amount": 100,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 100,
-      "status": "completed",
-      "createdAt": "2026-04-23T12:19:00+07:00",
-      "updatedAt": "2026-04-23T13:34:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_z4ak",
-          "method": "qr",
-          "channel": "gate",
-          "amount": 100,
-          "paidAt": "2026-04-23T13:34:00.000Z",
-          "expiryAt": "2026-04-23T13:34:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 100
-    },
-    {
-      "id": "today_13",
-      "billNo": "PK202604230013",
-      "plateNo": "ทน-5761",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:37:00+07:00",
-      "exitAt": null,
-      "amount": 40,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 40,
-      "status": "pending",
-      "createdAt": "2026-04-23T08:37:00+07:00",
-      "updatedAt": "2026-04-23T08:37:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_14",
-      "billNo": "PK202604230014",
-      "plateNo": "ทน-5111",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:36:00+07:00",
-      "exitAt": "2026-04-23T13:51:00.000Z",
-      "amount": 100,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 100,
-      "status": "completed",
-      "createdAt": "2026-04-23T12:36:00+07:00",
-      "updatedAt": "2026-04-23T13:51:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_98oj",
-          "method": "qr",
-          "channel": "kiosk",
-          "amount": 100,
-          "paidAt": "2026-04-23T13:51:00.000Z",
-          "expiryAt": "2026-04-23T13:51:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 100
-    },
-    {
-      "id": "today_15",
-      "billNo": "PK202604230015",
-      "plateNo": "ทน-8583",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:29:00+07:00",
-      "exitAt": null,
-      "amount": 100,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 100,
-      "status": "pending",
-      "createdAt": "2026-04-23T12:29:00+07:00",
-      "updatedAt": "2026-04-23T12:29:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_16",
-      "billNo": "PK202604230016",
-      "plateNo": "ทน-6582",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T11:57:00+07:00",
-      "exitAt": null,
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "pending",
-      "createdAt": "2026-04-23T11:57:00+07:00",
-      "updatedAt": "2026-04-23T11:57:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_17",
-      "billNo": "PK202604230017",
-      "plateNo": "ทน-9785",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:42:00+07:00",
-      "exitAt": "2026-04-23T09:57:00.000Z",
-      "amount": 40,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 40,
-      "status": "completed",
-      "createdAt": "2026-04-23T08:42:00+07:00",
-      "updatedAt": "2026-04-23T09:57:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_m2zy",
-          "method": "epay",
-          "channel": "mobile",
-          "amount": 40,
-          "paidAt": "2026-04-23T09:57:00.000Z",
-          "expiryAt": "2026-04-23T09:57:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 40
-    },
-    {
-      "id": "today_18",
-      "billNo": "PK202604230018",
-      "plateNo": "ทน-4895",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T11:33:00+07:00",
-      "exitAt": null,
-      "amount": 100,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 100,
-      "status": "pending",
-      "createdAt": "2026-04-23T11:33:00+07:00",
-      "updatedAt": "2026-04-23T11:33:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_19",
-      "billNo": "PK202604230019",
-      "plateNo": "ทน-3758",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T10:19:00+07:00",
-      "exitAt": "2026-04-23T11:34:00.000Z",
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "completed",
-      "createdAt": "2026-04-23T10:19:00+07:00",
-      "updatedAt": "2026-04-23T11:34:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_330k",
-          "method": "qr",
-          "channel": "kiosk",
-          "amount": 60,
-          "paidAt": "2026-04-23T11:34:00.000Z",
-          "expiryAt": "2026-04-23T11:34:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 60
-    },
-    {
-      "id": "today_20",
-      "billNo": "PK202604230020",
-      "plateNo": "ทน-8455",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T10:47:00+07:00",
-      "exitAt": "2026-04-23T11:02:00.000Z",
-      "amount": 40,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 40,
-      "status": "completed",
-      "createdAt": "2026-04-23T10:47:00+07:00",
-      "updatedAt": "2026-04-23T11:02:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_spix",
-          "method": "epay",
-          "channel": "gate",
-          "amount": 40,
-          "paidAt": "2026-04-23T11:02:00.000Z",
-          "expiryAt": "2026-04-23T11:02:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 40
-    },
-    {
-      "id": "today_21",
-      "billNo": "PK202604230021",
-      "plateNo": "ทน-6049",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:41:00+07:00",
-      "exitAt": null,
-      "amount": 40,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 40,
-      "status": "pending",
-      "createdAt": "2026-04-23T08:41:00+07:00",
-      "updatedAt": "2026-04-23T08:41:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_22",
-      "billNo": "PK202604230022",
-      "plateNo": "ทน-1837",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T13:58:00+07:00",
-      "exitAt": null,
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "pending",
-      "createdAt": "2026-04-23T13:58:00+07:00",
-      "updatedAt": "2026-04-23T13:58:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_23",
-      "billNo": "PK202604230023",
-      "plateNo": "ทน-6245",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T13:20:00+07:00",
-      "exitAt": null,
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "pending",
-      "createdAt": "2026-04-23T13:20:00+07:00",
-      "updatedAt": "2026-04-23T13:20:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_24",
-      "billNo": "PK202604230024",
-      "plateNo": "ทน-2314",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:45:00+07:00",
-      "exitAt": "2026-04-23T16:00:00.000Z",
-      "amount": 80,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 80,
-      "status": "completed",
-      "createdAt": "2026-04-23T15:45:00+07:00",
-      "updatedAt": "2026-04-23T16:00:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_ja52",
-          "method": "epay",
-          "channel": "gate",
-          "amount": 80,
-          "paidAt": "2026-04-23T16:00:00.000Z",
-          "expiryAt": "2026-04-23T16:00:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 80
-    },
-    {
-      "id": "today_25",
-      "billNo": "PK202604230025",
-      "plateNo": "ทน-5221",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:25:00+07:00",
-      "exitAt": "2026-04-23T09:40:00.000Z",
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "completed",
-      "createdAt": "2026-04-23T08:25:00+07:00",
-      "updatedAt": "2026-04-23T09:40:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_2153",
-          "method": "epay",
-          "channel": "kiosk",
-          "amount": 20,
-          "paidAt": "2026-04-23T09:40:00.000Z",
-          "expiryAt": "2026-04-23T09:40:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 20
-    },
-    {
-      "id": "today_26",
-      "billNo": "PK202604230026",
-      "plateNo": "ทน-4791",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:25:00+07:00",
-      "exitAt": "2026-04-23T09:40:00.000Z",
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "completed",
-      "createdAt": "2026-04-23T08:25:00+07:00",
-      "updatedAt": "2026-04-23T09:40:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_g8iz",
-          "method": "epay",
-          "channel": "mobile",
-          "amount": 60,
-          "paidAt": "2026-04-23T09:40:00.000Z",
-          "expiryAt": "2026-04-23T09:40:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 60
-    },
-    {
-      "id": "today_27",
-      "billNo": "PK202604230027",
-      "plateNo": "ทน-7240",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T11:12:00+07:00",
-      "exitAt": "2026-04-23T12:27:00.000Z",
-      "amount": 60,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 60,
-      "status": "completed",
-      "createdAt": "2026-04-23T11:12:00+07:00",
-      "updatedAt": "2026-04-23T12:27:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_iumf",
-          "method": "epay",
-          "channel": "gate",
-          "amount": 60,
-          "paidAt": "2026-04-23T12:27:00.000Z",
-          "expiryAt": "2026-04-23T12:27:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 60
-    },
-    {
-      "id": "today_28",
-      "billNo": "PK202604230028",
-      "plateNo": "ทน-6662",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T08:26:00+07:00",
-      "exitAt": "2026-04-23T09:41:00.000Z",
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "completed",
-      "createdAt": "2026-04-23T08:26:00+07:00",
-      "updatedAt": "2026-04-23T09:41:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_f68q",
-          "method": "cash",
-          "channel": "cashier",
-          "amount": 20,
-          "paidAt": "2026-04-23T09:41:00.000Z",
-          "expiryAt": "2026-04-23T09:41:00.000Z",
-          "processedBy": "u4"
-        }
-      ],
-      "totalPaid": 20
-    },
-    {
-      "id": "today_29",
-      "billNo": "PK202604230029",
-      "plateNo": "ทน-7245",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T12:45:00+07:00",
-      "exitAt": "2026-04-23T13:00:00.000Z",
-      "amount": 100,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 100,
-      "status": "completed",
-      "createdAt": "2026-04-23T12:45:00+07:00",
-      "updatedAt": "2026-04-23T13:00:00.000Z",
-      "payments": [
-        {
-          "id": "pay_1776941881925_5qfy",
-          "method": "qr",
-          "channel": "mobile",
-          "amount": 100,
-          "paidAt": "2026-04-23T13:00:00.000Z",
-          "expiryAt": "2026-04-23T13:00:00.000Z",
-          "processedBy": "u1"
-        }
-      ],
-      "totalPaid": 100
-    },
-    {
-      "id": "today_30",
-      "billNo": "PK202604230030",
-      "plateNo": "ทน-5472",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T13:35:00+07:00",
-      "exitAt": null,
-      "amount": 40,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 40,
-      "status": "pending",
-      "createdAt": "2026-04-23T13:35:00+07:00",
-      "updatedAt": "2026-04-23T13:35:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_31",
-      "billNo": "PK202604230031",
-      "plateNo": "สน-1122",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T14:10:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T14:10:00+07:00",
-      "updatedAt": "2026-04-23T14:10:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_32",
-      "billNo": "PK202604230032",
-      "plateNo": "รน-4455",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T14:15:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T14:15:00+07:00",
-      "updatedAt": "2026-04-23T14:15:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_33",
-      "billNo": "PK202604230033",
-      "plateNo": "พพ-7788",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T14:20:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T14:20:00+07:00",
-      "updatedAt": "2026-04-23T14:20:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_34",
-      "billNo": "PK202604230034",
-      "plateNo": "มม-3344",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T14:30:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T14:30:00+07:00",
-      "updatedAt": "2026-04-23T14:30:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_35",
-      "billNo": "PK202604230035",
-      "plateNo": "นน-6677",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T14:45:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T14:45:00+07:00",
-      "updatedAt": "2026-04-23T14:45:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_36",
-      "billNo": "PK202604230036",
-      "plateNo": "วว-1199",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:00:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T15:00:00+07:00",
-      "updatedAt": "2026-04-23T15:00:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_37",
-      "billNo": "PK202604230037",
-      "plateNo": "ศศ-5522",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:10:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T15:10:00+07:00",
-      "updatedAt": "2026-04-23T15:10:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_38",
-      "billNo": "PK202604230038",
-      "plateNo": "ษษ-8844",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:20:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T15:20:00+07:00",
-      "updatedAt": "2026-04-23T15:20:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_39",
-      "billNo": "PK202604230039",
-      "plateNo": "หห-2233",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:30:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T15:30:00+07:00",
-      "updatedAt": "2026-04-23T15:30:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_40",
-      "billNo": "PK202604230040",
-      "plateNo": "ลล-9966",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:40:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T15:40:00+07:00",
-      "updatedAt": "2026-04-23T15:40:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_41",
-      "billNo": "PK202604230041",
-      "plateNo": "กก-1111",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T15:50:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T15:50:00+07:00",
-      "updatedAt": "2026-04-23T15:50:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_42",
-      "billNo": "PK202604230042",
-      "plateNo": "ขข-2222",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T16:00:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T16:00:00+07:00",
-      "updatedAt": "2026-04-23T16:00:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_43",
-      "billNo": "PK202604230043",
-      "plateNo": "คค-3333",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T16:10:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T16:10:00+07:00",
-      "updatedAt": "2026-04-23T16:10:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_44",
-      "billNo": "PK202604230044",
-      "plateNo": "งง-4444",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T16:20:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T16:20:00+07:00",
-      "updatedAt": "2026-04-23T16:20:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_45",
-      "billNo": "PK202604230045",
-      "plateNo": "จจ-5555",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T16:30:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T16:30:00+07:00",
-      "updatedAt": "2026-04-23T16:30:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_46",
-      "billNo": "PK202604230046",
-      "plateNo": "ฉฉ-6666",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T16:40:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T16:40:00+07:00",
-      "updatedAt": "2026-04-23T16:40:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_47",
-      "billNo": "PK202604230047",
-      "plateNo": "ชช-7777",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T16:50:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T16:50:00+07:00",
-      "updatedAt": "2026-04-23T16:50:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_48",
-      "billNo": "PK202604230048",
-      "plateNo": "ญญ-8888",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T17:00:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T17:00:00+07:00",
-      "updatedAt": "2026-04-23T17:00:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_49",
-      "billNo": "PK202604230049",
-      "plateNo": "ฎฎ-9999",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T17:10:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T17:10:00+07:00",
-      "updatedAt": "2026-04-23T17:10:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_50",
-      "billNo": "PK202604230050",
-      "plateNo": "ณณ-1234",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T17:20:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T17:20:00+07:00",
-      "updatedAt": "2026-04-23T17:20:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    },
-    {
-      "id": "today_51",
-      "billNo": "PK202604230051",
-      "plateNo": "ดด-5678",
-      "vehicleType": "car",
-      "serviceType": "parking",
-      "entryAt": "2026-04-23T17:30:00+07:00",
-      "exitAt": null,
-      "amount": 20,
-      "vat": 0,
-      "discount": 0,
-      "netAmount": 20,
-      "status": "pending",
-      "createdAt": "2026-04-23T17:30:00+07:00",
-      "updatedAt": "2026-04-23T17:30:00+07:00",
-      "payments": [],
-      "totalPaid": 0
-    }
-  ],
+  "transactions": [],
+
   "parkingStates": [
     {
       "billNo": "PK202604230031",
@@ -3467,10 +2610,6 @@ const store = {
     }
   },
   "theme": {
-    "themeName": "default",
-    "primaryColor": "#1D4ED8",
-    "secondaryColor": "#0F172A",
-    "accentColor": "#22C55E",
     "logoUrl": null,
     "updatedAt": "2026-04-23T10:24:56.405Z"
   },
@@ -3508,8 +2647,11 @@ const store = {
   }
 };
 
-function createId(prefix) {
-  return `${prefix}_${uuidv4().split('-')[0]}`;
+// ------------------------------- Initial Mock Data -------------------------------
+store.transactions = buildMonthlyMockTransactions(store);
+
+function createId(prefix = "id") {
+  return `${prefix}_${uuidv4()}`;
 }
 
 module.exports = { store, createId };

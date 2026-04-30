@@ -148,10 +148,26 @@ router.get('/config', async (req, res, next) => {
       status = kiosk.status;
     }
 
+    const currentTheme = store.theme || {
+      themeColor: '#FFD54F',
+      logoUrl: null,
+      themeName: 'default',
+      updatedAt: null,
+    };
+
+    // ส่งออกเฉพาะ field ที่ Kiosk ต้องใช้
+    // ไม่ส่ง presets ออกไปใน API นี้
+    const kioskTheme = {
+      themeColor: currentTheme.themeColor || '#FFD54F',
+      logoUrl: currentTheme.logoUrl ?? null,
+      themeName: currentTheme.themeName || currentTheme.themeColor || 'default',
+      updatedAt: currentTheme.updatedAt || null,
+    };
+
     res.json({
-      theme: store.theme || { themeColor: '#FFD54F', logoUrl: null },
+      theme: kioskTheme,
       systemName: 'Smart Carpark Kiosk',
-      status: status // บอกสถานะตู้กลับไป (ถ้าไม่มี deviceId จะเป็น 'unregistered')
+      status,
     });
   } catch (err) {
     next(err);
@@ -160,60 +176,27 @@ router.get('/config', async (req, res, next) => {
 
 /**
  * 🔍 Kiosk Search API
- * ค้นหารถที่ยังจอดอยู่ในอาคาร (Status: pending / partially_paid)
+ * ค้นหารถที่ยังจอดอยู่ในอาคาร
+ * GET /api/v1/kiosk/search
+ * Body:
+ * {
+ *   "plateNo": "ทน4383"
+ * }
  */
-// (เดิม) GET สำหรับ Search
 router.get('/search', async (req, res, next) => {
   try {
-    const { plateNo, deviceId } = req.query;
-    if (!plateNo) {
-      return res.status(400).json({ message: 'Plate number is required' });
-    }
+    const { plateNo } = req.body || {};
 
-    if (deviceId) {
-      await updateKioskStatus(deviceId, { ip: req.ip });
-    }
-
-    const result = await listTransactions({
-      plateNo,
-      status: 'pending',
-      perPage: 5
-    });
-
-    res.json({
-      count: result.meta ? result.meta.total : 0,
-      items: result.data.map(toTransactionApi)
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
- * 🔍 Kiosk Search API (PUT Version - ตามคำขอ Frontend)
- * ค้นหารถที่ยังจอดอยู่ในอาคาร โดยรับค่าจาก Request Body
- */
-router.put('/search', async (req, res, next) => {
-  try {
-    const { plateNo, deviceId } = req.body;
     if (!plateNo) {
       return res.status(400).json({ message: 'Plate number is required in body' });
     }
 
-    // ถ้าส่ง deviceId มาด้วย ให้ถือเป็นการ Check-in ไปในตัว
-    if (deviceId) {
-      await updateKioskStatus(deviceId, { ip: req.ip });
-    }
-
-    // ค้นหาเฉพาะรถที่สถานะยังไม่เสร็จสิ้น (ยังอยู่ในอาคาร)
     const result = await listTransactions({
-      plateNo,
-      status: 'pending', // ค้นหารถที่ค้างจ่าย
-      perPage: 5
+      plateNo
     });
 
     res.json({
-      count: result.meta ? result.meta.total : 0,
+      count: result.meta ? result.meta.total : result.data.length,
       items: result.data.map(toTransactionApi)
     });
   } catch (err) {
