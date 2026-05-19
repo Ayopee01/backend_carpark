@@ -1,252 +1,132 @@
+// Import Require
 const express = require('express');
-const { store } = require('../data/store');
 const {
-  listAllKiosks,
-  generateActivationCode,
-  editKiosk,
+  createDevice,
+  deleteDevice,
+  getDevicesConfig,
+  updateDevice
+} = require('../data/repositories/devices.repo');
+const {
   deleteKiosk,
+  editKiosk,
+  generateActivationCode,
+  listAllKiosks
 } = require('../data/repositories/kiosks.repo');
 
 const router = express.Router();
 
-console.log('✅ LOADED devices.routes.js');
-
-function getDevicesConfig() {
-  const config = store.devices || {
-    summary: {
-      totalDevices: 0,
-      online: 0,
-      offline: 0,
-    },
-    devices: [],
-    masterData: {
-      deviceTypes: [],
-      connectionTypes: [],
-    },
-  };
-
-  const devices = Array.isArray(config.devices) ? config.devices : [];
-
-  const totalDevices = devices.length;
-  const online = devices.filter((device) => device.isOnline).length;
-  const offline = totalDevices - online;
-
-  return {
-    ...config,
-    summary: {
-      totalDevices,
-      online,
-      offline,
-      ...(config.summary || {}),
-    },
-    devices,
-  };
-}
-
-/**
- * GET /api/v1/devices/config
- * ดึง config อุปกรณ์ทั่วไป เช่น printer, lpr, barrier
- */
-router.get('/config', (req, res) => {
-  res.json(getDevicesConfig());
+// Route query config devices ทั้งหมด
+router.get('/config', async (req, res, next) => {
+  try {
+    const config = await getDevicesConfig();
+    res.json(config);
+  } catch (err) {
+    next(err);
+  }
 });
 
-/**
- * POST /api/v1/devices
- * เพิ่มอุปกรณ์ทั่วไป
- */
-router.post('/', (req, res) => {
-  const config = getDevicesConfig();
-
-  const {
-    deviceCode,
-    deviceName,
-    deviceType,
-    connectionType,
-    ipAddress,
-    status,
-    isOnline,
-    note,
-  } = req.body || {};
-
-  if (!deviceCode || !deviceName || !deviceType) {
-    return res.status(400).json({
-      message: 'deviceCode, deviceName and deviceType are required',
-    });
-  }
-
-  const exists = config.devices.some((device) => {
-    return device.deviceCode === deviceCode;
-  });
-
-  if (exists) {
-    return res.status(409).json({
-      message: 'Device code already exists',
-    });
-  }
-
-  const newDevice = {
-    id: `d${Date.now()}`,
-    deviceCode,
-    deviceName,
-    deviceType,
-    connectionType: connectionType || 'lan',
-    ipAddress: ipAddress || null,
-    status: status || 'active',
-    isOnline: Boolean(isOnline),
-    note: note || '',
-  };
-
-  store.devices.devices.push(newDevice);
-
-  res.status(201).json({
-    message: 'Device created',
-    device: newDevice,
-    config: getDevicesConfig(),
-  });
-});
-
-/**
- * PUT /api/v1/devices/:id
- * แก้ไขอุปกรณ์ทั่วไป
- */
-router.put('/:id', (req, res) => {
-  const config = getDevicesConfig();
-  const device = config.devices.find((item) => item.id === req.params.id);
-
-  if (!device) {
-    return res.status(404).json({
-      message: 'Device not found',
-    });
-  }
-
-  const allowedFields = [
-    'deviceCode',
-    'deviceName',
-    'deviceType',
-    'connectionType',
-    'ipAddress',
-    'status',
-    'isOnline',
-    'note',
-  ];
-
-  allowedFields.forEach((field) => {
-    if (field in req.body) {
-      device[field] = req.body[field];
+// Route create device ใหม่
+router.post('/', async (req, res, next) => {
+  try {
+    const { deviceCode, deviceName, deviceType } = req.body || {};
+    if (!deviceCode || !deviceName || !deviceType) {
+      return res.status(400).json({ message: 'deviceCode, deviceName and deviceType are required' });
     }
-  });
 
-  res.json({
-    message: 'Device updated',
-    device,
-    config: getDevicesConfig(),
-  });
-});
+    const result = await createDevice(req.body || {});
+    if (!result.ok && result.reason === 'duplicate') {
+      return res.status(409).json({ message: 'Device code already exists' });
+    }
 
-/**
- * DELETE /api/v1/devices/:id
- * ลบอุปกรณ์ทั่วไป
- */
-router.delete('/:id', (req, res) => {
-  const config = getDevicesConfig();
-  const index = config.devices.findIndex((item) => item.id === req.params.id);
-
-  if (index === -1) {
-    return res.status(404).json({
-      message: 'Device not found',
+    return res.status(201).json({
+      message: 'Device created',
+      device: result.device,
+      config: result.config
     });
+  } catch (err) {
+    next(err);
   }
-
-  const deleted = store.devices.devices.splice(index, 1)[0];
-
-  res.json({
-    message: 'Device deleted',
-    device: deleted,
-    config: getDevicesConfig(),
-  });
 });
 
-/**
- * POST /api/v1/devices/kiosks/activation-code
- * แอดมินสร้าง activation code ให้ kiosk
- */
+// Route update device ด้วย id
+router.put('/:id', async (req, res, next) => {
+  try {
+    const result = await updateDevice(req.params.id, req.body || {});
+    if (!result) return res.status(404).json({ message: 'Device not found' });
+
+    return res.json({
+      message: 'Device updated',
+      device: result.device,
+      config: result.config
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Route delete device ด้วย id
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const result = await deleteDevice(req.params.id);
+    if (!result) return res.status(404).json({ message: 'Device not found' });
+
+    return res.json({
+      message: 'Device deleted',
+      device: result.device,
+      config: result.config
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Route สร้าง activation code สำหรับ kiosk
 router.post('/kiosks/activation-code', async (req, res, next) => {
   try {
     const result = await generateActivationCode(req.body || {});
-
-    res.json({
-      message: 'Activation code generated',
-      ...result,
-    });
+    res.json({ message: 'Activation code generated', ...result });
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * GET /api/v1/devices/kiosks
- * ดูรายการ kiosk monitor
- */
+// Route query kiosk ทั้งหมดพร้อม summary
 router.get('/kiosks', async (req, res, next) => {
   try {
     const kiosks = await listAllKiosks();
-
-    const online = kiosks.filter((kiosk) => kiosk.status === 'online').length;
-    const offline = kiosks.filter((kiosk) => kiosk.status === 'offline').length;
-    const maintenance = kiosks.filter((kiosk) => {
-      return kiosk.status === 'maintenance';
-    }).length;
-
     res.json({
       total: kiosks.length,
-      online,
-      offline,
-      maintenance,
-      kiosks,
+      online: kiosks.filter((kiosk) => kiosk.status === 'online').length,
+      offline: kiosks.filter((kiosk) => kiosk.status === 'offline').length,
+      maintenance: kiosks.filter((kiosk) => kiosk.status === 'maintenance').length,
+      kiosks
     });
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * PUT /api/v1/devices/kiosks/:deviceId
- * แก้ไข kiosk เช่น name, location, status
- */
+// Route update kiosk ด้วย deviceId
 router.put('/kiosks/:deviceId', async (req, res, next) => {
   try {
     const result = await editKiosk(req.params.deviceId, req.body || {});
-
-    if (!result.success) {
-      return res.status(404).json(result);
-    }
-
-    res.json({
-      message: 'Kiosk updated',
-      kiosk: result.kiosk,
-    });
+    if (!result.success) return res.status(404).json(result);
+    res.json({ message: 'Kiosk updated', kiosk: result.kiosk });
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * DELETE /api/v1/devices/kiosks/:deviceId
- * ลบ kiosk
- */
+// Route delete kiosk ด้วย deviceId
 router.delete('/kiosks/:deviceId', async (req, res, next) => {
   try {
     const result = await deleteKiosk(req.params.deviceId);
-
-    if (!result.success) {
-      return res.status(404).json(result);
-    }
-
+    if (!result.success) return res.status(404).json(result);
     res.json(result);
   } catch (err) {
     next(err);
   }
 });
 
+// Export router
 module.exports = router;

@@ -1,66 +1,86 @@
-const { store } = require('../store');
-const { supabase, isSupabaseEnabled } = require('../../db/supabase');
-const { paginate } = require('../../utils/helpers');
+// Import Require
+const { createId } = require('../store');
+const { prisma } = require('../../db/prisma');
 const { normalizePagination, buildMeta } = require('../../utils/pagination');
 const { calculateFee } = require('../../utils/pricing');
 const { getConfig } = require('./config.repo');
+const defaults = require('../defaults');
 
-
+// Function แปลงค่าให้เป็น number ถ้าแปลงไม่ได้ให้คืนค่า null
 function toNumberOrNull(value) {
   if (value === null || value === undefined) return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
 }
 
-function toTransactionApi(row) {
-  if (!row) return null;
-  const pricingRules = store.pricingConfig?.pricingRules || [];
-  const entryAt = row.entry_at ?? row.entryAt;
-  const now = new Date();
-  let cutoffAt = row.exit_at ?? row.exitAt;
-  let isOverstay = false;
+// Function แปลงค่าให้เป็น Date ถ้าไม่มีค่าให้คืนค่า null
+function toDateOrNull(value) {
+  if (!value) return null;
+  return value instanceof Date ? value : new Date(value);
+}
 
-  // Overstay Logic:
-  // If car is still inside and it's already past the exitTimeLimit
-  if (!cutoffAt && row.exitTimeLimit && now > new Date(row.exitTimeLimit)) {
+// Function แปลง Date เป็น ISO string ถ้าไม่มีค่าให้คืนค่า null
+function toIsoOrNull(value) {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+// Function ทำให้ค่า JSON เป็น array เสมอ
+function toJsonArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// Function query config ที่จำเป็นสำหรับคำนวณ transaction
+async function getTransactionContext() {
+  const [pricingConfig, systemSettings] = await Promise.all([
+    getConfig('pricing_config', defaults.pricingConfig),
+    getConfig('system_settings', defaults.systemSettings),
+  ]);
+  return { pricingConfig, systemSettings };
+}
+
+// Function แปลง transaction record เป็นรูปแบบ API และคำนวณยอดเงินล่าสุด
+function toTransactionApi(row, context = {}) {
+  if (!row) return null;
+  const pricingRules = context.pricingConfig?.pricingRules || defaults.pricingConfig.pricingRules;
+  const entryAt = toIsoOrNull(row.entryAt);
+  const now = new Date();
+  let cutoffAt = toIsoOrNull(row.exitAt);
+  let isOverstay = false;
+  const payments = toJsonArray(row.payments);
+  const exitTimeLimit = toIsoOrNull(row.exitTimeLimit);
+
+  if (!cutoffAt && exitTimeLimit && now > new Date(exitTimeLimit)) {
     isOverstay = true;
-    cutoffAt = now.toISOString(); // Use current time to calculate the extra fees
-  } 
-  // Standard Cutoff: If car is inside but not overstayed, use payment time or now
-  else if (!cutoffAt) {
-    if (row.status === 'completed' && row.payments?.length > 0) {
-      const latestPayment = [...row.payments].sort((a,b) => new Date(b.paidAt) - new Date(a.paidAt))[0];
+    cutoffAt = now.toISOString();
+  } else if (!cutoffAt) {
+    if (row.status === 'completed' && payments.length > 0) {
+      const latestPayment = [...payments].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))[0];
       cutoffAt = latestPayment.paidAt;
     } else {
       cutoffAt = now.toISOString();
     }
   }
 
-  const exitAt = cutoffAt;
-  
-  const feeResult = calculateFee(entryAt, exitAt, pricingRules, {
-    vehicleType: row.vehicle_type || row.vehicleType,
-    serviceType: row.service_type || row.serviceType
+  const feeResult = calculateFee(entryAt, cutoffAt, pricingRules, {
+    vehicleType: row.vehicleType,
+    serviceType: row.serviceType
   });
 
   const netAmount = feeResult.totalAmount;
-  const totalPaid = row.totalPaid || 0;
+  const totalPaid = Number(row.totalPaid ?? 0);
   const remainingAmount = Math.max(0, netAmount - totalPaid);
-  
-  // Final status determination for API
   let finalStatus = row.status;
   if (remainingAmount > 0) {
     finalStatus = totalPaid > 0 ? 'partially_paid' : 'pending';
   }
 
-  // 1. Format Date: DD-MM-YYYY
   const entryDate = new Date(entryAt);
   const day = String(entryDate.getDate()).padStart(2, '0');
   const month = String(entryDate.getMonth() + 1).padStart(2, '0');
   const year = entryDate.getFullYear();
   const dateFormatted = `${day}-${month}-${year}`;
 
-  // 2. Format Duration: H : m
   const durationMs = feeResult.durationMs;
   const hrs = Math.floor(durationMs / (1000 * 60 * 60));
   const mins = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
@@ -68,293 +88,244 @@ function toTransactionApi(row) {
 
   return {
     id: row.id,
-    billNo: row.bill_no ?? row.billNo,
-    plateNo: row.plate_no ?? row.plateNo,
-    vehicleType: row.vehicle_type ?? row.vehicleType,
-    serviceType: row.service_type ?? row.serviceType,
+    billNo: row.billNo,
+    plateNo: row.plateNo,
+    vehicleType: row.vehicleType,
+    serviceType: row.serviceType,
     entryAt,
-    exitAt: row.exit_at ?? row.exitAt,
-    calculatedAt: exitAt,
-    exitTimeLimit: row.exitTimeLimit || null,
+    exitAt: toIsoOrNull(row.exitAt),
+    calculatedAt: cutoffAt,
+    exitTimeLimit,
     isOverstay,
     status: finalStatus,
-    baseAmount: row.amount ?? feeResult.totalAmount,
+    baseAmount: Number(row.amount ?? feeResult.totalAmount),
     netAmount,
     totalPaid,
     remainingAmount,
     serviceDisplay: `${dateFormatted} | ${durationFormatted}`,
-    durationHour: hrs + (mins > 0 ? 1 : 0), // ปัดเศษนาทีขึ้นเป็น 1 ชม. ตามหลักจอดรถ
+    durationHour: hrs + (mins > 0 ? 1 : 0),
     totalMinutes: Math.floor(durationMs / 60000),
-    payments: (row.payments || []).map(p => ({
-      ...p,
-      paidAmount: toNumberOrNull(p.amount ?? p.paidAmount)
+    payments: payments.map((payment) => ({
+      ...payment,
+      paidAmount: toNumberOrNull(payment.amount ?? payment.paidAmount)
     })),
-    qrData: `${store.systemSettings?.general?.frontendUrl || 'http://localhost:3000'}/payment?tx=${row.id}`,
-    createdAt: row.createdAt || row.entry_at || entryAt,
-    updatedAt: row.updatedAt || row.exit_at || entryAt
+    qrData: `${context.systemSettings?.general?.frontendUrl || ''}/payment?tx=${row.id}`,
+    createdAt: toIsoOrNull(row.createdAt) || entryAt,
+    updatedAt: toIsoOrNull(row.updatedAt) || toIsoOrNull(row.exitAt) || entryAt
   };
 }
 
-
-async function listTransactions({ keyword, plateNo, billNo, status, paymentStatus, startDate, endDate, excludeOverstay, page = 1, perPage = 10 } = {}) {
-  if (!isSupabaseEnabled) {
-    let rows = [...store.transactions].map(toTransactionApi);
-
-    if (keyword) {
-      const kw = String(keyword).toLowerCase();
-      rows = rows.filter((item) => [item.billNo, item.plateNo, item.serviceType].some((field) => String(field).toLowerCase().includes(kw)));
-    }
-
-    if (plateNo) {
-      const normalizedQuery = plateNo.replace(/[\s-]/g, '').toLowerCase();
-      rows = rows.filter((item) => {
-        const normalizedItem = String(item.plateNo || '').replace(/[\s-]/g, '').toLowerCase();
-        return normalizedItem.includes(normalizedQuery);
-      });
-    }
-    if (billNo) rows = rows.filter((item) => item.billNo.includes(billNo));
-    if (status) rows = rows.filter((item) => item.status === status);
-    if (paymentStatus) rows = rows.filter((item) => item.payments.some(p => p.status === paymentStatus));
-    if (excludeOverstay) rows = rows.filter((item) => !item.isOverstay);
-
-    if (startDate) {
-      rows = rows.filter((item) => new Date(item.entryAt) >= new Date(startDate));
-    }
-    if (endDate) {
-      rows = rows.filter((item) => new Date(item.entryAt) <= new Date(endDate));
-    }
-
-    return paginate(rows, page, perPage);
-  }
-
-  const { page: safePage, perPage: safePerPage, from, to } = normalizePagination(page, perPage);
-
-  let query = supabase.from('transactions').select('*', { count: 'exact' });
+// Function สร้าง Prisma where สำหรับ filter transaction
+function buildWhere({ keyword, plateNo, billNo, status, startDate, endDate } = {}) {
+  const AND = [];
 
   if (keyword) {
-    const kw = String(keyword).replace(/%/g, '\\%').replace(/_/g, '\\_');
-    query = query.or(`bill_no.ilike.%${kw}%,plate_no.ilike.%${kw}%,service_type.ilike.%${kw}%`);
+    const contains = String(keyword);
+    AND.push({
+      OR: [
+        { billNo: { contains, mode: 'insensitive' } },
+        { plateNo: { contains, mode: 'insensitive' } },
+        { serviceType: { contains, mode: 'insensitive' } }
+      ]
+    });
   }
 
   if (plateNo) {
-    // ลบขีดและช่องว่างออก แล้วเอาตัวอักษรมาคั่นด้วย % (Fuzzy Match) เพื่อให้ค้นหา "กข12" แล้วเจอ "กข-12"
-    const fuzzyPlate = plateNo.replace(/[\s-]/g, '').split('').join('%');
-    query = query.ilike('plate_no', `%${fuzzyPlate}%`);
+    AND.push({ plateNo: { contains: String(plateNo).replace(/[\s-]/g, ''), mode: 'insensitive' } });
   }
-  if (billNo) query = query.ilike('bill_no', `%${billNo}%`);
-  if (status) query = query.eq('status', status);
+  if (billNo) AND.push({ billNo: { contains: String(billNo), mode: 'insensitive' } });
+  if (status) AND.push({ status });
 
-  if (startDate) query = query.gte('entry_at', startDate);
-  if (endDate) query = query.lte('entry_at', endDate);
+  if (startDate || endDate) {
+    AND.push({
+      entryAt: {
+        ...(startDate ? { gte: new Date(startDate) } : {}),
+        ...(endDate ? { lte: new Date(endDate) } : {})
+      }
+    });
+  }
 
-  const { data, error, count } = await query.order('updated_at', { ascending: false }).range(from, to);
-  if (error) throw error;
+  return AND.length ? { AND } : undefined;
+}
+
+// Function query transaction แบบ pagination และ filter เพิ่มตามสถานะการจ่ายเงิน
+async function listTransactions(filters = {}) {
+  const { paymentStatus, excludeOverstay, page = 1, perPage = 10 } = filters;
+  const { page: safePage, perPage: safePerPage, from } = normalizePagination(page, perPage);
+  const context = await getTransactionContext();
+  const where = buildWhere(filters);
+
+  const [rowsRaw, count] = await Promise.all([
+    prisma.transaction.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      skip: from,
+      take: safePerPage
+    }),
+    prisma.transaction.count({ where })
+  ]);
+
+  let rows = rowsRaw.map((row) => toTransactionApi(row, context));
+  if (paymentStatus) rows = rows.filter((item) => item.payments.some((payment) => payment.status === paymentStatus));
+  if (excludeOverstay) rows = rows.filter((item) => !item.isOverstay);
 
   return {
-    data: (data || []).map(toTransactionApi),
+    data: rows,
     meta: buildMeta(safePage, safePerPage, count)
   };
 }
 
+// Function query transaction ทั้งหมดตามช่วงวันที่
 async function listAllTransactions({ startDate, endDate } = {}) {
-  if (!isSupabaseEnabled) {
-    let rows = [...store.transactions];
-
-    if (startDate) {
-      rows = rows.filter((item) => new Date(item.entryAt) >= new Date(startDate));
-    }
-
-    if (endDate) {
-      rows = rows.filter((item) => new Date(item.entryAt) <= new Date(endDate));
-    }
-
-    return rows.map(toTransactionApi);
-  }
-
-  let query = supabase.from('transactions').select('*');
-
-  if (startDate) query = query.gte('entry_at', startDate);
-  if (endDate) query = query.lte('entry_at', endDate);
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-
-  return (data || []).map(toTransactionApi);
+  const context = await getTransactionContext();
+  const where = buildWhere({ startDate, endDate });
+  const rows = await prisma.transaction.findMany({ where });
+  return rows.map((row) => toTransactionApi(row, context));
 }
 
+// Function query transaction record ด้วย id
 async function getTransactionById(id) {
   if (!id) return null;
-
-  if (!isSupabaseEnabled) {
-    return store.transactions.find((item) => item.id === id) || null;
-  }
-
-  const { data, error } = await supabase.from('transactions').select('*').eq('id', id).maybeSingle();
-  if (error) throw error;
-  return data;
+  return prisma.transaction.findUnique({ where: { id } });
 }
 
+// Function query transaction ด้วย id และแปลงเป็นรูปแบบ API
+async function getTransactionApiById(id) {
+  const [transaction, context] = await Promise.all([
+    getTransactionById(id),
+    getTransactionContext(),
+  ]);
+
+  return toTransactionApi(transaction, context);
+}
+
+// Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
 async function processPayment(id, { method, channel, amount, processedBy }) {
-  try {
-    const transaction = await getTransactionById(id);
-    if (!transaction) return null;
+  const transaction = await getTransactionById(id);
+  if (!transaction) return null;
 
-    // 1. Calculate current fee again to get fresh netAmount
-    const pricingRules = store.pricingConfig?.pricingRules || [];
-    const entryAt = transaction.entry_at || transaction.entryAt;
-    const now = new Date().toISOString();
-    
-    const feeResult = calculateFee(entryAt, now, pricingRules, {
-      vehicleType: transaction.vehicleType || transaction.vehicle_type,
-      serviceType: transaction.serviceType || transaction.service_type
-    });
+  const context = await getTransactionContext();
+  const pricingRules = context.pricingConfig?.pricingRules || [];
+  const entryAt = toIsoOrNull(transaction.entryAt);
+  const paidAt = new Date().toISOString();
 
-    const currentNetAmount = feeResult.totalAmount;
-    const currentTotalPaid = transaction.totalPaid || 0;
-    const currentRemaining = Math.max(0, currentNetAmount - currentTotalPaid);
+  const feeResult = calculateFee(entryAt, paidAt, pricingRules, {
+    vehicleType: transaction.vehicleType,
+    serviceType: transaction.serviceType
+  });
 
-    // 2. Setup Expiry
-    const gracePeriodMinutes = store.systemSettings?.receipt?.paymentBill?.expiryDuration || store.pricingConfig?.gracePeriod || 15;
-    const paidAt = now;
-    const expiryAt = new Date(new Date(paidAt).getTime() + gracePeriodMinutes * 60000).toISOString();
+  const currentNetAmount = feeResult.totalAmount;
+  const currentTotalPaid = Number(transaction.totalPaid ?? 0);
+  const currentRemaining = Math.max(0, currentNetAmount - currentTotalPaid);
+  const gracePeriodMinutes = context.systemSettings?.receipt?.paymentBill?.expiryDuration ?? context.pricingConfig?.gracePeriod;
 
-    const payAmount = amount !== undefined ? Number(amount) : currentRemaining;
-
-    const newPayment = {
-      id: `pay_${Date.now()}`,
-      method: method || 'cash',
-      channel: channel || 'cashier',
-      paidAmount: payAmount,
-      paidAt,
-      expiryAt,
-      processedBy: processedBy || 'u1'
-    };
-
-    transaction.payments = transaction.payments || [];
-    transaction.payments.push(newPayment);
-    transaction.totalPaid = (transaction.totalPaid || 0) + newPayment.paidAmount;
-    transaction.updatedAt = paidAt;
-
-    // 3. Update Exit Limit and Status
-    if (channel === 'gate') {
-      transaction.exitTimeLimit = paidAt;
-      transaction.exitAt = paidAt;
-      transaction.status = 'completed';
-    } else {
-      transaction.exitTimeLimit = expiryAt;
-      if (transaction.totalPaid >= currentNetAmount) {
-        transaction.status = 'completed';
-      } else {
-        transaction.status = 'partially_paid';
-      }
-    }
-
-    return toTransactionApi(transaction);
-  } catch (err) {
-    throw err;
+  if (!Number.isFinite(Number(gracePeriodMinutes))) {
+    throw new Error('Missing grace period config. Set receipt.paymentBill.expiryDuration or pricing_config.gracePeriod in seed data.');
   }
+
+  const expiryAt = new Date(new Date(paidAt).getTime() + gracePeriodMinutes * 60000).toISOString();
+  const payAmount = amount !== undefined ? Number(amount) : currentRemaining;
+  const newPayment = {
+    id: `pay_${Date.now()}`,
+    method: method || 'cash',
+    channel: channel || 'cashier',
+    paidAmount: payAmount,
+    paidAt,
+    expiryAt,
+    processedBy: processedBy || 'u1'
+  };
+
+  const payments = [...toJsonArray(transaction.payments), newPayment];
+  const totalPaid = currentTotalPaid + newPayment.paidAmount;
+  const updates = {
+    payments,
+    totalPaid,
+    updatedAt: new Date(paidAt)
+  };
+
+  if (channel === 'gate') {
+    updates.exitTimeLimit = new Date(paidAt);
+    updates.exitAt = new Date(paidAt);
+    updates.status = 'completed';
+  } else {
+    updates.exitTimeLimit = new Date(expiryAt);
+    updates.status = totalPaid >= currentNetAmount ? 'completed' : 'partially_paid';
+  }
+
+  const saved = await prisma.transaction.update({
+    where: { id },
+    data: updates
+  });
+
+  return toTransactionApi(saved, context);
 }
 
+// Function save transaction ที่แก้ไขแล้วกลับเข้า database
 async function saveTransaction(transaction) {
   if (!transaction) return null;
 
-  if (!isSupabaseEnabled) {
-    return transaction;
-  }
-
-  const { data, error } = await supabase
-    .from('transactions')
-    .update({
-      bill_no: transaction.billNo,
-      plate_no: transaction.plateNo,
-      vehicle_type: transaction.vehicleType,
-      service_type: transaction.serviceType,
-      entry_at: transaction.entryAt,
-      exit_at: transaction.exitAt,
-      duration_minute: transaction.durationMinute,
+  const saved = await prisma.transaction.update({
+    where: { id: transaction.id },
+    data: {
+      billNo: transaction.billNo,
+      plateNo: transaction.plateNo,
+      vehicleType: transaction.vehicleType,
+      serviceType: transaction.serviceType,
+      entryAt: toDateOrNull(transaction.entryAt),
+      exitAt: toDateOrNull(transaction.exitAt),
+      durationMinute: transaction.durationMinute,
       amount: transaction.amount,
       vat: transaction.vat,
       discount: transaction.discount,
-      net_amount: transaction.netAmount,
+      netAmount: transaction.netAmount,
       status: transaction.status,
-      payments: transaction.payments,
-      total_paid: transaction.totalPaid,
-      receipt: transaction.receipt
-    })
-    .eq('id', transaction.id)
-    .select('*')
-    .single();
+      payments: transaction.payments || [],
+      totalPaid: transaction.totalPaid || 0,
+      exitTimeLimit: toDateOrNull(transaction.exitTimeLimit),
+      receipt: transaction.receipt || {}
+    }
+  });
 
-  if (error) throw error;
-  return toTransactionApi(data);
+  const context = await getTransactionContext();
+  return toTransactionApi(saved, context);
 }
 
+// Function update transaction บาง field ด้วย id
 async function updateTransaction(id, updates) {
   if (!id) return null;
 
-  if (!isSupabaseEnabled) {
-    const index = store.transactions.findIndex(t => t.id === id);
-    if (index === -1) return null;
-    
-    // Support both plateNo and plate_no for updates
-    const current = store.transactions[index];
-    const updated = { 
-      ...current, 
-      ...updates,
-      plateNo: updates.plateNo ?? current.plateNo ?? current.plate_no,
-      plate_no: updates.plateNo ?? current.plateNo ?? current.plate_no,
-      updatedAt: new Date().toISOString()
-    };
-    
-    store.transactions[index] = updated;
-    return toTransactionApi(updated);
-  }
+  const data = {};
+  if (updates.plateNo !== undefined) data.plateNo = updates.plateNo;
+  if (updates.vehicleType !== undefined) data.vehicleType = updates.vehicleType;
+  if (updates.serviceType !== undefined) data.serviceType = updates.serviceType;
+  if (updates.status !== undefined) data.status = updates.status;
+  if (updates.totalPaid !== undefined) data.totalPaid = updates.totalPaid;
+  if (updates.payments !== undefined) data.payments = updates.payments;
+  if (updates.exitTimeLimit !== undefined) data.exitTimeLimit = toDateOrNull(updates.exitTimeLimit);
+  if (updates.exitAt !== undefined) data.exitAt = toDateOrNull(updates.exitAt);
 
-  // Handle Supabase mapping for updates
-  const dbUpdates = {};
-  if (updates.plateNo !== undefined) dbUpdates.plate_no = updates.plateNo;
-  if (updates.vehicleType !== undefined) dbUpdates.vehicle_type = updates.vehicleType;
-  if (updates.serviceType !== undefined) dbUpdates.service_type = updates.serviceType;
-  if (updates.status !== undefined) dbUpdates.status = updates.status;
-  if (updates.totalPaid !== undefined) dbUpdates.total_paid = updates.totalPaid;
-  if (updates.payments !== undefined) dbUpdates.payments = updates.payments;
-  
-  dbUpdates.updated_at = new Date().toISOString();
+  const saved = await prisma.transaction.update({
+    where: { id },
+    data
+  });
 
-  const { data, error } = await supabase
-    .from('transactions')
-    .update(dbUpdates)
-    .eq('id', id)
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return toTransactionApi(data);
+  const context = await getTransactionContext();
+  return toTransactionApi(saved, context);
 }
 
+// Function delete transaction ด้วย id
 async function deleteTransaction(id) {
   if (!id) return false;
-
-  if (!isSupabaseEnabled) {
-    const index = store.transactions.findIndex(t => t.id === id);
-    if (index === -1) return false;
-    store.transactions.splice(index, 1);
-    return true;
-  }
-
-  const { error } = await supabase.from('transactions').delete().eq('id', id);
-  if (error) throw error;
+  await prisma.transaction.delete({ where: { id } });
   return true;
 }
 
+// Function create transaction ใหม่ตอนรถเข้า
 async function createTransaction({ plateNo, vehicleType = 'car', serviceType = 'parking', entryAt }) {
   if (!plateNo) throw new Error('plateNo is required');
 
   const now = new Date();
-  const entryTime = entryAt || now.toISOString();
-  
-  // Format billNo as PKYYYYMMDD-HHMMSS
+  const entryTime = entryAt ? new Date(entryAt) : now;
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
@@ -363,53 +334,34 @@ async function createTransaction({ plateNo, vehicleType = 'car', serviceType = '
   const secs = String(now.getSeconds()).padStart(2, '0');
   const billNo = `PK${year}${month}${day}-${hours}${mins}${secs}`;
 
-  const newTransaction = {
-    id: `t_${Date.now()}_${Math.floor(Math.random()*1000)}`, // Simple unique ID since createId is not available
-    billNo: billNo,
-    plateNo: plateNo,
-    vehicleType: vehicleType,
-    serviceType: serviceType,
-    entryAt: entryTime,
-    status: 'pending',
-    totalPaid: 0,
-    payments: [],
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString()
-  };
+  const saved = await prisma.transaction.create({
+    data: {
+      id: createId('t'),
+      billNo,
+      plateNo,
+      vehicleType,
+      serviceType,
+      entryAt: entryTime,
+      status: 'pending',
+      totalPaid: 0,
+      payments: []
+    }
+  });
 
-  if (!isSupabaseEnabled) {
-    store.transactions.push(newTransaction);
-    return toTransactionApi(newTransaction);
-  }
-
-  const { data, error } = await supabase
-    .from('transactions')
-    .insert([{
-      id: newTransaction.id,
-      bill_no: newTransaction.billNo,
-      plate_no: newTransaction.plateNo,
-      vehicle_type: newTransaction.vehicleType,
-      service_type: newTransaction.serviceType,
-      entry_at: newTransaction.entryAt,
-      status: newTransaction.status,
-      total_paid: newTransaction.totalPaid,
-      payments: newTransaction.payments
-    }])
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return toTransactionApi(data);
+  const context = await getTransactionContext();
+  return toTransactionApi(saved, context);
 }
 
+// Export Functions
 module.exports = {
   listTransactions,
   listAllTransactions,
   getTransactionById,
+  getTransactionApiById,
   saveTransaction,
   updateTransaction,
   deleteTransaction,
   processPayment,
   createTransaction,
-  toTransactionApi // Exported for route usage
+  toTransactionApi
 };

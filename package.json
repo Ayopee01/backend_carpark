@@ -1,31 +1,42 @@
 {
   "name": "smart-carpark-api",
   "version": "1.0.0",
-  "description": "Mock backend API for Smart Carpark admin system",
+  "description": "Backend API for Smart Carpark admin system",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "prisma:generate": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "docker:db": "docker compose up -d db"
   },
   "keywords": [
     "nodejs",
     "express",
-    "mock-api",
+    "api",
     "smart-carpark"
   ],
   "author": "OpenAI",
   "license": "MIT",
   "dependencies": {
-    "@supabase/supabase-js": "^2.0.0",
+    "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
     "express": "^4.21.2",
     "morgan": "^1.10.0",
     "multer": "^2.1.1",
+    "prisma": "^6.19.3",
     "swagger-ui-express": "^4.6.3",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }

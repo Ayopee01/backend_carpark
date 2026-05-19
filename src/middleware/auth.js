@@ -1,6 +1,10 @@
-const { store } = require('../data/store');
+// Import Require
+const { getUserById } = require('../data/repositories/users.repo');
+const { validateAccessSession } = require('../data/repositories/authSessions.repo');
+const { verifyToken } = require('../utils/auth');
 
-function authMiddleware(req, res, next) {
+// Function middleware ตรวจสอบ access token และ session ก่อนเข้า protected route
+async function authMiddleware(req, res, next) {
   if (
     req.path === '/' ||
     req.path.startsWith('/health') ||
@@ -17,15 +21,31 @@ function authMiddleware(req, res, next) {
   }
 
   const token = authHeader.replace('Bearer ', '').trim();
-  const session = store.sessions[token];
+  try {
+    const payload = verifyToken(token);
+    if (!payload || payload.type !== 'access' || !payload.sub || !payload.sid) {
+      return res.status(401).json({ message: 'Invalid or expired token' });
+    }
 
-  if (!session) {
-    return res.status(401).json({ message: 'Invalid or expired token' });
+    const [session, user] = await Promise.all([
+      validateAccessSession(payload.sid),
+      getUserById(payload.sub)
+    ]);
+    if (!session || session.userId !== payload.sub) {
+      return res.status(401).json({ message: 'Invalid or expired session' });
+    }
+    if (!user || user.status !== 'active') {
+      return res.status(401).json({ message: 'Invalid or expired token' });
+    }
+
+    req.user = user;
+    req.token = token;
+    req.sessionId = payload.sid;
+    next();
+  } catch (err) {
+    next(err);
   }
-
-  req.user = session.user;
-  req.token = token;
-  next();
 }
 
+// Export middleware
 module.exports = authMiddleware;

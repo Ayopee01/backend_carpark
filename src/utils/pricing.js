@@ -1,45 +1,60 @@
-const { getConfig } = require('../data/repositories/config.repo');
-
-/**
- * Calculate parking fee based on entry and exit time using configuration rules
- * @param {string} entryAt - ISO format date string
- * @param {string} exitAt - ISO format date string (current time if not provided)
- * @param {Array} pricingRules - Array of rule objects [{hourStart, hourEnd, price, vehicleType, serviceType}]
- * @param {Object} options - { vehicleType, serviceType }
- */
+// Function คำนวณค่าจอดรถจากเวลาเข้า เวลาออก และกฎราคาที่กำหนด
 function calculateFee(entryAt, exitAt, pricingRules = [], { vehicleType = 'car', serviceType = 'parking' } = {}) {
   const start = new Date(entryAt);
   const end = exitAt ? new Date(exitAt) : new Date();
   const diffMs = end - start;
   
-  if (diffMs < 0) return 0;
+  if (!entryAt || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || diffMs < 0) {
+    return {
+      totalHours: 0,
+      totalAmount: 0,
+      durationMs: 0,
+      appliedRules: [],
+      missingHours: []
+    };
+  }
 
-  // Calculate total hours, rounded up (e.g., 1 hr 1 min = 2 hours)
+  // คำนวณจำนวนชั่วโมงแบบปัดขึ้น เช่น 1 ชั่วโมง 1 นาที = 2 ชั่วโมง
   const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
   
-  // Filter rules for this specific vehicle and service
+  // เลือกเฉพาะกฎที่ตรงกับประเภทรถ ประเภทบริการ และยังเปิดใช้งานอยู่
   const relevantRules = pricingRules
     .filter(r => r.vehicleType === vehicleType && r.serviceType === serviceType && r.status === 'active')
     .sort((a, b) => a.hourStart - b.hourStart);
 
   let totalAmount = 0;
+  const appliedRules = [];
+  const missingHours = [];
   
   for (let h = 1; h <= totalHours; h++) {
-    // Find a rule that covers this specific hour
+    // หากฎที่ครอบคลุมชั่วโมงปัจจุบัน
     const rule = relevantRules.find(r => h >= r.hourStart && (r.hourEnd === null || h <= r.hourEnd || r.hourEnd === 999));
     if (rule) {
-      totalAmount += Number(rule.price);
+      const price = Number(rule.price);
+      totalAmount += Number.isFinite(price) ? price : 0;
+      appliedRules.push({
+        hour: h,
+        ruleId: rule.id,
+        serviceType: rule.serviceType,
+        vehicleType: rule.vehicleType,
+        conditionType: rule.conditionType || 'range',
+        hourStart: rule.hourStart,
+        hourEnd: rule.hourEnd,
+        price: Number.isFinite(price) ? price : 0
+      });
     } else {
-      // Default price if no rule found (e.g., 20 THB/hr)
-      totalAmount += 20;
+      missingHours.push(h);
     }
   }
 
   return {
     totalHours,
     totalAmount,
-    durationMs: diffMs
+    durationMs: diffMs,
+    appliedRules,
+    missingHours
   };
 }
 
+// Export Functions
 module.exports = { calculateFee };

@@ -1,108 +1,67 @@
+// Import Require
 const express = require('express');
-const { store } = require('../data/store');
-const { getConfig, setConfig } = require('../data/repositories/config.repo');
-const { authorize } = require('../middlewares/auth.middleware');
+const {
+  getReceiptSettings,
+  getSystemSettings,
+  updatePrinterSettings,
+  updateReceiptSettings,
+  updateSystemSettings
+} = require('../data/repositories/systemSettings.repo');
+const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
-const CONFIG_KEY = 'system_settings';
 
 router.use(authorize(['super_admin', 'staff'], 'settings'));
 
+// Route query system settings
 router.get('/', async (req, res, next) => {
   try {
-    const settings = await getConfig(CONFIG_KEY, store.systemSettings);
+    const settings = await getSystemSettings();
     res.json(settings);
   } catch (err) {
     next(err);
   }
 });
 
+// Route query receipt settings
 router.get('/receipt', async (req, res, next) => {
   try {
-    const settings = await getConfig(CONFIG_KEY, store.systemSettings);
-    res.json(settings.receipt || {});
+    const receipt = await getReceiptSettings();
+    res.json(receipt);
   } catch (err) {
     next(err);
   }
 });
 
-// [NEW] API สำหรับแท็บ "ตั้งค่าอุปกรณ์" (Printer Settings)
+// Route update printer settings
 router.put('/receipt/printer', async (req, res, next) => {
   try {
-    const { fontSize, billNumberFontSize, paperWidth } = req.body;
-    const current = await getConfig(CONFIG_KEY, store.systemSettings);
-    
-    // อัปเดตเฉพาะค่าของปริ้นเตอร์
-    const newReceipt = {
-      ...current.receipt,
-      printer: {
-        ...(current.receipt?.printer || {}),
-        fontSize: fontSize || 12,
-        billNumberFontSize: billNumberFontSize || 16,
-        paperWidth: paperWidth || 80
-      }
-    };
-
-    const nextSettings = {
-      ...current,
-      receipt: newReceipt,
-      updatedAt: new Date().toISOString()
-    };
-
-    const saved = await setConfig(CONFIG_KEY, nextSettings);
-    res.json({ message: 'Printer settings updated', printer: saved.receipt.printer });
+    const printer = await updatePrinterSettings(req.body || {});
+    res.json({ message: 'Printer settings updated', printer });
   } catch (err) {
     next(err);
   }
 });
 
+// Route update receipt settings
 router.put('/receipt', async (req, res, next) => {
   try {
-    const body = req.body || {};
-    const current = await getConfig(CONFIG_KEY, store.systemSettings);
-    
-    // Deep merge for receipt sub-objects
-    const newReceipt = {
-      ...current.receipt,
-      ...body,
-      entryBill: {
-        ...(current.receipt?.entryBill || {}),
-        ...(body.entryBill || {})
-      },
-      paymentBill: {
-        ...(current.receipt?.paymentBill || {}),
-        ...(body.paymentBill || {})
-      }
-    };
-
-    const nextSettings = {
-      ...current,
-      receipt: newReceipt,
-      updatedAt: new Date().toISOString()
-    };
-
-    const saved = await setConfig(CONFIG_KEY, nextSettings);
-    res.json({ message: 'Receipt settings updated', receipt: saved.receipt });
+    const receipt = await updateReceiptSettings(req.body || {});
+    res.json({ message: 'Receipt settings updated', receipt });
   } catch (err) {
     next(err);
   }
 });
 
+// Route update system settings
 router.put('/', async (req, res, next) => {
   try {
-    const body = req.body || {};
-    const current = await getConfig(CONFIG_KEY, store.systemSettings);
-    const nextSettings = {
-      ...current,
-      ...body,
-      updatedAt: new Date().toISOString()
-    };
-
-    const saved = await setConfig(CONFIG_KEY, nextSettings);
-    res.json({ message: 'System settings updated', settings: saved });
+    const settings = await updateSystemSettings(req.body || {});
+    res.json({ message: 'System settings updated', settings });
   } catch (err) {
     next(err);
   }
 });
 
+// Export router
 module.exports = router;

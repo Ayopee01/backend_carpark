@@ -1,77 +1,65 @@
-const { store } = require('../store');
+// Import Require
+const defaults = require('../defaults');
+const { getConfig, setConfig } = require('./config.repo');
 
-// Initial setup if not exists in store
-if (!store.paymentSettings) {
-  store.paymentSettings = {
-    methods: [
-      { id: 'cash', label: 'แคเชียร์ (เงินสด)', icon: 'cash', isActive: true },
-      { id: 'bank1', label: 'ธนาคาร 1', icon: 'bank', isActive: true },
-      { id: 'bank2', label: 'ธนาคาร 2', icon: 'bank', isActive: true },
-      { id: 'qr_scan', label: 'สแกนจ่าย', icon: 'qr', isActive: true },
-      { id: 'wallet', label: 'วอลเล็ต', icon: 'wallet', isActive: true },
-      { id: 'other', label: 'อื่นๆ', icon: 'more', isActive: true }
-    ],
-    channels: [
-      { 
-        id: 'ch_cashier', 
-        name: 'แคเชียร์', 
-        icon: 'user', 
-        allowedMethods: ['cash', 'qr_scan', 'bank1', 'bank2', 'wallet', 'other'] 
-      },
-      { 
-        id: 'ch_kiosk', 
-        name: 'Kiosk', 
-        icon: 'vending', 
-        allowedMethods: ['bank1', 'bank2'] 
-      },
-      { 
-        id: 'ch_scan', 
-        name: 'สแกนจ่าย', 
-        icon: 'qr', 
-        allowedMethods: ['qr_scan', 'wallet'] 
-      },
-      { 
-        id: 'ch_gate', 
-        name: 'Exit Gate', 
-        icon: 'gate', 
-        allowedMethods: ['cash', 'wallet'] 
-      }
-    ]
-  };
+// Constant key สำหรับอ้างอิง config payment settings ใน table app_config
+const CONFIG_KEY = 'payment_settings';
+
+// Function query payment settings จาก database ถ้าไม่มีให้ใช้ค่า default
+async function getPaymentSettings() {
+  return getConfig(CONFIG_KEY, defaults.paymentSettings);
 }
 
+// Function query รายการ payment method ทั้งหมด
 async function listMethods() {
-  return store.paymentSettings.methods;
+  const settings = await getPaymentSettings();
+  return settings.methods || [];
 }
 
+// Function update payment method ด้วย id แล้ว save กลับเข้า config
 async function updateMethod(id, updates) {
-  const index = store.paymentSettings.methods.findIndex(m => m.id === id);
+  const settings = await getPaymentSettings();
+  const methods = [...(settings.methods || [])];
+  const index = methods.findIndex((method) => method.id === id);
   if (index === -1) return null;
-  
-  store.paymentSettings.methods[index] = {
-    ...store.paymentSettings.methods[index],
-    ...updates
+
+  methods[index] = {
+    ...methods[index],
+    ...updates,
   };
-  return store.paymentSettings.methods[index];
+
+  await setConfig(CONFIG_KEY, { ...settings, methods });
+  return methods[index];
 }
 
+// Function query รายการ service channel ทั้งหมด
 async function listChannels() {
-  return store.paymentSettings.channels;
+  const settings = await getPaymentSettings();
+  return settings.channels || [];
 }
 
+// Function update mapping วิธีชำระเงินที่อนุญาตในแต่ละ channel
 async function updateChannelMapping(id, allowedMethods) {
-  const index = store.paymentSettings.channels.findIndex(c => c.id === id);
-  if (index === -1) return null;
-  
   if (!Array.isArray(allowedMethods)) return null;
 
-  store.paymentSettings.channels[index].allowedMethods = allowedMethods;
-  return store.paymentSettings.channels[index];
+  const settings = await getPaymentSettings();
+  const channels = [...(settings.channels || [])];
+  const index = channels.findIndex((channel) => channel.id === id);
+  if (index === -1) return null;
+
+  channels[index] = {
+    ...channels[index],
+    allowedMethods,
+  };
+
+  await setConfig(CONFIG_KEY, { ...settings, channels });
+  return channels[index];
 }
 
+// Export Functions
 module.exports = {
   listMethods,
   updateMethod,
   listChannels,
-  updateChannelMapping
+  updateChannelMapping,
 };

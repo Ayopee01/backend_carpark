@@ -1,99 +1,97 @@
-const { store, createId } = require('../store');
+// Import Require
+const { createUser, deleteUser, getUserById, listAllUsers, updateUser } = require('./users.repo');
 
+// Function แบ่ง Fullname ออกเป็น FirstName และ LastName
+function splitName(name = '') {
+  const [firstName = '', ...rest] = String(name).trim().split(/\s+/);
+  return { firstName, lastName: rest.join(' ') };
+}
+
+// Function แปลง user record ให้เป็นรูปแบบ member API
 function toMemberApi(row) {
   if (!row) return null;
+  const names = splitName(row.name);
   return {
     id: row.id,
     username: row.username,
-    firstName: row.firstName || '',
-    lastName: row.lastName || '',
+    firstName: row.firstName || names.firstName,
+    lastName: row.lastName || names.lastName,
     email: row.email,
     phone: row.phone || '',
     role: row.role,
     status: row.status,
     permissions: row.permissions || [],
     createdAt: row.createdAt,
-    updatedAt: row.updatedAt
+    updatedAt: row.updatedAt,
   };
 }
 
+// Function query รายการ member ทั้งหมดและ filter ตาม keyword, status, role
 async function listMembers({ keyword, status, role } = {}) {
-  let rows = [...store.users].filter(u => u.role !== 'system'); // Exclude system accounts if any
+  let rows = await listAllUsers({ keyword });
+  rows = rows.filter((user) => user.role !== 'system');
 
-  if (keyword) {
-    const kw = keyword.toLowerCase();
-    rows = rows.filter(r =>
-      (r.name && r.name.toLowerCase().includes(kw)) ||
-      (r.email && r.email.toLowerCase().includes(kw)) ||
-      (r.phone && r.phone.includes(kw))
-    );
-  }
-
-  if (status) rows = rows.filter(r => r.status === status);
-  if (role) rows = rows.filter(r => r.role === role);
+  if (status) rows = rows.filter((row) => row.status === status);
+  if (role) rows = rows.filter((row) => row.role === role);
 
   return rows.map(toMemberApi);
 }
 
+// Function คำนวณสถิติของ member ทั้งหมด
 async function getMemberStats() {
-  const all = store.users.length;
-  const active = store.users.filter(u => u.status === 'active').length;
-  const admins = store.users.filter(u => u.role === 'super_admin').length;
+  const rows = (await listAllUsers()).filter((user) => user.role !== 'system');
 
   return {
-    totalMembers: all,
-    activeMembers: active,
-    totalAdmins: admins
+    totalMembers: rows.length,
+    activeMembers: rows.filter((user) => user.status === 'active').length,
+    totalAdmins: rows.filter((user) => user.role === 'super_admin').length,
   };
 }
 
+// Function create member ใหม่โดย create user record ในระบบ
 async function createMember(data) {
-  const newMember = {
-    id: createId('u'),
-    username: data.username || data.email?.split('@')[0] || createId('user'), // Fallback to email prefix or random ID
-    firstName: data.firstName,
-    lastName: data.lastName,
-    name: data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-    email: data.email,
+  const name = data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim();
+  const user = await createUser({
+    username: data.username || data.email?.split('@')[0],
     password: data.password || '123456',
-    phone: data.phone,
+    name,
+    email: data.email,
     role: data.role || 'staff',
-    status: 'active',
+    status: data.status || 'active',
     permissions: data.permissions || ['dashboard', 'transactions'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
+  });
 
-  store.users.push(newMember);
-  return toMemberApi(newMember);
+  return toMemberApi(user);
 }
 
+// Function update ข้อมูล member ด้วย id
 async function updateMember(id, data) {
-  const index = store.users.findIndex(u => u.id === id);
-  if (index === -1) return null;
+  const existing = await getUserById(id);
+  if (!existing) return null;
 
-  const updated = {
-    ...store.users[index],
+  const patch = {
     ...data,
-    name: data.firstName && data.lastName ? `${data.firstName} ${data.lastName}` : store.users[index].name,
-    updatedAt: new Date().toISOString()
+    name: data.name || (data.firstName || data.lastName
+      ? `${data.firstName || ''} ${data.lastName || ''}`.trim()
+      : undefined),
   };
+  if (!patch.name) delete patch.name;
 
-  store.users[index] = updated;
+  const updated = await updateUser(id, patch);
   return toMemberApi(updated);
 }
 
+// Function delete member ด้วย id
 async function deleteMember(id) {
-  const index = store.users.findIndex(u => u.id === id);
-  if (index === -1) return false;
-  store.users.splice(index, 1);
-  return true;
+  const removed = await deleteUser(id);
+  return Boolean(removed);
 }
 
+// Export Functions
 module.exports = {
   listMembers,
   getMemberStats,
   createMember,
   updateMember,
-  deleteMember
+  deleteMember,
 };

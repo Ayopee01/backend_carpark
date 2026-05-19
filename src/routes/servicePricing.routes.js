@@ -1,118 +1,92 @@
+// Import Require
 const express = require('express');
-const { store, createId } = require('../data/store');
-const { getConfig, setConfig } = require('../data/repositories/config.repo');
-const { authorize } = require('../middlewares/auth.middleware');
+const {
+  calculatePricing,
+  createPricingRule,
+  deletePricingRule,
+  getPricingConfig,
+  updatePricingConfig,
+  updatePricingRule
+} = require('../data/repositories/servicePricing.repo');
+const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
-const CONFIG_KEY = 'pricing_config';
 
 router.use(authorize(['super_admin', 'staff'], 'pricing'));
 
+// Route query pricing config
 router.get('/config', async (req, res, next) => {
   try {
-    const config = await getConfig(CONFIG_KEY, store.pricingConfig);
+    const config = await getPricingConfig();
     res.json(config);
   } catch (err) {
     next(err);
   }
 });
 
+// Route update pricing config
 router.put('/config', async (req, res, next) => {
   try {
-    const body = req.body || {};
-    const current = await getConfig(CONFIG_KEY, store.pricingConfig);
-    const nextConfig = {
-      ...current,
-      pricingRules: body.pricingRules || current.pricingRules,
-      paymentChannels: body.paymentChannels || current.paymentChannels,
-      serviceChannelMapping: body.serviceChannelMapping || current.serviceChannelMapping,
-      masterData: body.masterData || current.masterData
-    };
-
-    const saved = await setConfig(CONFIG_KEY, nextConfig);
-    res.json({ message: 'Pricing config updated', config: saved });
+    const config = await updatePricingConfig(req.body || {});
+    res.json({ message: 'Pricing config updated', config });
   } catch (err) {
     next(err);
   }
 });
 
+// Route preview pricing calculation from current rules
+router.post('/calculate', async (req, res, next) => {
+  try {
+    const payload = req.body || {};
+    if (!payload.entryAt) {
+      return res.status(400).json({ message: 'entryAt is required' });
+    }
+
+    const result = await calculatePricing(payload);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Route create pricing rule
 router.post('/rules', async (req, res, next) => {
   try {
-    const payload = req.body;
+    const payload = req.body || {};
     if (!payload.serviceType || !payload.vehicleType || payload.price === undefined) {
       return res.status(400).json({ message: 'serviceType, vehicleType, and price are required' });
     }
 
-    const current = await getConfig(CONFIG_KEY, store.pricingConfig);
-    const rule = {
-      id: createId('pr'),
-      serviceType: payload.serviceType,
-      vehicleType: payload.vehicleType,
-      hourStart: payload.hourStart ?? 1,
-      hourEnd: payload.hourEnd ?? 1,
-      price: Number(payload.price),
-      status: payload.status || 'active'
-    };
-
-    const nextConfig = {
-      ...current,
-      pricingRules: [...(current.pricingRules || []), rule]
-    };
-
-    await setConfig(CONFIG_KEY, nextConfig);
+    const rule = await createPricingRule(payload);
     res.status(201).json({ message: 'Pricing rule created', rule });
   } catch (err) {
     next(err);
   }
 });
 
+// Route update pricing rule
 router.patch('/rules/:id', async (req, res, next) => {
   try {
-    const payload = req.body;
-    const current = await getConfig(CONFIG_KEY, store.pricingConfig);
-    const index = (current.pricingRules || []).findIndex((item) => item.id === req.params.id);
-    
-    if (index === -1) {
-      return res.status(404).json({ message: 'Pricing rule not found' });
-    }
+    const rule = await updatePricingRule(req.params.id, req.body || {});
+    if (!rule) return res.status(404).json({ message: 'Pricing rule not found' });
 
-    const updatedRule = {
-      ...current.pricingRules[index],
-      ...payload
-    };
-
-    // Ensure price is numeric
-    if (payload.price !== undefined) updatedRule.price = Number(payload.price);
-
-    const nextRules = [...current.pricingRules];
-    nextRules[index] = updatedRule;
-
-    const nextConfig = { ...current, pricingRules: nextRules };
-    await setConfig(CONFIG_KEY, nextConfig);
-    
-    res.json({ message: 'Pricing rule updated', rule: updatedRule });
+    res.json({ message: 'Pricing rule updated', rule });
   } catch (err) {
     next(err);
   }
 });
 
+// Route delete pricing rule
 router.delete('/rules/:id', async (req, res, next) => {
-
   try {
-    const current = await getConfig(CONFIG_KEY, store.pricingConfig);
-    const index = (current.pricingRules || []).findIndex((item) => item.id === req.params.id);
-    if (index === -1) {
-      return res.status(404).json({ message: 'Pricing rule not found' });
-    }
+    const rule = await deletePricingRule(req.params.id);
+    if (!rule) return res.status(404).json({ message: 'Pricing rule not found' });
 
-    const nextRules = [...current.pricingRules];
-    const [rule] = nextRules.splice(index, 1);
-    const nextConfig = { ...current, pricingRules: nextRules };
-    await setConfig(CONFIG_KEY, nextConfig);
     res.json({ message: 'Pricing rule deleted', rule });
   } catch (err) {
     next(err);
   }
 });
 
+// Export router
 module.exports = router;

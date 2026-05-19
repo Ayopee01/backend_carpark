@@ -1,89 +1,109 @@
-const { store } = require('../store');
+// Import Require
+const { getConfig, setConfig } = require('./config.repo');
 
-// เก็บรายการรหัสลงทะเบียนชั่วคราว
+// Constant key สำหรับอ้างอิง config kiosks ใน table app_config
+const CONFIG_KEY = 'kiosks';
+// Constant เก็บ activation code ชั่วคราวใน memory ระหว่างรอ kiosk activate
 const activationCodes = new Map();
 
-/**
- * 🎫 Generate Activation Code (Admin Side)
- */
+// Function query config ของ kiosks จาก database และทำให้ kiosks เป็น array เสมอ
+async function getKiosksConfig() {
+  const config = await getConfig(CONFIG_KEY, { kiosks: [] });
+  return {
+    ...config,
+    kiosks: Array.isArray(config.kiosks) ? config.kiosks : [],
+  };
+}
+
+// Function save รายการ kiosks กลับเข้า app_config
+async function saveKiosks(kiosks) {
+  return setConfig(CONFIG_KEY, { kiosks });
+}
+
+// Function search kiosk ด้วย deviceId
+async function searchKiosk(deviceId) {
+  if (!deviceId) return null;
+  const { kiosks } = await getKiosksConfig();
+  return kiosks.find((kiosk) => kiosk.deviceId === deviceId) || null;
+}
+
+// Function create activation code สำหรับผูก kiosk ใหม่
 async function generateActivationCode(details = {}) {
-  const code = Math.floor(100000 + Math.random() * 900000).toString(); // สุ่มเลข 6 หลัก
-  
-  // [NEW] เจน Device ID ไว้รอเลยตั้งแต่ออก Code
+  const { kiosks } = await getKiosksConfig();
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const count = (store.kiosks.length + activationCodes.size + 1).toString().padStart(3, '0');
+  const count = (kiosks.length + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `K-${dateStr}-${count}`;
 
   activationCodes.set(code, {
     ...details,
-    deviceId: generatedId, // เก็บ ID ที่จองไว้
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000) // หมดอายุใน 1 ชม.
+    deviceId: generatedId,
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
   });
 
   return { code, deviceId: generatedId };
 }
 
-/**
- * 🔑 Activate Kiosk (Kiosk Side)
- */
+// Function activate kiosk ด้วย activation code ที่ยังไม่หมดอายุ
 async function activateKiosk(code) {
   const data = activationCodes.get(code);
-  
+
   if (!data) return { success: false, message: 'Invalid or expired code' };
   if (data.expiresAt < new Date()) {
     activationCodes.delete(code);
     return { success: false, message: 'Code expired' };
   }
 
-  // ใช้ ID ที่จองไว้ตั้งแต่ตอนออก Code
-  const reservedId = data.deviceId;
-
-  // ลงทะเบียนตู้เข้าระบบจริง
-  const kiosk = await updateKioskStatus(reservedId, {
+  const kiosk = await updateKioskStatus(data.deviceId, {
     name: data.name,
     location: data.location,
-    version: '1.0.0'
+    version: '1.0.0',
   });
 
-  activationCodes.delete(code); // ใช้แล้วทิ้ง
-  return { 
-    success: true, 
+  activationCodes.delete(code);
+  return {
+    success: true,
     message: 'Activation successful',
-    deviceId: reservedId, 
-    kiosk 
+    deviceId: data.deviceId,
+    kiosk,
   };
 }
 
-/**
- * ✏️ Edit Kiosk Details (Admin Side)
- */
+// Function edit ข้อมูล kiosk ด้วย deviceId
 async function editKiosk(deviceId, details = {}) {
-  const kiosk = store.kiosks.find(k => k.deviceId === deviceId);
-  if (!kiosk) return { success: false, message: 'Kiosk not found' };
-
-  if (details.name) kiosk.name = details.name;
-  if (details.location) kiosk.location = details.location;
-  if (details.status) kiosk.status = details.status; // เช่น 'maintenance', 'offline'
-
-  return { success: true, kiosk };
-}
-
-/**
- * 🗑️ Delete Kiosk (Admin Side)
- */
-async function deleteKiosk(deviceId) {
-  const index = store.kiosks.findIndex(k => k.deviceId === deviceId);
+  const { kiosks } = await getKiosksConfig();
+  const index = kiosks.findIndex((kiosk) => kiosk.deviceId === deviceId);
   if (index === -1) return { success: false, message: 'Kiosk not found' };
 
-  const deleted = store.kiosks.splice(index, 1)[0];
+  kiosks[index] = {
+    ...kiosks[index],
+    ...details,
+    deviceId,
+  };
+  await saveKiosks(kiosks);
+
+  return { success: true, kiosk: kiosks[index] };
+}
+
+// Function delete kiosk ด้วย deviceId
+async function deleteKiosk(deviceId) {
+  const { kiosks } = await getKiosksConfig();
+  const index = kiosks.findIndex((kiosk) => kiosk.deviceId === deviceId);
+  if (index === -1) return { success: false, message: 'Kiosk not found' };
+
+  const [deleted] = kiosks.splice(index, 1);
+  await saveKiosks(kiosks);
   return { success: true, message: 'Kiosk deleted', kiosk: deleted };
 }
-async function updateKioskStatus(deviceId, details = {}) {
-  let kiosk = store.kiosks.find(k => k.deviceId === deviceId);
-  const now = new Date().toISOString();
 
-  if (!kiosk) {
-    // ลงทะเบียนตู้ใหม่
+// Function update สถานะ kiosk หรือ create kiosk ใหม่ถ้ายังไม่มีในระบบ
+async function updateKioskStatus(deviceId, details = {}) {
+  const { kiosks } = await getKiosksConfig();
+  const now = new Date().toISOString();
+  const index = kiosks.findIndex((kiosk) => kiosk.deviceId === deviceId);
+
+  let kiosk;
+  if (index === -1) {
     kiosk = {
       deviceId,
       name: details.name || `Kiosk ${deviceId}`,
@@ -92,44 +112,48 @@ async function updateKioskStatus(deviceId, details = {}) {
       version: details.version || '1.0.0',
       status: 'online',
       firstSeen: now,
-      lastSeen: now
+      lastSeen: now,
     };
-    store.kiosks.push(kiosk);
+    kiosks.push(kiosk);
   } else {
-    // อัปเดตข้อมูลตู้เดิม
-    kiosk.lastSeen = now;
-    kiosk.status = 'online';
-    if (details.name) kiosk.name = details.name;
-    if (details.location) kiosk.location = details.location;
-    if (details.ip) kiosk.ip = details.ip;
-    if (details.version) kiosk.version = details.version;
+    kiosk = {
+      ...kiosks[index],
+      lastSeen: now,
+      status: details.status || 'online',
+      ...(details.name ? { name: details.name } : {}),
+      ...(details.location ? { location: details.location } : {}),
+      ...(details.ip ? { ip: details.ip } : {}),
+      ...(details.version ? { version: details.version } : {}),
+    };
+    kiosks[index] = kiosk;
   }
 
+  await saveKiosks(kiosks);
   return kiosk;
 }
 
-/**
- * 📋 List all Kiosks for Admin Monitor
- */
+// Function query kiosk ทั้งหมดและคำนวณสถานะ online/offline จาก lastSeen
 async function listAllKiosks() {
+  const { kiosks } = await getKiosksConfig();
   const now = new Date();
-  
-  // ตรวจสอบเบื้องต้น: ถ้าตู้ไหนไม่ส่งสัญญาณเกิน 5 นาที ให้ถือว่าเป็น 'offline'
-  return store.kiosks.map(k => {
-    const lastSeen = new Date(k.lastSeen);
+
+  return kiosks.map((kiosk) => {
+    const lastSeen = new Date(kiosk.lastSeen);
     const diffMinutes = Math.floor((now - lastSeen) / 60000);
     return {
-      ...k,
-      status: diffMinutes > 5 ? 'offline' : 'online'
+      ...kiosk,
+      status: kiosk.status === 'maintenance' ? 'maintenance' : (diffMinutes > 5 ? 'offline' : 'online'),
     };
   });
 }
 
+// Export Functions
 module.exports = {
-  updateKioskStatus,
-  listAllKiosks,
-  generateActivationCode,
   activateKiosk,
+  deleteKiosk,
   editKiosk,
-  deleteKiosk
+  searchKiosk,
+  generateActivationCode,
+  listAllKiosks,
+  updateKioskStatus,
 };

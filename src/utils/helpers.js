@@ -1,3 +1,4 @@
+// Function แบ่ง array ตาม page และ perPage สำหรับข้อมูลที่อยู่ใน memory
 function paginate(items, page = 1, perPage = 10) {
   const safePage = Number(page) > 0 ? Number(page) : 1;
   const safePerPage = Number(perPage) > 0 ? Number(perPage) : 10;
@@ -15,6 +16,7 @@ function paginate(items, page = 1, perPage = 10) {
   };
 }
 
+// Function เลือกเฉพาะ key ที่อนุญาตจาก object และไม่เอาค่า undefined
 function pick(obj, keys) {
   return keys.reduce((acc, key) => {
     if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== undefined) {
@@ -24,6 +26,7 @@ function pick(obj, keys) {
   }, {});
 }
 
+// Export Functions
 module.exports = {
   paginate,
   pick

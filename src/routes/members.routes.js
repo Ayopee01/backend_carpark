@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const memberRepo = require('../data/repositories/members.repo');
-const { authorize } = require('../middlewares/auth.middleware');
+const { authorize } = require('../middleware/permission');
 
 // All member routes are restricted to super_admin as per UI requirement
 router.use(authorize(['super_admin']));
@@ -68,3 +68,4 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+

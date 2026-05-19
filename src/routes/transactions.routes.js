@@ -1,6 +1,6 @@
 const express = require('express');
-const { listTransactions, getTransactionById, processPayment, saveTransaction, updateTransaction, deleteTransaction, toTransactionApi, createTransaction } = require('../data/repositories/transactions.repo');
-const { authorize } = require('../middlewares/auth.middleware');
+const { listTransactions, getTransactionApiById, processPayment, updateTransaction, deleteTransaction, createTransaction } = require('../data/repositories/transactions.repo');
+const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
 
@@ -62,9 +62,9 @@ router.post('/', async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
-    const transaction = await getTransactionById(req.params.id);
+    const transaction = await getTransactionApiById(req.params.id);
     if (!transaction) return res.status(404).json({ message: 'Not found' });
-    res.json(toTransactionApi(transaction));
+    res.json(transaction);
   } catch (err) {
     next(err);
   }
@@ -126,3 +126,4 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+

@@ -1,68 +1,36 @@
-const { supabase, isSupabaseEnabled } = require('../../db/supabase');
-const { store } = require('../store');
+// Import Require
+const { prisma } = require('../../db/prisma');
 
-function getMemoryConfig(key) {
-  switch (key) {
-    case 'pricing_config':
-      return store.pricingConfig;
-    case 'devices':
-      return store.devices;
-    case 'theme':
-      return store.theme;
-    case 'system_settings':
-      return store.systemSettings;
-    default:
-      return undefined;
-  }
-}
-
-function setMemoryConfig(key, value) {
-  switch (key) {
-    case 'pricing_config':
-      store.pricingConfig = value;
-      break;
-    case 'devices':
-      store.devices = value;
-      break;
-    case 'theme':
-      store.theme = value;
-      break;
-    case 'system_settings':
-      store.systemSettings = value;
-      break;
-    default:
-      break;
-  }
-}
-
-async function getConfig(key, fallbackValue) {
+// Function query ข้อมูล config จาก table "app_config" ด้วย key ที่กำหนด
+async function getConfig(key, fallback) {
   if (!key) throw new Error('config key is required');
 
-  if (!isSupabaseEnabled) return getMemoryConfig(key) ?? fallbackValue;
+  const config = await prisma.appConfig.findUnique({
+    where: { key }
+  });
 
-  const { data, error } = await supabase.from('app_config').select('data').eq('key', key).maybeSingle();
-  if (error) throw error;
-  return data?.data ?? fallbackValue;
+  if (!config) {
+    if (fallback !== undefined) return fallback;
+    throw new Error(`Missing app_config key "${key}". Run Prisma seed first.`);
+  }
+
+  return config.data;
 }
 
+// Function upsert ข้อมูล config ใน table app_config
 async function setConfig(key, value) {
   if (!key) throw new Error('config key is required');
 
-  if (!isSupabaseEnabled) {
-    setMemoryConfig(key, value);
-    return value;
-  }
+  const config = await prisma.appConfig.upsert({
+    where: { key },
+    create: { key, data: value },
+    update: { data: value }
+  });
 
-  const { data, error } = await supabase
-    .from('app_config')
-    .upsert({ key, data: value }, { onConflict: 'key' })
-    .select('data')
-    .single();
-
-  if (error) throw error;
-  return data?.data ?? value;
+  return config.data ?? value;
 }
 
+// Export Functions
 module.exports = {
   getConfig,
   setConfig

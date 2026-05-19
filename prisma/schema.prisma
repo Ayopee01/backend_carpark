@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id
+  username     String        @unique
+  passwordHash String?       @map("password_hash")
+  name         String
+  email        String?
+  phone        String?
+  role         String        @default("staff")
+  permissions  String[]      @default([])
+  status       String        @default("active")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sessions     AuthSession[]
+
+  @@map("users")
+}
+
+model AuthSession {
+  id               String    @id
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(6)
+  idleExpiresAt    DateTime  @map("idle_expires_at") @db.Timestamptz(6)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "auth_sessions_user_id_idx")
+  @@index([expiresAt], map: "auth_sessions_expires_at_idx")
+  @@index([idleExpiresAt], map: "auth_sessions_idle_expires_at_idx")
+  @@map("auth_sessions")
+}
+
+model Transaction {
+  id             String    @id
+  billNo         String    @map("bill_no")
+  plateNo        String    @map("plate_no")
+  vehicleType    String    @map("vehicle_type")
+  serviceType    String    @map("service_type")
+  entryAt        DateTime? @map("entry_at") @db.Timestamptz(6)
+  exitAt         DateTime? @map("exit_at") @db.Timestamptz(6)
+  exitTimeLimit  DateTime? @map("exit_time_limit") @db.Timestamptz(6)
+  durationMinute Int?      @map("duration_minute")
+  amount         Decimal   @default(0) @db.Decimal
+  vat            Decimal   @default(0) @db.Decimal
+  discount       Decimal   @default(0) @db.Decimal
+  netAmount      Decimal   @default(0) @map("net_amount") @db.Decimal
+  status         String    @default("pending")
+  payment        Json      @default("{}")
+  payments       Json      @default("[]")
+  totalPaid      Decimal   @default(0) @map("total_paid") @db.Decimal
+  receipt        Json      @default("{}")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([billNo], map: "transactions_bill_no_idx")
+  @@index([plateNo], map: "transactions_plate_no_idx")
+  @@index([status], map: "transactions_status_idx")
+  @@index([entryAt], map: "transactions_entry_at_idx")
+  @@index([updatedAt], map: "transactions_updated_at_idx")
+  @@map("transactions")
+}
+
+model AppConfig {
+  key       String   @id
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_config")
+}

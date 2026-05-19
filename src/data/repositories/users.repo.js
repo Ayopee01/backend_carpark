@@ -1,196 +1,172 @@
-const { store, createId } = require('../store');
-const { supabase, isSupabaseEnabled } = require('../../db/supabase');
-const { paginate, pick } = require('../../utils/helpers');
+// Import Require
+const { createId } = require('../store');
+const { prisma } = require('../../db/prisma');
+const { pick } = require('../../utils/helpers');
 const { normalizePagination, buildMeta } = require('../../utils/pagination');
+const { hashPassword, verifyPassword } = require('../../utils/auth');
 
+// Function แปลง user record จาก database ให้อยู่ในรูปแบบ API
 function toUserApi(row) {
   if (!row) return null;
   return {
     id: row.id,
     username: row.username,
-    password: row.password,
+    passwordHash: row.passwordHash,
     name: row.name,
     email: row.email ?? null,
+    phone: row.phone ?? null,
     role: row.role,
     permissions: row.permissions || [],
     status: row.status,
-    createdAt: row.created_at ?? row.createdAt,
-    updatedAt: row.updated_at ?? row.updatedAt
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
   };
 }
 
+// Function ลบข้อมูล password ออกจาก object user ก่อนส่งออก
 function withoutPassword(user) {
   if (!user) return null;
   const safe = { ...user };
   delete safe.password;
+  delete safe.passwordHash;
   return safe;
 }
 
+// Function สร้าง Prisma where สำหรับ search user จาก keyword
+function buildKeywordFilter(keyword) {
+  if (!keyword) return undefined;
+  const contains = String(keyword);
+  return {
+    OR: [
+      { name: { contains, mode: 'insensitive' } },
+      { email: { contains, mode: 'insensitive' } },
+      { username: { contains, mode: 'insensitive' } },
+      { role: { contains, mode: 'insensitive' } }
+    ]
+  };
+}
+
+// Function query user แบบ pagination พร้อม meta
 async function listUsers({ keyword, page = 1, perPage = 10 } = {}) {
-  if (!isSupabaseEnabled) {
-    let rows = [...store.users].map(withoutPassword);
-    if (keyword) {
-      const kw = String(keyword).toLowerCase();
-      rows = rows.filter((item) => [item.name, item.email, item.username, item.role].some((field) => String(field || '').toLowerCase().includes(kw)));
-    }
-    return paginate(rows, page, perPage);
-  }
+  const { page: safePage, perPage: safePerPage, from } = normalizePagination(page, perPage);
+  const where = buildKeywordFilter(keyword);
 
-  const { page: safePage, perPage: safePerPage, from, to } = normalizePagination(page, perPage);
-
-  let query = supabase
-    .from('users')
-    .select('id,username,name,email,role,permissions,status,created_at,updated_at', { count: 'exact' });
-
-  if (keyword) {
-    const kw = String(keyword).replace(/%/g, '\\%').replace(/_/g, '\\_');
-    query = query.or(`name.ilike.%${kw}%,email.ilike.%${kw}%,username.ilike.%${kw}%,role.ilike.%${kw}%`);
-  }
-
-  const { data, error, count } = await query.order('created_at', { ascending: false }).range(from, to);
-  if (error) throw error;
+  const [rows, count] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: from,
+      take: safePerPage
+    }),
+    prisma.user.count({ where })
+  ]);
 
   return {
-    data: (data || []).map((row) => withoutPassword(toUserApi(row))),
+    data: rows.map((row) => withoutPassword(toUserApi(row))),
     meta: buildMeta(safePage, safePerPage, count)
   };
 }
 
+// Function query user 
+async function listAllUsers({ keyword } = {}) {
+  const where = buildKeywordFilter(keyword);
+  const rows = await prisma.user.findMany({
+    where,
+    orderBy: { createdAt: 'desc' }
+  });
+
+  return rows.map((row) => withoutPassword(toUserApi(row)));
+}
+
+// Function หา active user จาก username และ password สำหรับ login
 async function findActiveUserByCredentials(username, password) {
   if (!username || !password) return null;
 
-  if (!isSupabaseEnabled) {
-    return store.users.find((item) => item.username === username && item.password === password && item.status === 'active') || null;
-  }
+  const user = await prisma.user.findFirst({
+    where: { username, status: 'active' }
+  });
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('username', username)
-    .eq('password', password)
-    .eq('status', 'active')
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return toUserApi(data);
+  if (!user || !verifyPassword(password, user.passwordHash)) return null;
+  return toUserApi(user);
 }
 
+// Function query user ด้วย id
 async function getUserById(id) {
   if (!id) return null;
 
-  if (!isSupabaseEnabled) {
-    return store.users.find((item) => item.id === id) || null;
-  }
+  const user = await prisma.user.findUnique({
+    where: { id }
+  });
 
-  const { data, error } = await supabase.from('users').select('*').eq('id', id).maybeSingle();
-  if (error) throw error;
-  return toUserApi(data);
+  return withoutPassword(toUserApi(user));
 }
 
+// Function ตรวจสอบว่า username ถูกใช้งานแล้วหรือยัง
 async function isUsernameTaken(username, { excludeId } = {}) {
   if (!username) return false;
 
-  if (!isSupabaseEnabled) {
-    return store.users.some((item) => item.username === username && (!excludeId || item.id !== excludeId));
-  }
+  const user = await prisma.user.findFirst({
+    where: {
+      username,
+      ...(excludeId ? { id: { not: excludeId } } : {})
+    },
+    select: { id: true }
+  });
 
-  let query = supabase.from('users').select('id').eq('username', username).limit(1);
-  if (excludeId) query = query.neq('id', excludeId);
-  const { data, error } = await query.maybeSingle();
-  if (error) throw error;
-  return Boolean(data);
+  return Boolean(user);
 }
 
+// Function create user ใหม่ใน database
 async function createUser(payload) {
-  const user = {
-    id: createId('u'),
-    username: payload.username,
-    password: payload.password,
-    name: payload.name,
-    email: payload.email || null,
-    role: payload.role || 'staff',
-    permissions: payload.permissions || [],
-    status: payload.status || 'active',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
+  const user = await prisma.user.create({
+    data: {
+      id: createId('u'),
+      username: payload.username,
+      passwordHash: hashPassword(payload.password),
+      name: payload.name,
+      email: payload.email || null,
+      phone: payload.phone || null,
+      role: payload.role || 'staff',
+      permissions: payload.permissions || [],
+      status: payload.status || 'active'
+    }
+  });
 
-  if (!isSupabaseEnabled) {
-    store.users.push(user);
-    return withoutPassword(user);
-  }
-
-  const { data, error } = await supabase
-    .from('users')
-    .insert({
-      id: user.id,
-      username: user.username,
-      password: user.password,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      permissions: user.permissions,
-      status: user.status
-    })
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return withoutPassword(toUserApi(data));
+  return withoutPassword(toUserApi(user));
 }
 
+// Function update user ด้วย id
 async function updateUser(id, patch = {}) {
   const existing = await getUserById(id);
   if (!existing) return null;
 
-  const updated = {
-    ...existing,
-    ...pick(patch, ['username', 'password', 'name', 'email', 'role', 'permissions', 'status']),
-    updatedAt: new Date().toISOString()
-  };
+  const updates = pick(patch, ['username', 'name', 'email', 'phone', 'role', 'permissions', 'status']);
+  if (patch.password) updates.passwordHash = hashPassword(patch.password);
 
-  if (!isSupabaseEnabled) {
-    Object.assign(existing, updated);
-    return withoutPassword(existing);
-  }
+  const user = await prisma.user.update({
+    where: { id },
+    data: updates
+  });
 
-  const { data, error } = await supabase
-    .from('users')
-    .update({
-      username: updated.username,
-      password: updated.password,
-      name: updated.name,
-      email: updated.email,
-      role: updated.role,
-      permissions: updated.permissions,
-      status: updated.status
-    })
-    .eq('id', id)
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return withoutPassword(toUserApi(data));
+  return withoutPassword(toUserApi(user));
 }
 
+// Function delete user ด้วย id
 async function deleteUser(id) {
   const existing = await getUserById(id);
   if (!existing) return null;
 
-  if (!isSupabaseEnabled) {
-    const index = store.users.findIndex((item) => item.id === id);
-    const [removed] = store.users.splice(index, 1);
-    return withoutPassword(removed);
-  }
+  const user = await prisma.user.delete({
+    where: { id }
+  });
 
-  const { data, error } = await supabase.from('users').delete().eq('id', id).select('*').single();
-  if (error) throw error;
-  return withoutPassword(toUserApi(data));
+  return withoutPassword(toUserApi(user));
 }
 
+// Export Functions
 module.exports = {
   listUsers,
+  listAllUsers,
   findActiveUserByCredentials,
   getUserById,
   isUsernameTaken,

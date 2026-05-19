@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const paymentRepo = require('../data/repositories/paymentSettings.repo');
-const { authorize } = require('../middlewares/auth.middleware');
+const { authorize } = require('../middleware/permission');
 
 // Payment settings are restricted to super_admin or staff with pricing permission
 router.use(authorize(['super_admin', 'staff'], 'pricing'));
@@ -48,3 +48,4 @@ router.patch('/channels/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+

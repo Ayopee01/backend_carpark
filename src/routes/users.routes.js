@@ -1,3 +1,4 @@
+// Import Require
 const express = require('express');
 const {
   listUsers,
@@ -10,6 +11,7 @@ const {
 
 const router = express.Router();
 
+// Route query user แบบ pagination
 router.get('/', async (req, res, next) => {
   try {
     const { keyword, page = 1, per_page = 10 } = req.query;
@@ -20,6 +22,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Route create user ใหม่
 router.post('/', async (req, res, next) => {
   try {
     const payload = req.body;
@@ -38,6 +41,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// Route update user ด้วย id
 router.put('/:id', async (req, res, next) => {
   try {
     const id = req.params.id;
@@ -67,6 +71,7 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
+// Route delete user ด้วย id
 router.delete('/:id', async (req, res, next) => {
   try {
     const user = await deleteUser(req.params.id);
@@ -79,4 +84,5 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Export router
 module.exports = router;

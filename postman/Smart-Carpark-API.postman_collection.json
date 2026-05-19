@@ -4,52 +4,765 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
-    { "key": "token", "value": "" }
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "transactionId", "value": "t_seed_002" },
+    { "key": "userId", "value": "u2" },
+    { "key": "memberId", "value": "u2" },
+    { "key": "deviceId", "value": "d1" },
+    { "key": "kioskDeviceId", "value": "K-SEED-001" },
+    { "key": "activationCode", "value": "" },
+    { "key": "pricingRuleId", "value": "pr_car_2_3" },
+    { "key": "paymentMethodId", "value": "cash" },
+    { "key": "paymentChannelId", "value": "ch_cashier" }
   ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
   "item": [
     {
-      "name": "Login",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","login"] },
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"123456\"\n}"
+      "name": "System",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/"
+          }
+        },
+        {
+          "name": "Health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "DB Health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/db"
+          }
+        },
+        {
+          "name": "OpenAPI JSON",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/docs/openapi.json"
+          }
+        },
+        {
+          "name": "Swagger UI",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/docs"
+          }
         }
-      }
+      ]
     },
     {
-      "name": "Dashboard Overview",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-        "url": { "raw": "{{baseUrl}}/api/v1/dashboard/overview", "host": ["{{baseUrl}}"], "path": ["api","v1","dashboard","overview"] }
-      }
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) pm.collectionVariables.set('token', json.token);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"superadmin\",\n  \"password\": \"123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.token) pm.collectionVariables.set('token', json.token);",
+                  "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/dashboard"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Overview",
+      "item": [
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/overview/summary?startDate=2026-05-01&endDate=2026-05-31"
+          }
+        }
+      ]
     },
     {
       "name": "Transactions",
-      "request": {
-        "method": "GET",
-        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-        "url": { "raw": "{{baseUrl}}/api/v1/transactions", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions"] }
-      }
+      "item": [
+        {
+          "name": "List Transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/transactions?page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Search Transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/transactions?keyword=PK&page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Create Transaction",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/transactions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plateNo\": \"9กท1001\",\n  \"vehicleType\": \"car\",\n  \"serviceType\": \"parking\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Transaction By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+          }
+        },
+        {
+          "name": "Process Payment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}/payment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"cash\",\n  \"channel\": \"cashier\",\n  \"amount\": 40\n}"
+            }
+          }
+        },
+        {
+          "name": "Patch Transaction",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plateNo\": \"8ขช1001\",\n  \"vehicleType\": \"car\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Patch Transaction Status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"pending\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Transaction",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+          }
+        }
+      ]
     },
     {
-      "name": "Generate Mock QR",
-      "request": {
-        "method": "POST",
-        "header": [
-          { "key": "Authorization", "value": "Bearer {{token}}" },
-          { "key": "Content-Type", "value": "application/json" }
-        ],
-        "url": { "raw": "{{baseUrl}}/api/v1/transactions/t2/payment", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","t2","payment"] },
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"method\": \"qr\",\n  \"action\": \"generate\"\n}"
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users?page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"staff_test\",\n  \"password\": \"123456\",\n  \"name\": \"Staff Test\",\n  \"email\": \"staff_test@example.com\",\n  \"phone\": \"0800000099\",\n  \"role\": \"staff\",\n  \"permissions\": [\"dashboard\", \"transactions\"],\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/users/{{userId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated User\",\n  \"permissions\": [\"dashboard\", \"transactions\", \"overview\"],\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/{{userId}}"
+          }
         }
-      }
+      ]
+    },
+    {
+      "name": "Members",
+      "item": [
+        {
+          "name": "Member Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/members/stats"
+          }
+        },
+        {
+          "name": "List Members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/members?page=1&per_page=10"
+          }
+        },
+        {
+          "name": "Create Member",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/members",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"member_test\",\n  \"password\": \"123456\",\n  \"name\": \"Member Test\",\n  \"email\": \"member_test@example.com\",\n  \"phone\": \"0800000088\",\n  \"role\": \"staff\",\n  \"permissions\": [\"dashboard\", \"transactions\"],\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Member",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/members/{{memberId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Member\",\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Member Permissions",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/members/{{memberId}}/permissions",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissions\": [\"dashboard\", \"transactions\", \"overview\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Member",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/members/{{memberId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Service Pricing",
+      "item": [
+        {
+          "name": "Get Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/service-pricing/config"
+          }
+        },
+        {
+          "name": "Update Config",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/service-pricing/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentChannels\": [\n    { \"code\": \"cash\", \"label\": \"Cash\", \"enabled\": true },\n    { \"code\": \"qr\", \"label\": \"QR Payment\", \"enabled\": true }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Calculate Pricing",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/service-pricing/calculate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entryAt\": \"2026-05-01T08:00:00+07:00\",\n  \"exitAt\": \"2026-05-01T11:30:00+07:00\",\n  \"vehicleType\": \"car\",\n  \"serviceType\": \"parking\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Rule",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/service-pricing/rules",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceType\": \"parking\",\n  \"vehicleType\": \"car\",\n  \"conditionType\": \"range\",\n  \"hourStart\": 5,\n  \"hourEnd\": 6,\n  \"price\": 40,\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Patch Rule",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/service-pricing/rules/{{pricingRuleId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 25,\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Rule",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/service-pricing/rules/{{pricingRuleId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Settings",
+      "item": [
+        {
+          "name": "List Methods",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payment-settings/methods"
+          }
+        },
+        {
+          "name": "Patch Method",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/payment-settings/methods/{{paymentMethodId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true,\n  \"label\": \"Cash\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Channels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payment-settings/channels"
+          }
+        },
+        {
+          "name": "Patch Channel Mapping",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/payment-settings/channels/{{paymentChannelId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allowedMethods\": [\"cash\", \"qr\", \"bank1\"]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "Get Device Config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/config"
+          }
+        },
+        {
+          "name": "Create Device",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/devices",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceCode\": \"TEST001\",\n  \"deviceName\": \"Test Device\",\n  \"deviceType\": \"printer\",\n  \"connectionType\": \"lan\",\n  \"ipAddress\": \"192.168.1.200\",\n  \"status\": \"active\",\n  \"isOnline\": true,\n  \"note\": \"Created from Postman\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Device",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/devices/{{deviceId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceName\": \"Updated Device\",\n  \"isOnline\": false,\n  \"note\": \"Updated from Postman\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Device",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/{{deviceId}}"
+          }
+        },
+        {
+          "name": "Generate Kiosk Activation Code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/devices/kiosks/activation-code",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Payment Kiosk Test\",\n  \"location\": \"Lobby Test\",\n  \"version\": \"1.0.0\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Kiosks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/kiosks"
+          }
+        },
+        {
+          "name": "Update Kiosk",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/devices/kiosks/{{kioskDeviceId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"online\",\n  \"location\": \"Updated Lobby\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Kiosk",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/kiosks/{{kioskDeviceId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Theme",
+      "item": [
+        {
+          "name": "Get Theme",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/theme"
+          }
+        },
+        {
+          "name": "Update Theme",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/theme",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"themeColor\": \"#FFD54F\",\n  \"logoUrl\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "Upload Logo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/theme/upload-logo",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "logo", "type": "file", "src": [] }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Logo",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/theme/logo"
+          }
+        }
+      ]
+    },
+    {
+      "name": "System Settings",
+      "item": [
+        {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/system-settings"
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/system-settings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"general\": {\n    \"systemName\": \"Smart Carpark UAT\",\n    \"location\": \"Main Building\",\n    \"language\": \"th\",\n    \"timezone\": \"Asia/Bangkok\",\n    \"frontendUrl\": \"http://localhost:3000\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Receipt Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/system-settings/receipt"
+          }
+        },
+        {
+          "name": "Update Receipt Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/system-settings/receipt",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entryBill\": {\n    \"showDate\": true,\n    \"showEntryTime\": true,\n    \"showQrCode\": true,\n    \"showBillNo\": true\n  },\n  \"paymentBill\": {\n    \"showDate\": true,\n    \"showEntryTime\": true,\n    \"showQrCode\": true,\n    \"showBillNo\": true,\n    \"showExpiryTime\": true,\n    \"expiryDuration\": 15\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Printer Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/system-settings/receipt/printer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fontSize\": 12,\n  \"billNumberFontSize\": 16,\n  \"paperWidth\": 80\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Kiosk",
+      "item": [
+        {
+          "name": "Events SSE",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/kiosk/events?deviceId={{kioskDeviceId}}"
+          }
+        },
+        {
+          "name": "Entry",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/kiosk/entry",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{kioskDeviceId}}\",\n  \"plateNo\": \"7คง1001\",\n  \"vehicleType\": \"car\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check In",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/kiosk/check-in",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{kioskDeviceId}}\",\n  \"name\": \"Payment Kiosk 1\",\n  \"location\": \"Lobby A\",\n  \"version\": \"1.0.0\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Activate",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/kiosk/activate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{activationCode}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Config",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/kiosk/config?deviceId={{kioskDeviceId}}"
+          }
+        },
+        {
+          "name": "Search Plate",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/kiosk/search?plateNo=7คง"
+          }
+        },
+        {
+          "name": "Get Kiosk Transaction",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/kiosk/transaction/{{transactionId}}"
+          }
+        },
+        {
+          "name": "Kiosk Payment",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/kiosk/payment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"method\": \"qr\",\n  \"amount\": 40,\n  \"deviceId\": \"{{kioskDeviceId}}\"\n}"
+            }
+          }
+        }
+      ]
     }
   ]
 }

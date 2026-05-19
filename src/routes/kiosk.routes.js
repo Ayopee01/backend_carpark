@@ -1,95 +1,80 @@
+// Import Require
 const express = require('express');
-const { listTransactions, getTransactionById, processPayment, toTransactionApi, createTransaction } = require('../data/repositories/transactions.repo');
-const { updateKioskStatus, activateKiosk } = require('../data/repositories/kiosks.repo');
-const { store } = require('../data/store');
-const appEvents = require('../utils/events'); // [NEW] นำเข้า Event Emitter สำหรับ Realtime
+const {
+  createTransaction,
+  getTransactionApiById,
+  listTransactions,
+  processPayment,
+} = require('../data/repositories/transactions.repo');
+const {
+  activateKiosk,
+  searchKiosk,
+  updateKioskStatus,
+} = require('../data/repositories/kiosks.repo');
+const { getConfig } = require('../data/repositories/config.repo');
+const defaults = require('../data/defaults');
+const appEvents = require('../utils/events');
 
 const router = express.Router();
 
-/**
- * 📡 Kiosk SSE (Server-Sent Events)
- * ท่อรับส่งข้อมูลแบบ Realtime ทางเดียว (Server -> Kiosk) 
- * เพื่อใช้สั่งเปลี่ยนธีมแบบไม่ต้องรีเฟรช
- */
-router.get('/events', (req, res) => {
-  const { deviceId } = req.query;
-
-  // ถ้าส่ง deviceId มา ให้ตรวจสอบว่าตู้นี้มีจริงไหม
-  if (deviceId) {
-    const kiosk = store.kiosks.find(k => k.deviceId === deviceId);
-    if (!kiosk) {
-      return res.status(401).json({ message: 'Unauthorized device' });
+// Route SSE สำหรับส่ง event update ไปยัง kiosk
+router.get('/events', async (req, res, next) => {
+  try {
+    const { deviceId } = req.query;
+    if (deviceId) {
+      const kiosk = await searchKiosk(deviceId);
+      if (!kiosk) return res.status(401).json({ message: 'Unauthorized device' });
     }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE Connection Established' })}\n\n`);
+
+    const onThemeUpdated = (newTheme) => {
+      res.write(`data: ${JSON.stringify({ type: 'theme_updated', theme: newTheme })}\n\n`);
+    };
+
+    appEvents.on('theme_updated', onThemeUpdated);
+    req.on('close', () => appEvents.off('theme_updated', onThemeUpdated));
+  } catch (err) {
+    next(err);
   }
-
-  // ตั้งค่า Header ให้เป็น Event Stream
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders(); // ส่ง Header ไปให้ Client ทันที
-
-  // ส่งข้อความแรกบอกว่าต่อติดแล้ว
-  res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE Connection Established' })}\n\n`);
-
-  // ฟังก์ชันสำหรับส่งข้อมูลให้ Client เมื่อมีการ Trigger event จากส่วนอื่น
-  const onThemeUpdated = (newTheme) => {
-    res.write(`data: ${JSON.stringify({ type: 'theme_updated', theme: newTheme })}\n\n`);
-  };
-
-  // รับฟังสัญญาณ (Listen) จากเหตุการณ์ theme_updated
-  appEvents.on('theme_updated', onThemeUpdated);
-
-  // ทำความสะอาดเมื่อ Client ปิดเว็บ หรือเน็ตหลุด
-  req.on('close', () => {
-    appEvents.off('theme_updated', onThemeUpdated);
-  });
 });
 
-/**
- * 🚗 Kiosk Entry (ออกบิลเข้าลานจอด)
- * ตู้ขาเข้าเรียกเส้นนี้เพื่อสร้างรายการจอดรถใหม่
- */
+// Route kiosk สร้างรายการรถเข้าและออกบิล
 router.post('/entry', async (req, res, next) => {
   try {
     const { deviceId, plateNo, vehicleType } = req.body;
+    if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
+    if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
 
-    if (!deviceId) {
-      return res.status(400).json({ message: 'deviceId is required' });
-    }
-    if (!plateNo) {
-      return res.status(400).json({ message: 'plateNo is required' });
-    }
-
-    const kiosk = store.kiosks.find(k => k.deviceId === deviceId);
+    const kiosk = await searchKiosk(deviceId);
     if (!kiosk || kiosk.status === 'maintenance') {
       return res.status(403).json({ message: 'Invalid kiosk or currently under maintenance' });
     }
 
-    // สร้าง Transaction ใหม่
     const newTransaction = await createTransaction({
       plateNo,
       vehicleType: vehicleType || 'car',
-      serviceType: 'parking'
+      serviceType: 'parking',
     });
+    const systemSettings = await getConfig('system_settings', defaults.systemSettings);
 
-    // อัปเดตสถานะการออนไลน์ของตู้
     await updateKioskStatus(deviceId, { ip: req.ip });
 
-    // ส่งคืนข้อมูลบิล พร้อมกับตั้งค่ากระดาษใบเสร็จเพื่อให้ตู้นำไปพิมพ์
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Entry bill created successfully',
       transaction: newTransaction,
-      receiptConfig: store.systemSettings?.receipt?.entryBill || {}
+      receiptConfig: systemSettings.receipt?.entryBill || {},
     });
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * 🛰️ Kiosk Check-in (Heartbeat)
- * ตู้ Kiosk เรียกเส้นนี้เพื่อบอกว่ายังออนไลน์อยู่
- */
+// Route kiosk check-in เพื่อ update lastSeen และสถานะ online
 router.post('/check-in', async (req, res, next) => {
   try {
     const { deviceId, name, location, version } = req.body;
@@ -99,23 +84,20 @@ router.post('/check-in', async (req, res, next) => {
       name,
       location,
       version,
-      ip: req.ip // เก็บ IP จริงของตู้ไว้ด้วย
+      ip: req.ip,
     });
 
-    res.json({
+    return res.json({
       message: 'Check-in successful',
-      status: kiosk.status, // [NEW] บอกสถานะตู้กลับไป
-      kiosk
+      status: kiosk.status,
+      kiosk,
     });
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * 🔑 Kiosk Activation
- * นำรหัส 6 หลักมาแลกเป็นสิทธิ์การใช้งาน
- */
+// Route activate kiosk ด้วย activation code
 router.post('/activate', async (req, res, next) => {
   try {
     const { code } = req.body;
@@ -124,49 +106,34 @@ router.post('/activate', async (req, res, next) => {
     const result = await activateKiosk(code);
     if (!result.success) return res.status(400).json(result);
 
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * 🎨 Kiosk Config
- * ดึงธีมสีและโลโก้ที่แอดมินตั้งค่าไว้ไปใช้ที่หน้าตู้ (บังคับใช้ deviceId)
- */
+// Route query config สำหรับ kiosk
 router.get('/config', async (req, res, next) => {
   try {
     const { deviceId } = req.query;
     let status = 'unregistered';
 
-    // ถ้าส่ง deviceId มา ให้เช็คสถานะตู้
     if (deviceId) {
-      const kiosk = store.kiosks.find(k => k.deviceId === deviceId);
-      if (!kiosk) {
-        return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
-      }
+      const kiosk = await searchKiosk(deviceId);
+      if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
       status = kiosk.status;
     }
 
-    const currentTheme = store.theme || {
-      themeColor: '#FFD54F',
-      logoUrl: null,
-      themeName: 'default',
-      updatedAt: null,
-    };
+    const currentTheme = await getConfig('theme', defaults.theme);
+    const systemSettings = await getConfig('system_settings', defaults.systemSettings);
 
-    // ส่งออกเฉพาะ field ที่ Kiosk ต้องใช้
-    // ไม่ส่ง presets ออกไปใน API นี้
-    const kioskTheme = {
-      themeColor: currentTheme.themeColor || '#FFD54F',
-      logoUrl: currentTheme.logoUrl ?? null,
-      themeName: currentTheme.themeName || currentTheme.themeColor || 'default',
-      updatedAt: currentTheme.updatedAt || null,
-    };
-
-    res.json({
-      theme: kioskTheme,
-      systemName: 'Smart Carpark Kiosk',
+    return res.json({
+      theme: {
+        themeColor: currentTheme.themeColor ?? null,
+        logoUrl: currentTheme.logoUrl ?? null,
+        updatedAt: currentTheme.updatedAt || null,
+      },
+      systemName: systemSettings.general?.systemName,
       status,
     });
   } catch (err) {
@@ -174,97 +141,70 @@ router.get('/config', async (req, res, next) => {
   }
 });
 
-/**
- * 🔍 Kiosk Search API
- * ค้นหารถที่ยังจอดอยู่ในอาคาร
- * GET /api/v1/kiosk/search
- * Body:
- * {
- *   "plateNo": "ทน4383"
- * }
- */
+// Route ค้นหา transaction ที่ยังค้างชำระด้วยทะเบียนรถ
 router.get('/search', async (req, res, next) => {
   try {
-    const { plateNo } = req.body || {};
+    const { plateNo } = req.query || {};
+    if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
 
-    if (!plateNo) {
-      return res.status(400).json({ message: 'Plate number is required in body' });
-    }
-
-    const result = await listTransactions({
-      plateNo
-    });
-
-    res.json({
+    const result = await listTransactions({ plateNo, status: 'pending' });
+    return res.json({
       count: result.meta ? result.meta.total : result.data.length,
-      items: result.data.map(toTransactionApi)
+      items: result.data,
     });
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * 📄 Kiosk Transaction Details
- * ดูรายละเอียดและยอดเงินปัจจุบันของรถคันนั้นๆ
- */
+// Route query transaction รายการเดียวสำหรับ kiosk payment
 router.get('/transaction/:id', async (req, res, next) => {
   try {
-    const transaction = await getTransactionById(req.params.id);
-    if (!transaction) {
-      return res.status(404).json({ message: 'Transaction not found' });
-    }
-
-    // ห้ามดูข้อมูลรถที่ออกไปแล้วผ่านช่องทาง Kiosk เพื่อความเป็นส่วนตัว
+    const transaction = await getTransactionApiById(req.params.id);
+    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
     if (transaction.status === 'completed' || transaction.status === 'cancelled') {
       return res.status(403).json({ message: 'This transaction is already processed' });
     }
 
-    res.json(toTransactionApi(transaction));
+    return res.json(transaction);
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * 💰 Kiosk Payment API
- * บันทึกการชำระเงินจากตู้ Kiosk (จำลองการรับเงินจากตู้)
- */
+// Route รับชำระเงินจาก kiosk
 router.post('/payment', async (req, res, next) => {
   try {
     const { transactionId, method, amount, deviceId } = req.body;
 
-    // [NEW] ตรวจสอบสถานะตู้ก่อนรับเงิน
     if (deviceId) {
-      const kiosk = store.kiosks.find(k => k.deviceId === deviceId);
+      const kiosk = await searchKiosk(deviceId);
       if (kiosk && kiosk.status === 'maintenance') {
         return res.status(403).json({
           message: 'This kiosk is currently under maintenance. Payment is disabled.',
-          status: 'maintenance'
+          status: 'maintenance',
         });
       }
       await updateKioskStatus(deviceId, { ip: req.ip });
     }
 
-    // บันทึกการจ่ายเงิน โดยระบุช่องทางเป็น 'kiosk'
     const result = await processPayment(transactionId, {
       method: method || 'qr_code',
       channel: 'kiosk',
-      amount: amount,
-      processedBy: deviceId ? `kiosk_${deviceId}` : 'system_kiosk'
+      amount,
+      processedBy: deviceId ? `kiosk_${deviceId}` : 'system_kiosk',
     });
 
-    if (!result) {
-      return res.status(400).json({ message: 'Payment processing failed' });
-    }
+    if (!result) return res.status(400).json({ message: 'Payment processing failed' });
 
-    res.json({
+    return res.json({
       message: 'Payment received successfully',
-      transaction: toTransactionApi(result)
+      transaction: result,
     });
   } catch (err) {
     next(err);
   }
 });
 
+// Export router
 module.exports = router;
