@@ -14,6 +14,9 @@ services:
       - "8080"
     volumes:
       - ./uploads:/app/uploads
+    networks:
+      - carpark-network
+      - npm-network
 
   db:
     image: postgres:16-alpine
@@ -24,25 +27,23 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-smart_carpark}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-smart_carpark} -d $${POSTGRES_DB:-smart_carpark_uat}"]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-smart_carpark} -d $${POSTGRES_DB:-smart_carpark_uat}" ]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  nginx:
-    image: nginx:1.27-alpine
-    container_name: smart-carpark-nginx
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "8080:80"
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - carpark-network
 
 volumes:
   postgres_data:
+
+networks:
+  carpark-network:
+    driver: bridge
+
+  npm-network:
+    external: true
