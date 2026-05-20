@@ -23,6 +23,7 @@ const devices = {
 const theme = {
   themeColor: null,
   logoUrl: null,
+  themeMode: '',
 };
 
 // Constant default config สำหรับตั้งค่าทั่วไปของระบบ, ใบเสร็จ และ billing

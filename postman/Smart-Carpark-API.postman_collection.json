@@ -586,7 +586,7 @@
             "url": "{{baseUrl}}/api/v1/theme",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"themeColor\": \"#FFD54F\",\n  \"logoUrl\": null\n}"
+              "raw": "{\n  \"themeColor\": \"#FFD54F\",\n  \"logoUrl\": null,\n  \"themeMode\": \"\"\n}"
             }
           }
         },

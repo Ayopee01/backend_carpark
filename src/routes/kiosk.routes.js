@@ -131,6 +131,7 @@ router.get('/config', async (req, res, next) => {
       theme: {
         themeColor: currentTheme.themeColor ?? null,
         logoUrl: currentTheme.logoUrl ?? null,
+        themeMode: currentTheme.themeMode ?? '',
         updatedAt: currentTheme.updatedAt || null,
       },
       systemName: systemSettings.general?.systemName,

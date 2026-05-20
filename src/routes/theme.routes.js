@@ -40,7 +40,8 @@ const upload = multer({
 // Constant ค่า default ของ theme
 const DEFAULT_THEME = {
   themeColor: null,
-  logoUrl: null
+  logoUrl: null,
+  themeMode: ''
 };
 
 // Function ทำให้ theme response มีรูปแบบคงที่
@@ -48,6 +49,7 @@ function normalizeTheme(theme) {
   return {
     themeColor: theme?.themeColor ?? null,
     logoUrl: theme?.logoUrl ?? null,
+    themeMode: theme?.themeMode ?? '',
     updatedAt: theme?.updatedAt
   };
 }
@@ -80,6 +82,9 @@ router.put('/', async (req, res, next) => {
       logoUrl: Object.prototype.hasOwnProperty.call(body, 'logoUrl')
         ? body.logoUrl
         : current.logoUrl,
+      themeMode: Object.prototype.hasOwnProperty.call(body, 'themeMode')
+        ? body.themeMode
+        : current.themeMode,
       updatedAt: new Date().toISOString()
     };
 
@@ -114,6 +119,7 @@ router.post('/upload-logo', upload.single('logo'), async (req, res, next) => {
     const nextTheme = {
       themeColor: current.themeColor,
       logoUrl,
+      themeMode: current.themeMode,
       updatedAt: new Date().toISOString()
     };
 
@@ -148,6 +154,7 @@ router.delete('/logo', async (req, res, next) => {
     const nextTheme = {
       themeColor: current.themeColor,
       logoUrl: null,
+      themeMode: current.themeMode,
       updatedAt: new Date().toISOString()
     };
 
