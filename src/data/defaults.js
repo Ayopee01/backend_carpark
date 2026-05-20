@@ -24,6 +24,7 @@ const theme = {
   themeColor: null,
   logoUrl: null,
   themeMode: '',
+  customThemeColor: null,
 };
 
 // Constant default config สำหรับตั้งค่าทั่วไปของระบบ, ใบเสร็จ และ billing

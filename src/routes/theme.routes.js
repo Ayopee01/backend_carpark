@@ -41,7 +41,8 @@ const upload = multer({
 const DEFAULT_THEME = {
   themeColor: null,
   logoUrl: null,
-  themeMode: ''
+  themeMode: '',
+  customThemeColor: null
 };
 
 // Function ทำให้ theme response มีรูปแบบคงที่
@@ -50,6 +51,7 @@ function normalizeTheme(theme) {
     themeColor: theme?.themeColor ?? null,
     logoUrl: theme?.logoUrl ?? null,
     themeMode: theme?.themeMode ?? '',
+    customThemeColor: theme?.customThemeColor ?? null,
     updatedAt: theme?.updatedAt
   };
 }
@@ -74,17 +76,28 @@ router.put('/', async (req, res, next) => {
       ...(await getConfig(CONFIG_KEY, defaults.theme))
     });
     const body = req.body || {};
+    const hasThemeColor = Object.prototype.hasOwnProperty.call(body, 'themeColor');
+    const hasLogoUrl = Object.prototype.hasOwnProperty.call(body, 'logoUrl');
+    const hasThemeMode = Object.prototype.hasOwnProperty.call(body, 'themeMode');
+    const hasCustomThemeColor = Object.prototype.hasOwnProperty.call(body, 'customThemeColor');
+
+    const themeMode = hasThemeMode ? body.themeMode : current.themeMode;
+    const customThemeColor = hasCustomThemeColor
+      ? body.customThemeColor
+      : themeMode === 'custom' && hasThemeColor
+        ? body.themeColor
+        : current.customThemeColor;
+    const themeColor = hasThemeColor
+      ? body.themeColor
+      : themeMode === 'custom' && customThemeColor
+        ? customThemeColor
+        : current.themeColor;
 
     const nextTheme = {
-      themeColor: Object.prototype.hasOwnProperty.call(body, 'themeColor')
-        ? body.themeColor
-        : current.themeColor,
-      logoUrl: Object.prototype.hasOwnProperty.call(body, 'logoUrl')
-        ? body.logoUrl
-        : current.logoUrl,
-      themeMode: Object.prototype.hasOwnProperty.call(body, 'themeMode')
-        ? body.themeMode
-        : current.themeMode,
+      themeColor,
+      logoUrl: hasLogoUrl ? body.logoUrl : current.logoUrl,
+      themeMode,
+      customThemeColor,
       updatedAt: new Date().toISOString()
     };
 
@@ -120,6 +133,7 @@ router.post('/upload-logo', upload.single('logo'), async (req, res, next) => {
       themeColor: current.themeColor,
       logoUrl,
       themeMode: current.themeMode,
+      customThemeColor: current.customThemeColor,
       updatedAt: new Date().toISOString()
     };
 
@@ -155,6 +169,7 @@ router.delete('/logo', async (req, res, next) => {
       themeColor: current.themeColor,
       logoUrl: null,
       themeMode: current.themeMode,
+      customThemeColor: current.customThemeColor,
       updatedAt: new Date().toISOString()
     };
 
