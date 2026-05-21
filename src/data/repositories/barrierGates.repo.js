@@ -1,5 +1,6 @@
 // Import Require
 const { getConfig, setConfig } = require('./config.repo');
+const { activateRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('./devices.repo');
 
 const CONFIG_KEY = 'barrier_gates';
 const OFFLINE_AFTER_MINUTES = 5;
@@ -72,6 +73,14 @@ async function activateBarrierGate(code) {
     location: data.location,
     version: data.version || '1.0.0',
   });
+  await activateRegisteredDevice(data.deviceId, {
+    name: barrierGate.name,
+    location: barrierGate.location,
+    ip: barrierGate.ip,
+    version: barrierGate.version,
+    activatedAt: barrierGate.firstSeen,
+    lastSeen: barrierGate.lastSeen,
+  });
 
   activationCodes.delete(code);
   return {
@@ -143,6 +152,12 @@ async function updateBarrierGateStatus(deviceId, details = {}) {
   }
 
   await saveBarrierGates(barrierGates);
+  await updateRegisteredDeviceHeartbeat(deviceId, {
+    name: barrierGate.name,
+    location: barrierGate.location,
+    ip: barrierGate.ip,
+    version: barrierGate.version,
+  });
   return barrierGate;
 }
 

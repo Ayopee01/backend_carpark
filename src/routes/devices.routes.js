@@ -2,6 +2,7 @@
 const express = require('express');
 const {
   createDevice,
+  createPendingActivationDevice,
   deleteDevice,
   getDevicesConfig,
   updateDevice
@@ -37,6 +38,11 @@ router.post('/', async (req, res, next) => {
     const { deviceCode, deviceName, deviceType } = req.body || {};
     if (!deviceCode || !deviceName || !deviceType) {
       return res.status(400).json({ message: 'deviceCode, deviceName and deviceType are required' });
+    }
+    if (['kiosk', 'barrier_gate'].includes(deviceType)) {
+      return res.status(400).json({
+        message: 'Kiosk and Barrier Gate devices must be created through activation-code endpoints'
+      });
     }
 
     const result = await createDevice(req.body || {});
@@ -90,7 +96,16 @@ router.delete('/:id', async (req, res, next) => {
 router.post('/kiosks/activation-code', async (req, res, next) => {
   try {
     const result = await generateActivationCode(req.body || {});
-    res.json({ message: 'Activation code generated', ...result });
+    const pending = await createPendingActivationDevice({
+      ...(req.body || {}),
+      generatedDeviceId: result.deviceId,
+      activationCode: result.code,
+      deviceType: 'kiosk'
+    });
+    if (!pending.ok && pending.reason === 'duplicate') {
+      return res.status(409).json({ message: 'Device code already exists' });
+    }
+    res.json({ message: 'Activation code generated', ...result, device: pending.device, config: pending.config });
   } catch (err) {
     next(err);
   }
@@ -100,7 +115,16 @@ router.post('/kiosks/activation-code', async (req, res, next) => {
 router.post('/barrier-gates/activation-code', async (req, res, next) => {
   try {
     const result = await generateBarrierGateActivationCode(req.body || {});
-    res.json({ message: 'Barrier Gate activation code generated', ...result });
+    const pending = await createPendingActivationDevice({
+      ...(req.body || {}),
+      generatedDeviceId: result.deviceId,
+      activationCode: result.code,
+      deviceType: 'barrier_gate'
+    });
+    if (!pending.ok && pending.reason === 'duplicate') {
+      return res.status(409).json({ message: 'Device code already exists' });
+    }
+    res.json({ message: 'Barrier Gate activation code generated', ...result, device: pending.device, config: pending.config });
   } catch (err) {
     next(err);
   }

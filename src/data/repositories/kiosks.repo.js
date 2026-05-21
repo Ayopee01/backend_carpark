@@ -1,5 +1,6 @@
 // Import Require
 const { getConfig, setConfig } = require('./config.repo');
+const { activateRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('./devices.repo');
 
 // Constant key สำหรับอ้างอิง config kiosks ใน table app_config
 const CONFIG_KEY = 'kiosks';
@@ -80,6 +81,14 @@ async function activateKiosk(code) {
     location: data.location,
     version: '1.0.0',
   });
+  await activateRegisteredDevice(data.deviceId, {
+    name: kiosk.name,
+    location: kiosk.location,
+    ip: kiosk.ip,
+    version: kiosk.version,
+    activatedAt: kiosk.firstSeen,
+    lastSeen: kiosk.lastSeen,
+  });
 
   activationCodes.delete(code);
   return {
@@ -151,6 +160,12 @@ async function updateKioskStatus(deviceId, details = {}) {
   }
 
   await saveKiosks(kiosks);
+  await updateRegisteredDeviceHeartbeat(deviceId, {
+    name: kiosk.name,
+    location: kiosk.location,
+    ip: kiosk.ip,
+    version: kiosk.version,
+  });
   return kiosk;
 }
 
