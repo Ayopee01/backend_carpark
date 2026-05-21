@@ -229,6 +229,15 @@ async function getLatestTransactionByPlateNo(plateNo, { payableOnly = false } = 
   return rows[0] || null;
 }
 
+async function getTransactionByIdOrPlateNo(value, options = {}) {
+  if (!value) return null;
+
+  const byId = await getTransactionById(value);
+  if (byId) return byId;
+
+  return getLatestTransactionByPlateNo(value, options);
+}
+
 // Function query transaction ด้วย id และแปลงเป็นรูปแบบ API
 async function getTransactionApiById(id) {
   const [transaction, context] = await Promise.all([
@@ -248,10 +257,19 @@ async function getTransactionApiByPlateNo(plateNo, options = {}) {
   return toTransactionApi(transaction, context);
 }
 
+async function getTransactionApiByIdOrPlateNo(value, options = {}) {
+  const [transaction, context] = await Promise.all([
+    getTransactionByIdOrPlateNo(value, options),
+    getTransactionContext(),
+  ]);
+
+  return toTransactionApi(transaction, context);
+}
+
 // Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
 async function processPayment(id, { plateNo, method, channel, amount, processedBy, device } = {}) {
   const transaction = id
-    ? await getTransactionById(id)
+    ? await getTransactionByIdOrPlateNo(id, { payableOnly: true })
     : await getLatestTransactionByPlateNo(plateNo, { payableOnly: true });
   if (!transaction) return null;
 
@@ -356,6 +374,9 @@ async function saveTransaction(transaction) {
 async function updateTransaction(id, updates) {
   if (!id) return null;
 
+  const transaction = await getTransactionByIdOrPlateNo(id);
+  if (!transaction) return null;
+
   const data = {};
   if (updates.plateNo !== undefined) data.plateNo = updates.plateNo;
   if (updates.vehicleType !== undefined) data.vehicleType = updates.vehicleType;
@@ -367,7 +388,7 @@ async function updateTransaction(id, updates) {
   if (updates.exitAt !== undefined) data.exitAt = toDateOrNull(updates.exitAt);
 
   const saved = await prisma.transaction.update({
-    where: { id },
+    where: { id: transaction.id },
     data
   });
 
@@ -378,7 +399,9 @@ async function updateTransaction(id, updates) {
 // Function delete transaction ด้วย id
 async function deleteTransaction(id) {
   if (!id) return false;
-  await prisma.transaction.delete({ where: { id } });
+  const transaction = await getTransactionByIdOrPlateNo(id);
+  if (!transaction) return false;
+  await prisma.transaction.delete({ where: { id: transaction.id } });
   return true;
 }
 
@@ -421,6 +444,7 @@ module.exports = {
   getTransactionById,
   getTransactionApiById,
   getTransactionApiByPlateNo,
+  getTransactionApiByIdOrPlateNo,
   saveTransaction,
   updateTransaction,
   deleteTransaction,

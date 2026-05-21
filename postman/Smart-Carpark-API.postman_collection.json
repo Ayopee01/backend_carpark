@@ -238,10 +238,10 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/transactions/payment",
+            "url": "{{baseUrl}}/api/v1/transactions/2ขค5678/payment",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"plateNo\": \"2ขค5678\",\n  \"method\": \"cash\",\n  \"channel\": \"cashier\",\n  \"amount\": 40\n}"
+              "raw": "{\n  \"method\": \"cash\",\n  \"channel\": \"cashier\",\n  \"amount\": 40\n}"
             }
           }
         },
@@ -262,7 +262,7 @@
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}/status",
+            "url": "{{baseUrl}}/api/v1/transactions/2ขค5678/status",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"pending\"\n}"
