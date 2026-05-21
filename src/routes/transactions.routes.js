@@ -10,13 +10,15 @@ router.use(authorize(['super_admin', 'staff'], 'transactions'));
 
 router.get('/', async (req, res, next) => {
   try {
-    const { keyword, plate_no: plateNo, bill_no: billNo, page = 1, per_page = 10 } = req.query;
+    const { keyword, plate_no: plateNo, bill_no: billNo, page = 1, per_page = 10, all } = req.query;
+    const shouldReturnAll = all === 'true' || all === '1';
     
     // Page 3: Operation list (Usually shows all or searchable)
     const result = await listTransactions({
       keyword,
       plateNo,
       billNo,
+      all: shouldReturnAll,
       page: parseInt(page),
       perPage: parseInt(per_page)
     });

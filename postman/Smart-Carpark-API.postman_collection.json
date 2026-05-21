@@ -194,6 +194,14 @@
           }
         },
         {
+          "name": "Search Transactions All By Plate",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/transactions?keyword=กข1234&all=true"
+          }
+        },
+        {
           "name": "Create Transaction",
           "request": {
             "method": "POST",

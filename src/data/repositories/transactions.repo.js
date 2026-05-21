@@ -34,6 +34,12 @@ function normalizePlateNo(plateNo) {
   return plateNo ? String(plateNo).replace(/[\s-]/g, '') : null;
 }
 
+function isLikelyPlateKeyword(value) {
+  const normalized = normalizePlateNo(value);
+  if (!normalized) return false;
+  return /[\p{L}]/u.test(normalized) && /\d/.test(normalized);
+}
+
 // Function query config ที่จำเป็นสำหรับคำนวณ transaction
 async function getTransactionContext() {
   const [pricingConfig, systemSettings] = await Promise.all([
@@ -124,14 +130,18 @@ function buildWhere({ keyword, plateNo, billNo, status, startDate, endDate } = {
   const AND = [];
 
   if (keyword) {
-    const contains = String(keyword);
-    AND.push({
-      OR: [
-        { billNo: { contains, mode: 'insensitive' } },
-        { plateNo: { contains, mode: 'insensitive' } },
-        { serviceType: { contains, mode: 'insensitive' } }
-      ]
-    });
+    if (isLikelyPlateKeyword(keyword)) {
+      AND.push({ plateNo: { contains: normalizePlateNo(keyword), mode: 'insensitive' } });
+    } else {
+      const contains = String(keyword);
+      AND.push({
+        OR: [
+          { billNo: { contains, mode: 'insensitive' } },
+          { plateNo: { contains, mode: 'insensitive' } },
+          { serviceType: { contains, mode: 'insensitive' } }
+        ]
+      });
+    }
   }
 
   if (plateNo) {
@@ -154,20 +164,28 @@ function buildWhere({ keyword, plateNo, billNo, status, startDate, endDate } = {
 
 // Function query transaction แบบ pagination และ filter เพิ่มตามสถานะการจ่ายเงิน
 async function listTransactions(filters = {}) {
-  const { paymentStatus, excludeOverstay, page = 1, perPage = 10 } = filters;
+  const { paymentStatus, excludeOverstay, all = false, page = 1, perPage = 10 } = filters;
   const { page: safePage, perPage: safePerPage, from } = normalizePagination(page, perPage);
   const context = await getTransactionContext();
   const where = buildWhere(filters);
 
-  const [rowsRaw, count] = await Promise.all([
-    prisma.transaction.findMany({
-      where,
-      orderBy: { updatedAt: 'desc' },
-      skip: from,
-      take: safePerPage
-    }),
-    prisma.transaction.count({ where })
-  ]);
+  const [rowsRaw, count] = all
+    ? [
+      await prisma.transaction.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' }
+      }),
+      null
+    ]
+    : await Promise.all([
+      prisma.transaction.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip: from,
+        take: safePerPage
+      }),
+      prisma.transaction.count({ where })
+    ]);
 
   let rows = rowsRaw.map((row) => toTransactionApi(row, context));
   if (paymentStatus) rows = rows.filter((item) => item.payments.some((payment) => payment.status === paymentStatus));
@@ -175,7 +193,9 @@ async function listTransactions(filters = {}) {
 
   return {
     data: rows,
-    meta: buildMeta(safePage, safePerPage, count)
+    meta: all
+      ? { all: true, total: rows.length, totalFound: rows.length }
+      : buildMeta(safePage, safePerPage, count)
   };
 }
 
