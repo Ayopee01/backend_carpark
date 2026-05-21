@@ -37,9 +37,15 @@ router.get('/events', async (req, res, next) => {
     const onThemeUpdated = (newTheme) => {
       res.write(`data: ${JSON.stringify({ type: 'theme_updated', theme: newTheme })}\n\n`);
     };
+    const keepAlive = setInterval(() => {
+      res.write(`data: ${JSON.stringify({ type: 'ping', at: new Date().toISOString() })}\n\n`);
+    }, 25 * 1000);
 
     appEvents.on('theme_updated', onThemeUpdated);
-    req.on('close', () => appEvents.off('theme_updated', onThemeUpdated));
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      appEvents.off('theme_updated', onThemeUpdated);
+    });
   } catch (err) {
     next(err);
   }
