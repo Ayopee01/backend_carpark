@@ -4,6 +4,7 @@ const { activateRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('.
 
 const CONFIG_KEY = 'barrier_gates';
 const OFFLINE_AFTER_MINUTES = 5;
+const ACTIVATION_TTL_MS = 10 * 60 * 1000;
 const activationCodes = new Map();
 
 function cleanupExpiredActivationCodes() {
@@ -57,7 +58,7 @@ async function generateBarrierGateActivationCode(details = {}) {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const count = (barrierGates.length + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `BG-${dateStr}-${count}`;
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + ACTIVATION_TTL_MS);
 
   activationCodes.set(code, {
     ...details,

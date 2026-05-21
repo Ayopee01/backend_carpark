@@ -51,6 +51,7 @@ const openapi = {
 
     /* Devices (and Kiosk admin) */
     '/api/v1/devices/config': { get: { tags: ['Devices'], summary: 'Get devices config', responses: { 200: { description: 'Devices' } } } },
+    '/api/v1/devices/events': { get: { tags: ['Devices'], summary: 'SSE events for device status changes', responses: { 200: { description: 'SSE stream established' } } } },
     '/api/v1/devices': { post: { tags: ['Devices'], summary: 'Create device', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 201: { description: 'Created' } } } },
     '/api/v1/devices/{id}': { put: { tags: ['Devices'], summary: 'Update device', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Devices'], summary: 'Delete device', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Deleted' } } } },
     '/api/v1/devices/kiosks/activation-code': { post: { tags: ['Devices'], summary: 'Generate kiosk activation code', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Activation code generated' } } } },

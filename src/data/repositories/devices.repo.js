@@ -6,6 +6,7 @@ const { getConfig, setConfig } = require('./config.repo');
 const CONFIG_KEY = 'devices';
 const OFFLINE_AFTER_MINUTES = 5;
 const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate']);
+const appEvents = require('../../utils/events');
 
 function isActivationDevice(device) {
   return ACTIVATION_DEVICE_TYPES.has(device?.deviceType);
@@ -43,14 +44,31 @@ function withSummary(config) {
 
 // Function query devices config จาก database
 async function getDevicesConfig() {
+  return refreshDeviceRuntimeState();
+}
+
+async function refreshDeviceRuntimeState({ emitEvents = false } = {}) {
   const config = await getConfig(CONFIG_KEY, defaults.devices);
   const now = new Date();
   let changed = false;
+  const events = [];
 
   const devices = (Array.isArray(config.devices) ? config.devices : [])
     .filter((device) => {
       const shouldRemove = device.status === 'pending_activation' && isExpired(device.activationExpiresAt, now);
-      if (shouldRemove) changed = true;
+      if (shouldRemove) {
+        changed = true;
+        events.push({
+          type: 'device_activation_expired',
+          deviceId: device.deviceId,
+          id: device.id,
+          deviceCode: device.deviceCode,
+          deviceType: device.deviceType,
+          deviceName: device.deviceName,
+          status: 'expired',
+          isOnline: false,
+        });
+      }
       return !shouldRemove;
     })
     .map((device) => {
@@ -61,6 +79,18 @@ async function getDevicesConfig() {
         isOfflineByLastSeen(device.lastSeen, now)
       ) {
         changed = true;
+        events.push({
+          type: 'device_status_changed',
+          deviceId: device.deviceId,
+          id: device.id,
+          deviceCode: device.deviceCode,
+          deviceType: device.deviceType,
+          deviceName: device.deviceName,
+          previousStatus: device.status,
+          status: 'offline',
+          isOnline: false,
+          lastSeen: device.lastSeen,
+        });
         return {
           ...device,
           isOnline: false,
@@ -73,7 +103,12 @@ async function getDevicesConfig() {
   const nextConfig = withSummary({ ...config, devices });
   if (changed) {
     const saved = await setConfig(CONFIG_KEY, nextConfig);
-    return withSummary(saved);
+    const refreshed = withSummary(saved);
+    if (emitEvents) {
+      events.forEach((event) => appEvents.emit('device_event', event));
+      appEvents.emit('devices_config_updated', refreshed);
+    }
+    return refreshed;
   }
   return nextConfig;
 }
@@ -109,6 +144,18 @@ async function createDevice(payload = {}) {
   };
   const configWithDevice = withSummary({ ...config, devices: [...config.devices, device] });
   const saved = await setConfig(CONFIG_KEY, configWithDevice);
+  appEvents.emit('device_event', {
+    type: 'device_pending_activation_created',
+    deviceId: device.deviceId,
+    id: device.id,
+    deviceCode: device.deviceCode,
+    deviceType: device.deviceType,
+    deviceName: device.deviceName,
+    status: device.status,
+    isOnline: device.isOnline,
+    activationExpiresAt: device.activationExpiresAt,
+  });
+  appEvents.emit('devices_config_updated', withSummary(saved));
 
   return { ok: true, device, config: withSummary(saved) };
 }
@@ -182,6 +229,18 @@ async function activateRegisteredDevice(generatedDeviceId, details = {}) {
   };
 
   const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+  appEvents.emit('device_event', {
+    type: 'device_activated',
+    deviceId: devices[index].deviceId,
+    id: devices[index].id,
+    deviceCode: devices[index].deviceCode,
+    deviceType: devices[index].deviceType,
+    deviceName: devices[index].deviceName,
+    status: devices[index].status,
+    isOnline: devices[index].isOnline,
+    lastSeen: devices[index].lastSeen,
+  });
+  appEvents.emit('devices_config_updated', withSummary(saved));
   return { device: devices[index], config: withSummary(saved) };
 }
 
@@ -204,6 +263,21 @@ async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) 
   };
 
   const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+  if (!current.isOnline || current.status === 'offline') {
+    appEvents.emit('device_event', {
+      type: 'device_status_changed',
+      deviceId: devices[index].deviceId,
+      id: devices[index].id,
+      deviceCode: devices[index].deviceCode,
+      deviceType: devices[index].deviceType,
+      deviceName: devices[index].deviceName,
+      previousStatus: current.status,
+      status: devices[index].status,
+      isOnline: devices[index].isOnline,
+      lastSeen: devices[index].lastSeen,
+    });
+  }
+  appEvents.emit('devices_config_updated', withSummary(saved));
   return { device: devices[index], config: withSummary(saved) };
 }
 
@@ -231,6 +305,7 @@ async function updateDevice(id, body = {}) {
 
   devices[index] = { ...devices[index], ...patch };
   const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+  appEvents.emit('devices_config_updated', withSummary(saved));
 
   return { device: devices[index], config: withSummary(saved) };
 }
@@ -244,6 +319,17 @@ async function deleteDevice(id) {
 
   const [device] = devices.splice(index, 1);
   const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+  appEvents.emit('device_event', {
+    type: 'device_deleted',
+    deviceId: device.deviceId,
+    id: device.id,
+    deviceCode: device.deviceCode,
+    deviceType: device.deviceType,
+    deviceName: device.deviceName,
+    status: 'deleted',
+    isOnline: false,
+  });
+  appEvents.emit('devices_config_updated', withSummary(saved));
 
   return { device, config: withSummary(saved) };
 }
@@ -255,6 +341,7 @@ module.exports = {
   createPendingActivationDevice,
   deleteDevice,
   getDevicesConfig,
+  refreshDeviceRuntimeState,
   updateDevice,
   updateRegisteredDeviceHeartbeat,
   withSummary

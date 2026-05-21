@@ -5,8 +5,10 @@ const {
   createPendingActivationDevice,
   deleteDevice,
   getDevicesConfig,
+  refreshDeviceRuntimeState,
   updateDevice
 } = require('../data/repositories/devices.repo');
+const appEvents = require('../utils/events');
 const {
   deleteKiosk,
   editKiosk,
@@ -21,6 +23,52 @@ const {
 } = require('../data/repositories/barrierGates.repo');
 
 const router = express.Router();
+
+let runtimeMonitorStarted = false;
+function startDeviceRuntimeMonitor() {
+  if (runtimeMonitorStarted) return;
+  runtimeMonitorStarted = true;
+  const interval = setInterval(() => {
+    refreshDeviceRuntimeState({ emitEvents: true }).catch((err) => {
+      console.error('Device runtime monitor failed:', err);
+    });
+  }, 30 * 1000);
+  interval.unref?.();
+}
+
+startDeviceRuntimeMonitor();
+
+// Route SSE สำหรับส่งสถานะ device ไปยังหน้า admin แบบ realtime
+router.get('/events', async (req, res, next) => {
+  try {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Device event stream connected' })}\n\n`);
+
+    const sendDeviceEvent = (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+    const sendConfigUpdated = (config) => {
+      res.write(`data: ${JSON.stringify({ type: 'devices_config_updated', config })}\n\n`);
+    };
+    const keepAlive = setInterval(() => {
+      res.write(`data: ${JSON.stringify({ type: 'ping', at: new Date().toISOString() })}\n\n`);
+    }, 25 * 1000);
+
+    appEvents.on('device_event', sendDeviceEvent);
+    appEvents.on('devices_config_updated', sendConfigUpdated);
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      appEvents.off('device_event', sendDeviceEvent);
+      appEvents.off('devices_config_updated', sendConfigUpdated);
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Route query config devices ทั้งหมด
 router.get('/config', async (req, res, next) => {

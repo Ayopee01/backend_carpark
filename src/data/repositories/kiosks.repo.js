@@ -5,6 +5,7 @@ const { activateRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('.
 // Constant key สำหรับอ้างอิง config kiosks ใน table app_config
 const CONFIG_KEY = 'kiosks';
 const OFFLINE_AFTER_MINUTES = 5;
+const ACTIVATION_TTL_MS = 10 * 60 * 1000;
 // Constant เก็บ activation code ชั่วคราวใน memory ระหว่างรอ kiosk activate
 const activationCodes = new Map();
 
@@ -64,7 +65,7 @@ async function generateActivationCode(details = {}) {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const count = (kiosks.length + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `K-${dateStr}-${count}`;
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + ACTIVATION_TTL_MS);
 
   activationCodes.set(code, {
     ...details,
