@@ -4,6 +4,25 @@ const { getConfig, setConfig } = require('./config.repo');
 
 // Constant key สำหรับอ้างอิง devices config ใน table app_config
 const CONFIG_KEY = 'devices';
+const OFFLINE_AFTER_MINUTES = 5;
+const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate']);
+
+function isActivationDevice(device) {
+  return ACTIVATION_DEVICE_TYPES.has(device?.deviceType);
+}
+
+function isExpired(value, now = new Date()) {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date < now;
+}
+
+function isOfflineByLastSeen(lastSeen, now = new Date()) {
+  if (!lastSeen) return true;
+  const date = new Date(lastSeen);
+  if (Number.isNaN(date.getTime())) return true;
+  return now - date > OFFLINE_AFTER_MINUTES * 60000;
+}
 
 // Function เพิ่ม summary online/offline ให้ config devices
 function withSummary(config) {
@@ -24,7 +43,39 @@ function withSummary(config) {
 
 // Function query devices config จาก database
 async function getDevicesConfig() {
-  return withSummary(await getConfig(CONFIG_KEY, defaults.devices));
+  const config = await getConfig(CONFIG_KEY, defaults.devices);
+  const now = new Date();
+  let changed = false;
+
+  const devices = (Array.isArray(config.devices) ? config.devices : [])
+    .filter((device) => {
+      const shouldRemove = device.status === 'pending_activation' && isExpired(device.activationExpiresAt, now);
+      if (shouldRemove) changed = true;
+      return !shouldRemove;
+    })
+    .map((device) => {
+      if (
+        isActivationDevice(device) &&
+        device.status === 'active' &&
+        device.isOnline &&
+        isOfflineByLastSeen(device.lastSeen, now)
+      ) {
+        changed = true;
+        return {
+          ...device,
+          isOnline: false,
+          status: 'offline',
+        };
+      }
+      return device;
+    });
+
+  const nextConfig = withSummary({ ...config, devices });
+  if (changed) {
+    const saved = await setConfig(CONFIG_KEY, nextConfig);
+    return withSummary(saved);
+  }
+  return nextConfig;
 }
 
 // Function create device ใหม่
@@ -67,6 +118,7 @@ async function createPendingActivationDevice(payload = {}) {
   const {
     generatedDeviceId,
     activationCode,
+    activationExpiresAt,
     deviceCode,
     deviceName,
     name,
@@ -89,6 +141,7 @@ async function createPendingActivationDevice(payload = {}) {
     id: generatedDeviceId,
     deviceId: null,
     activationCode,
+    activationExpiresAt,
     deviceCode: pendingCode,
     deviceName: deviceName || name || generatedDeviceId,
     deviceType,
@@ -117,6 +170,7 @@ async function activateRegisteredDevice(generatedDeviceId, details = {}) {
     ...current,
     deviceId: generatedDeviceId,
     activationCode: null,
+    activationExpiresAt: null,
     deviceName: details.name || current.deviceName,
     location: details.location || current.location || null,
     ipAddress: details.ip || details.ipAddress || current.ipAddress || null,

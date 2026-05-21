@@ -6,6 +6,13 @@ const CONFIG_KEY = 'barrier_gates';
 const OFFLINE_AFTER_MINUTES = 5;
 const activationCodes = new Map();
 
+function cleanupExpiredActivationCodes() {
+  const now = new Date();
+  activationCodes.forEach((data, code) => {
+    if (data.expiresAt < now) activationCodes.delete(code);
+  });
+}
+
 async function getBarrierGatesConfig() {
   const config = await getConfig(CONFIG_KEY, { barrierGates: [] });
   return {
@@ -44,22 +51,25 @@ async function searchBarrierGate(deviceId) {
 }
 
 async function generateBarrierGateActivationCode(details = {}) {
+  cleanupExpiredActivationCodes();
   const { barrierGates } = await getBarrierGatesConfig();
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const count = (barrierGates.length + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `BG-${dateStr}-${count}`;
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
   activationCodes.set(code, {
     ...details,
     deviceId: generatedId,
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    expiresAt,
   });
 
-  return { code, deviceId: generatedId, deviceType: 'barrier_gate' };
+  return { code, deviceId: generatedId, deviceType: 'barrier_gate', expiresAt: expiresAt.toISOString() };
 }
 
 async function activateBarrierGate(code) {
+  cleanupExpiredActivationCodes();
   const data = activationCodes.get(code);
 
   if (!data) return { success: false, message: 'Invalid or expired code' };

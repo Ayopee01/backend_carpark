@@ -100,6 +100,7 @@ router.post('/kiosks/activation-code', async (req, res, next) => {
       ...(req.body || {}),
       generatedDeviceId: result.deviceId,
       activationCode: result.code,
+      activationExpiresAt: result.expiresAt,
       deviceType: 'kiosk'
     });
     if (!pending.ok && pending.reason === 'duplicate') {
@@ -119,6 +120,7 @@ router.post('/barrier-gates/activation-code', async (req, res, next) => {
       ...(req.body || {}),
       generatedDeviceId: result.deviceId,
       activationCode: result.code,
+      activationExpiresAt: result.expiresAt,
       deviceType: 'barrier_gate'
     });
     if (!pending.ok && pending.reason === 'duplicate') {

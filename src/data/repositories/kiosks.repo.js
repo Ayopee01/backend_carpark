@@ -8,6 +8,13 @@ const OFFLINE_AFTER_MINUTES = 5;
 // Constant เก็บ activation code ชั่วคราวใน memory ระหว่างรอ kiosk activate
 const activationCodes = new Map();
 
+function cleanupExpiredActivationCodes() {
+  const now = new Date();
+  activationCodes.forEach((data, code) => {
+    if (data.expiresAt < now) activationCodes.delete(code);
+  });
+}
+
 // Function query config ของ kiosks จาก database และทำให้ kiosks เป็น array เสมอ
 async function getKiosksConfig() {
   const config = await getConfig(CONFIG_KEY, { kiosks: [] });
@@ -51,23 +58,26 @@ async function searchKiosk(deviceId) {
 
 // Function create activation code สำหรับผูก kiosk ใหม่
 async function generateActivationCode(details = {}) {
+  cleanupExpiredActivationCodes();
   const { kiosks } = await getKiosksConfig();
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const count = (kiosks.length + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `K-${dateStr}-${count}`;
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
   activationCodes.set(code, {
     ...details,
     deviceId: generatedId,
-    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    expiresAt,
   });
 
-  return { code, deviceId: generatedId };
+  return { code, deviceId: generatedId, expiresAt: expiresAt.toISOString() };
 }
 
 // Function activate kiosk ด้วย activation code ที่ยังไม่หมดอายุ
 async function activateKiosk(code) {
+  cleanupExpiredActivationCodes();
   const data = activationCodes.get(code);
 
   if (!data) return { success: false, message: 'Invalid or expired code' };
