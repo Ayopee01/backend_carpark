@@ -193,12 +193,8 @@ const appConfigs = [
   {
     key: 'devices',
     data: {
-      summary: { totalDevices: 3, online: 2, offline: 1 },
-      devices: [
-        { id: 'd1', deviceCode: 'PRN001', deviceName: 'Printer Counter 1', deviceType: 'printer', connectionType: 'usb', ipAddress: null, status: 'active', isOnline: true, note: 'Counter receipt printer' },
-        { id: 'd2', deviceCode: 'LPR001', deviceName: 'LPR Gate 1', deviceType: 'lpr', connectionType: 'lan', ipAddress: '192.168.1.99', status: 'active', isOnline: false, note: 'Entrance plate camera' },
-        { id: 'd3', deviceCode: 'BAR001', deviceName: 'Barrier Gate 1', deviceType: 'barrier_gate', connectionType: 'lan', ipAddress: '192.168.1.50', status: 'active', isOnline: true, note: 'Exit Barrier Gate' }
-      ],
+      summary: { totalDevices: 0, online: 0, offline: 0 },
+      devices: [],
       masterData: {
         deviceTypes: [
           { code: 'printer', label: 'Printer' },
