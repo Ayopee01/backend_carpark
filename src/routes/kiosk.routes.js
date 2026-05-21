@@ -24,6 +24,8 @@ router.get('/events', async (req, res, next) => {
     if (deviceId) {
       const kiosk = await searchKiosk(deviceId);
       if (!kiosk) return res.status(401).json({ message: 'Unauthorized device' });
+      if (kiosk.status === 'maintenance') return res.status(403).json({ message: 'This kiosk is currently under maintenance', status: kiosk.status });
+      await updateKioskStatus(deviceId, { ip: req.ip });
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -67,6 +69,12 @@ router.post('/entry', async (req, res, next) => {
     return res.status(201).json({
       message: 'Entry bill created successfully',
       transaction: newTransaction,
+      kiosk: {
+        deviceId: kiosk.deviceId,
+        name: kiosk.name,
+        location: kiosk.location,
+        status: 'online',
+      },
       receiptConfig: systemSettings.receipt?.entryBill || {},
     });
   } catch (err) {
@@ -79,6 +87,15 @@ router.post('/check-in', async (req, res, next) => {
   try {
     const { deviceId, name, location, version } = req.body;
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
+
+    const current = await searchKiosk(deviceId);
+    if (!current) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+    if (current.status === 'maintenance') {
+      return res.status(403).json({
+        message: 'This kiosk is currently under maintenance. Check-in is disabled.',
+        status: current.status,
+      });
+    }
 
     const kiosk = await updateKioskStatus(deviceId, {
       name,
@@ -121,7 +138,12 @@ router.get('/config', async (req, res, next) => {
     if (deviceId) {
       const kiosk = await searchKiosk(deviceId);
       if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
-      status = kiosk.status;
+      if (kiosk.status !== 'maintenance') {
+        const updated = await updateKioskStatus(deviceId, { ip: req.ip });
+        status = updated.status;
+      } else {
+        status = kiosk.status;
+      }
     }
 
     const currentTheme = await getConfig('theme', defaults.theme);
@@ -146,8 +168,16 @@ router.get('/config', async (req, res, next) => {
 // Route ค้นหา transaction ที่ยังค้างชำระด้วยทะเบียนรถ
 router.get('/search', async (req, res, next) => {
   try {
-    const { plateNo } = req.query || {};
+    const { plateNo, deviceId } = req.query || {};
     if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
+    if (deviceId) {
+      const kiosk = await searchKiosk(deviceId);
+      if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+      if (kiosk.status === 'maintenance') {
+        return res.status(403).json({ message: 'This kiosk is currently under maintenance', status: kiosk.status });
+      }
+      await updateKioskStatus(deviceId, { ip: req.ip });
+    }
 
     const result = await listTransactions({ plateNo, status: 'pending' });
     return res.json({
@@ -162,6 +192,16 @@ router.get('/search', async (req, res, next) => {
 // Route query transaction รายการเดียวสำหรับ kiosk payment
 router.get('/transaction/:id', async (req, res, next) => {
   try {
+    const { deviceId } = req.query || {};
+    if (deviceId) {
+      const kiosk = await searchKiosk(deviceId);
+      if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+      if (kiosk.status === 'maintenance') {
+        return res.status(403).json({ message: 'This kiosk is currently under maintenance', status: kiosk.status });
+      }
+      await updateKioskStatus(deviceId, { ip: req.ip });
+    }
+
     const transaction = await getTransactionApiById(req.params.id);
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
     if (transaction.status === 'completed' || transaction.status === 'cancelled') {
@@ -179,15 +219,17 @@ router.post('/payment', async (req, res, next) => {
   try {
     const { transactionId, method, amount, deviceId } = req.body;
 
+    let onlineKiosk = null;
     if (deviceId) {
       const kiosk = await searchKiosk(deviceId);
-      if (kiosk && kiosk.status === 'maintenance') {
+      if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+      if (kiosk.status === 'maintenance') {
         return res.status(403).json({
           message: 'This kiosk is currently under maintenance. Payment is disabled.',
-          status: 'maintenance',
+          status: kiosk.status,
         });
       }
-      await updateKioskStatus(deviceId, { ip: req.ip });
+      onlineKiosk = await updateKioskStatus(deviceId, { ip: req.ip });
     }
 
     const result = await processPayment(transactionId, {
@@ -195,6 +237,12 @@ router.post('/payment', async (req, res, next) => {
       channel: 'kiosk',
       amount,
       processedBy: deviceId ? `kiosk_${deviceId}` : 'system_kiosk',
+      device: onlineKiosk ? {
+        deviceId: onlineKiosk.deviceId,
+        deviceType: 'kiosk',
+        deviceName: onlineKiosk.name,
+        deviceLocation: onlineKiosk.location,
+      } : null,
     });
 
     if (!result) return res.status(400).json({ message: 'Payment processing failed' });
@@ -202,6 +250,12 @@ router.post('/payment', async (req, res, next) => {
     return res.json({
       message: 'Payment received successfully',
       transaction: result,
+      ...(onlineKiosk ? { kiosk: {
+        deviceId: onlineKiosk.deviceId,
+        name: onlineKiosk.name,
+        location: onlineKiosk.location,
+        status: onlineKiosk.status,
+      } } : {}),
     });
   } catch (err) {
     next(err);

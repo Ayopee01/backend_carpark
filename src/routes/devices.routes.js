@@ -12,6 +12,12 @@ const {
   generateActivationCode,
   listAllKiosks
 } = require('../data/repositories/kiosks.repo');
+const {
+  deleteBarrierGate,
+  editBarrierGate,
+  generateBarrierGateActivationCode,
+  listAllBarrierGates
+} = require('../data/repositories/barrierGates.repo');
 
 const router = express.Router();
 
@@ -90,6 +96,16 @@ router.post('/kiosks/activation-code', async (req, res, next) => {
   }
 });
 
+// Route สร้าง activation code สำหรับ barrier gate
+router.post('/barrier-gates/activation-code', async (req, res, next) => {
+  try {
+    const result = await generateBarrierGateActivationCode(req.body || {});
+    res.json({ message: 'Barrier Gate activation code generated', ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Route query kiosk ทั้งหมดพร้อม summary
 router.get('/kiosks', async (req, res, next) => {
   try {
@@ -100,6 +116,22 @@ router.get('/kiosks', async (req, res, next) => {
       offline: kiosks.filter((kiosk) => kiosk.status === 'offline').length,
       maintenance: kiosks.filter((kiosk) => kiosk.status === 'maintenance').length,
       kiosks
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Route query barrier gate ทั้งหมดพร้อม summary
+router.get('/barrier-gates', async (req, res, next) => {
+  try {
+    const barrierGates = await listAllBarrierGates();
+    res.json({
+      total: barrierGates.length,
+      online: barrierGates.filter((barrierGate) => barrierGate.status === 'online').length,
+      offline: barrierGates.filter((barrierGate) => barrierGate.status === 'offline').length,
+      maintenance: barrierGates.filter((barrierGate) => barrierGate.status === 'maintenance').length,
+      barrierGates
     });
   } catch (err) {
     next(err);
@@ -121,6 +153,28 @@ router.put('/kiosks/:deviceId', async (req, res, next) => {
 router.delete('/kiosks/:deviceId', async (req, res, next) => {
   try {
     const result = await deleteKiosk(req.params.deviceId);
+    if (!result.success) return res.status(404).json(result);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Route update barrier gate ด้วย deviceId
+router.put('/barrier-gates/:deviceId', async (req, res, next) => {
+  try {
+    const result = await editBarrierGate(req.params.deviceId, req.body || {});
+    if (!result.success) return res.status(404).json(result);
+    res.json({ message: 'Barrier Gate updated', barrierGate: result.barrierGate });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Route delete barrier gate ด้วย deviceId
+router.delete('/barrier-gates/:deviceId', async (req, res, next) => {
+  try {
+    const result = await deleteBarrierGate(req.params.deviceId);
     if (!result.success) return res.status(404).json(result);
     res.json(result);
   } catch (err) {

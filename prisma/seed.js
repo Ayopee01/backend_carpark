@@ -109,7 +109,7 @@ const transactions = [
     netAmount: 80,
     status: 'partially_paid',
     payment: { status: 'partial', method: 'qr', channel: 'kiosk', amount: 40, paidAt: '2026-05-02T12:00:00+07:00', processedBy: 'kiosk_K-SEED-001' },
-    payments: [{ id: 'pay_seed_003', method: 'qr', channel: 'kiosk', paidAmount: 40, amount: 40, paidAt: '2026-05-02T12:00:00+07:00', expiryAt: '2026-05-02T12:15:00+07:00', processedBy: 'kiosk_K-SEED-001' }],
+    payments: [{ id: 'pay_seed_003', method: 'qr', channel: 'kiosk', paidAmount: 40, amount: 40, paidAt: '2026-05-02T12:00:00+07:00', expiryAt: '2026-05-02T12:15:00+07:00', processedBy: 'kiosk_K-SEED-001', deviceId: 'K-SEED-001', deviceType: 'kiosk', deviceName: 'Payment Kiosk 1', deviceLocation: 'Lobby A', kioskDeviceId: 'K-SEED-001', kioskName: 'Payment Kiosk 1', kioskLocation: 'Lobby A' }],
     totalPaid: 40,
     receipt: {}
   },
@@ -197,13 +197,13 @@ const appConfigs = [
       devices: [
         { id: 'd1', deviceCode: 'PRN001', deviceName: 'Printer Counter 1', deviceType: 'printer', connectionType: 'usb', ipAddress: null, status: 'active', isOnline: true, note: 'Counter receipt printer' },
         { id: 'd2', deviceCode: 'LPR001', deviceName: 'LPR Gate 1', deviceType: 'lpr', connectionType: 'lan', ipAddress: '192.168.1.99', status: 'active', isOnline: false, note: 'Entrance plate camera' },
-        { id: 'd3', deviceCode: 'BAR001', deviceName: 'Barrier Gate 1', deviceType: 'barrier', connectionType: 'lan', ipAddress: '192.168.1.50', status: 'active', isOnline: true, note: 'Exit barrier' }
+        { id: 'd3', deviceCode: 'BAR001', deviceName: 'Barrier Gate 1', deviceType: 'barrier_gate', connectionType: 'lan', ipAddress: '192.168.1.50', status: 'active', isOnline: true, note: 'Exit Barrier Gate' }
       ],
       masterData: {
         deviceTypes: [
           { code: 'printer', label: 'Printer' },
           { code: 'lpr', label: 'LPR Camera' },
-          { code: 'barrier', label: 'Barrier' },
+          { code: 'barrier_gate', label: 'Barrier Gate' },
           { code: 'kiosk', label: 'Kiosk' }
         ],
         connectionTypes: [
@@ -220,6 +220,14 @@ const appConfigs = [
       kiosks: [
         { deviceId: 'K-SEED-001', name: 'Payment Kiosk 1', location: 'Lobby A', ip: '192.168.1.120', version: '1.0.0', status: 'online', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' },
         { deviceId: 'K-SEED-002', name: 'Payment Kiosk 2', location: 'Basement B1', ip: '192.168.1.121', version: '1.0.0', status: 'maintenance', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' }
+      ]
+    }
+  },
+  {
+    key: 'barrier_gates',
+    data: {
+      barrierGates: [
+        { deviceId: 'BG-SEED-001', deviceType: 'barrier_gate', name: 'Exit Barrier Gate 1', location: 'Gate A', ip: '192.168.1.50', version: '1.0.0', status: 'online', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' }
       ]
     }
   },

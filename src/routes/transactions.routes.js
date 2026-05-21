@@ -72,14 +72,20 @@ router.get('/:id', async (req, res, next) => {
 
 router.post('/:id/payment', async (req, res, next) => {
   try {
-    const { method, channel, amount } = req.body;
+    const { method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
     const processedBy = req.user?.id || 'u1';
     
     const updated = await processPayment(req.params.id, { 
       method, 
       channel, 
       amount, 
-      processedBy 
+      processedBy,
+      device: deviceId ? {
+        deviceId,
+        deviceType: deviceType || (channel === 'gate' ? 'barrier_gate' : channel) || 'unknown',
+        deviceName,
+        deviceLocation,
+      } : null,
     });
 
     if (!updated) return res.status(404).json({ message: 'Transaction not found' });

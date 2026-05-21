@@ -4,7 +4,7 @@ const openapi = {
   info: { title: 'Smart Carpark API', version: '1.0.0', description: 'Backend API for Smart Carpark admin system (Express + Prisma + PostgreSQL).' },
   servers: [{ url: '/', description: 'Current host' }],
   tags: [
-    { name: 'System' },{ name: 'Auth' },{ name: 'Dashboard' },{ name: 'Overview' },{ name: 'Transactions' },{ name: 'Users' },{ name: 'Members' },{ name: 'Service Pricing' },{ name: 'Devices' },{ name: 'Kiosk' },{ name: 'Theme' },{ name: 'System Settings' },{ name: 'Payment Settings' }
+    { name: 'System' },{ name: 'Auth' },{ name: 'Dashboard' },{ name: 'Overview' },{ name: 'Transactions' },{ name: 'Users' },{ name: 'Members' },{ name: 'Service Pricing' },{ name: 'Devices' },{ name: 'Kiosk' },{ name: 'Barrier Gate' },{ name: 'Theme' },{ name: 'System Settings' },{ name: 'Payment Settings' }
   ],
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } }
@@ -56,6 +56,9 @@ const openapi = {
     '/api/v1/devices/kiosks/activation-code': { post: { tags: ['Devices'], summary: 'Generate kiosk activation code', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Activation code generated' } } } },
     '/api/v1/devices/kiosks': { get: { tags: ['Devices'], summary: 'List all kiosks', responses: { 200: { description: 'Kiosks list' } } } },
     '/api/v1/devices/kiosks/{deviceId}': { put: { tags: ['Devices'], summary: 'Update kiosk', parameters: [{ in: 'path', name: 'deviceId', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Devices'], summary: 'Delete kiosk', parameters: [{ in: 'path', name: 'deviceId', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Deleted' } } } },
+    '/api/v1/devices/barrier-gates/activation-code': { post: { tags: ['Devices'], summary: 'Generate Barrier Gate activation code', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Activation code generated' } } } },
+    '/api/v1/devices/barrier-gates': { get: { tags: ['Devices'], summary: 'List all Barrier Gates', responses: { 200: { description: 'Barrier Gates list' } } } },
+    '/api/v1/devices/barrier-gates/{deviceId}': { put: { tags: ['Devices'], summary: 'Update Barrier Gate', parameters: [{ in: 'path', name: 'deviceId', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Devices'], summary: 'Delete Barrier Gate', parameters: [{ in: 'path', name: 'deviceId', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Deleted' } } } },
 
     /* Theme */
     '/api/v1/theme': { get: { tags: ['Theme'], summary: 'Get theme settings', responses: { 200: { description: 'Theme settings' } } }, put: { tags: ['Theme'], summary: 'Update theme settings', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } } },
@@ -76,6 +79,12 @@ const openapi = {
     '/api/v1/kiosk/search': { get: { tags: ['Kiosk'], summary: 'Search pending transactions by plateNo', responses: { 200: { description: 'Search results' } } } },
     '/api/v1/kiosk/transaction/{id}': { get: { tags: ['Kiosk'], summary: 'Get kiosk transaction', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Transaction' } } } },
     '/api/v1/kiosk/payment': { post: { tags: ['Kiosk'], summary: 'Kiosk payment', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Payment processed' } } } },
+
+    /* Barrier Gate public endpoints */
+    '/api/v1/barrier-gate/activate': { post: { tags: ['Barrier Gate'], summary: 'Activate Barrier Gate', security: [], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Activated' } } } },
+    '/api/v1/barrier-gate/check-in': { post: { tags: ['Barrier Gate'], summary: 'Barrier Gate check-in', security: [], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Check-in success' } } } },
+    '/api/v1/barrier-gate/transaction/{id}': { get: { tags: ['Barrier Gate'], summary: 'Get transaction from Barrier Gate', security: [], parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Transaction' } } } },
+    '/api/v1/barrier-gate/payment': { post: { tags: ['Barrier Gate'], summary: 'Barrier Gate payment', security: [], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Payment processed' } } } },
 
     /* Payment Settings */
     '/api/v1/payment-settings/methods': { get: { tags: ['Payment Settings'], summary: 'List payment methods', responses: { 200: { description: 'Methods' } } } },

@@ -200,7 +200,7 @@ async function getTransactionApiById(id) {
 }
 
 // Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
-async function processPayment(id, { method, channel, amount, processedBy }) {
+async function processPayment(id, { method, channel, amount, processedBy, device }) {
   const transaction = await getTransactionById(id);
   if (!transaction) return null;
 
@@ -232,7 +232,18 @@ async function processPayment(id, { method, channel, amount, processedBy }) {
     paidAmount: payAmount,
     paidAt,
     expiryAt,
-    processedBy: processedBy || 'u1'
+    processedBy: processedBy || 'u1',
+    ...(device ? {
+      deviceId: device.deviceId,
+      deviceType: device.deviceType,
+      deviceName: device.deviceName,
+      deviceLocation: device.deviceLocation,
+      ...(device.deviceType === 'kiosk' ? {
+        kioskDeviceId: device.deviceId,
+        kioskName: device.deviceName,
+        kioskLocation: device.deviceLocation,
+      } : {})
+    } : {})
   };
 
   const payments = [...toJsonArray(transaction.payments), newPayment];

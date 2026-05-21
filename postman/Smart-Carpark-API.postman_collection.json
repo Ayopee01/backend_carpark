@@ -12,6 +12,7 @@
     { "key": "memberId", "value": "u2" },
     { "key": "deviceId", "value": "d1" },
     { "key": "kioskDeviceId", "value": "K-SEED-001" },
+    { "key": "barrierGateDeviceId", "value": "BG-SEED-001" },
     { "key": "activationCode", "value": "" },
     { "key": "pricingRuleId", "value": "pr_car_2_3" },
     { "key": "paymentMethodId", "value": "cash" },
@@ -564,6 +565,46 @@
             "header": [],
             "url": "{{baseUrl}}/api/v1/devices/kiosks/{{kioskDeviceId}}"
           }
+        },
+        {
+          "name": "Generate Barrier Gate Activation Code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/devices/barrier-gates/activation-code",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Exit Barrier Gate Test\",\n  \"location\": \"Gate A\",\n  \"version\": \"1.0.0\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List Barrier Gates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/barrier-gates"
+          }
+        },
+        {
+          "name": "Update Barrier Gate",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/devices/barrier-gates/{{barrierGateDeviceId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"online\",\n  \"location\": \"Updated Gate A\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Barrier Gate",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/barrier-gates/{{barrierGateDeviceId}}"
+          }
         }
       ]
     },
@@ -737,7 +778,7 @@
             "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/kiosk/search?plateNo=7คง"
+            "url": "{{baseUrl}}/api/v1/kiosk/search?plateNo=7คง&deviceId={{kioskDeviceId}}"
           }
         },
         {
@@ -746,7 +787,7 @@
             "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/kiosk/transaction/{{transactionId}}"
+            "url": "{{baseUrl}}/api/v1/kiosk/transaction/{{transactionId}}?deviceId={{kioskDeviceId}}"
           }
         },
         {
@@ -759,6 +800,59 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"method\": \"qr\",\n  \"amount\": 40,\n  \"deviceId\": \"{{kioskDeviceId}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Barrier Gate",
+      "item": [
+        {
+          "name": "Activate",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/barrier-gate/activate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{activationCode}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check In",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/barrier-gate/check-in",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"{{barrierGateDeviceId}}\",\n  \"name\": \"Exit Barrier Gate 1\",\n  \"location\": \"Gate A\",\n  \"version\": \"1.0.0\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Barrier Gate Transaction",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/barrier-gate/transaction/{{transactionId}}?deviceId={{barrierGateDeviceId}}"
+          }
+        },
+        {
+          "name": "Barrier Gate Payment",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/barrier-gate/payment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"method\": \"wallet\",\n  \"amount\": 40,\n  \"deviceId\": \"{{barrierGateDeviceId}}\"\n}"
             }
           }
         }

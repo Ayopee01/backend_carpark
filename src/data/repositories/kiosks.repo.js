@@ -3,6 +3,7 @@ const { getConfig, setConfig } = require('./config.repo');
 
 // Constant key สำหรับอ้างอิง config kiosks ใน table app_config
 const CONFIG_KEY = 'kiosks';
+const OFFLINE_AFTER_MINUTES = 5;
 // Constant เก็บ activation code ชั่วคราวใน memory ระหว่างรอ kiosk activate
 const activationCodes = new Map();
 
@@ -20,11 +21,31 @@ async function saveKiosks(kiosks) {
   return setConfig(CONFIG_KEY, { kiosks });
 }
 
+// Function คำนวณสถานะ kiosk จาก lastSeen โดยไม่เขียนค่ากลับ database
+function getKioskRuntimeStatus(kiosk) {
+  if (!kiosk) return null;
+  if (kiosk.status === 'maintenance') return 'maintenance';
+
+  const lastSeen = new Date(kiosk.lastSeen);
+  if (Number.isNaN(lastSeen.getTime())) return 'offline';
+
+  const diffMinutes = Math.floor((new Date() - lastSeen) / 60000);
+  return diffMinutes > OFFLINE_AFTER_MINUTES ? 'offline' : 'online';
+}
+
+function withRuntimeStatus(kiosk) {
+  if (!kiosk) return null;
+  return {
+    ...kiosk,
+    status: getKioskRuntimeStatus(kiosk),
+  };
+}
+
 // Function search kiosk ด้วย deviceId
 async function searchKiosk(deviceId) {
   if (!deviceId) return null;
   const { kiosks } = await getKiosksConfig();
-  return kiosks.find((kiosk) => kiosk.deviceId === deviceId) || null;
+  return withRuntimeStatus(kiosks.find((kiosk) => kiosk.deviceId === deviceId) || null);
 }
 
 // Function create activation code สำหรับผูก kiosk ใหม่
@@ -116,10 +137,11 @@ async function updateKioskStatus(deviceId, details = {}) {
     };
     kiosks.push(kiosk);
   } else {
+    const previous = kiosks[index];
     kiosk = {
-      ...kiosks[index],
+      ...previous,
       lastSeen: now,
-      status: details.status || 'online',
+      status: details.status || (previous.status === 'maintenance' ? 'maintenance' : 'online'),
       ...(details.name ? { name: details.name } : {}),
       ...(details.location ? { location: details.location } : {}),
       ...(details.ip ? { ip: details.ip } : {}),
@@ -135,16 +157,7 @@ async function updateKioskStatus(deviceId, details = {}) {
 // Function query kiosk ทั้งหมดและคำนวณสถานะ online/offline จาก lastSeen
 async function listAllKiosks() {
   const { kiosks } = await getKiosksConfig();
-  const now = new Date();
-
-  return kiosks.map((kiosk) => {
-    const lastSeen = new Date(kiosk.lastSeen);
-    const diffMinutes = Math.floor((now - lastSeen) / 60000);
-    return {
-      ...kiosk,
-      status: kiosk.status === 'maintenance' ? 'maintenance' : (diffMinutes > 5 ? 'offline' : 'online'),
-    };
-  });
+  return kiosks.map(withRuntimeStatus);
 }
 
 // Export Functions
@@ -154,6 +167,7 @@ module.exports = {
   editKiosk,
   searchKiosk,
   generateActivationCode,
+  getKioskRuntimeStatus,
   listAllKiosks,
   updateKioskStatus,
 };

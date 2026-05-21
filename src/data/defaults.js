@@ -19,6 +19,10 @@ const devices = {
   },
 };
 
+const barrierGates = {
+  barrierGates: [],
+};
+
 // Constant default config สำหรับ theme ของระบบ เช่น สีหลักและ logo
 const theme = {
   themeColor: null,
@@ -49,6 +53,7 @@ const paymentSettings = {
 // Export default configs
 module.exports = {
   devices,
+  barrierGates,
   paymentSettings,
   pricingConfig,
   systemSettings,

@@ -16,6 +16,7 @@ const memberRoutes = require('./routes/members.routes');
 const servicePricingRoutes = require('./routes/servicePricing.routes');
 const paymentSettingsRouter = require('./routes/paymentSettings.routes');
 const kioskRoutes = require('./routes/kiosk.routes');
+const barrierGateRoutes = require('./routes/barrierGate.routes');
 const devicesRoutes = require('./routes/devices.routes');
 const themeRoutes = require('./routes/theme.routes');
 const systemSettingsRoutes = require('./routes/systemSettings.routes');
@@ -64,6 +65,7 @@ app.get('/docs/openapi.json', (req, res) => {
 
 // Route สำหรับ kiosk ที่ต้องเข้าถึงได้ก่อน auth middleware
 app.use('/api/v1/kiosk', kioskRoutes);
+app.use('/api/v1/barrier-gate', barrierGateRoutes);
 app.use(authMiddleware);
 app.use('/api/v1/auth', authRoutes);
 
