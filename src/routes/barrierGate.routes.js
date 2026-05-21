@@ -1,6 +1,6 @@
 // Import Require
 const express = require('express');
-const { getTransactionApiById, processPayment } = require('../data/repositories/transactions.repo');
+const { getTransactionApiById, getTransactionApiByPlateNo, processPayment } = require('../data/repositories/transactions.repo');
 const {
   activateBarrierGate,
   searchBarrierGate,
@@ -54,6 +54,28 @@ router.post('/check-in', async (req, res, next) => {
   }
 });
 
+router.get('/transaction', async (req, res, next) => {
+  try {
+    const { plateNo, deviceId } = req.query || {};
+    if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
+    if (deviceId) {
+      const barrierGate = await searchBarrierGate(deviceId);
+      if (!barrierGate) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+      if (barrierGate.status === 'maintenance') {
+        return res.status(403).json({ message: 'This Barrier Gate is currently under maintenance', status: barrierGate.status });
+      }
+      await updateBarrierGateStatus(deviceId, { ip: req.ip });
+    }
+
+    const transaction = await getTransactionApiByPlateNo(plateNo, { payableOnly: true });
+    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+
+    return res.json(transaction);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/transaction/:id', async (req, res, next) => {
   try {
     const { deviceId } = req.query || {};
@@ -77,7 +99,8 @@ router.get('/transaction/:id', async (req, res, next) => {
 
 router.post('/payment', async (req, res, next) => {
   try {
-    const { transactionId, method, amount, deviceId } = req.body;
+    const { transactionId, plateNo, method, amount, deviceId } = req.body;
+    if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
 
     let onlineBarrierGate = null;
     if (deviceId) {
@@ -93,6 +116,7 @@ router.post('/payment', async (req, res, next) => {
     }
 
     const result = await processPayment(transactionId, {
+      plateNo,
       method: method || 'wallet',
       channel: 'gate',
       amount,

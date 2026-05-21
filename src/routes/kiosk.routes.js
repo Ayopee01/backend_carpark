@@ -3,6 +3,7 @@ const express = require('express');
 const {
   createTransaction,
   getTransactionApiById,
+  getTransactionApiByPlateNo,
   listTransactions,
   processPayment,
 } = require('../data/repositories/transactions.repo');
@@ -196,6 +197,31 @@ router.get('/search', async (req, res, next) => {
 });
 
 // Route query transaction รายการเดียวสำหรับ kiosk payment
+router.get('/transaction', async (req, res, next) => {
+  try {
+    const { plateNo, deviceId } = req.query || {};
+    if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
+    if (deviceId) {
+      const kiosk = await searchKiosk(deviceId);
+      if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+      if (kiosk.status === 'maintenance') {
+        return res.status(403).json({ message: 'This kiosk is currently under maintenance', status: kiosk.status });
+      }
+      await updateKioskStatus(deviceId, { ip: req.ip });
+    }
+
+    const transaction = await getTransactionApiByPlateNo(plateNo, { payableOnly: true });
+    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    if (transaction.status === 'completed' || transaction.status === 'cancelled') {
+      return res.status(403).json({ message: 'This transaction is already processed' });
+    }
+
+    return res.json(transaction);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/transaction/:id', async (req, res, next) => {
   try {
     const { deviceId } = req.query || {};
@@ -223,7 +249,8 @@ router.get('/transaction/:id', async (req, res, next) => {
 // Route รับชำระเงินจาก kiosk
 router.post('/payment', async (req, res, next) => {
   try {
-    const { transactionId, method, amount, deviceId } = req.body;
+    const { transactionId, plateNo, method, amount, deviceId } = req.body;
+    if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
 
     let onlineKiosk = null;
     if (deviceId) {
@@ -239,6 +266,7 @@ router.post('/payment', async (req, res, next) => {
     }
 
     const result = await processPayment(transactionId, {
+      plateNo,
       method: method || 'qr_code',
       channel: 'kiosk',
       amount,

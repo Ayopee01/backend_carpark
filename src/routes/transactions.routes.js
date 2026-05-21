@@ -1,5 +1,5 @@
 const express = require('express');
-const { listTransactions, getTransactionApiById, processPayment, updateTransaction, deleteTransaction, createTransaction } = require('../data/repositories/transactions.repo');
+const { listTransactions, getTransactionApiById, getTransactionApiByPlateNo, processPayment, updateTransaction, deleteTransaction, createTransaction } = require('../data/repositories/transactions.repo');
 const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
@@ -62,7 +62,9 @@ router.post('/', async (req, res, next) => {
 
 router.get('/:id', async (req, res, next) => {
   try {
-    const transaction = await getTransactionApiById(req.params.id);
+    const transaction = req.query.plateNo
+      ? await getTransactionApiByPlateNo(req.query.plateNo)
+      : await getTransactionApiById(req.params.id);
     if (!transaction) return res.status(404).json({ message: 'Not found' });
     res.json(transaction);
   } catch (err) {
@@ -70,12 +72,44 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+router.post('/payment', async (req, res, next) => {
+  try {
+    const { plateNo, method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
+    if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
+
+    const processedBy = req.user?.id || 'u1';
+    const updated = await processPayment(null, {
+      plateNo,
+      method,
+      channel,
+      amount,
+      processedBy,
+      device: deviceId ? {
+        deviceId,
+        deviceType: deviceType || (channel === 'gate' ? 'barrier_gate' : channel) || 'unknown',
+        deviceName,
+        deviceLocation,
+      } : null,
+    });
+
+    if (!updated) return res.status(404).json({ message: 'Transaction not found for plateNo' });
+
+    res.json({
+      message: 'Payment confirmed successfully',
+      transaction: updated
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/:id/payment', async (req, res, next) => {
   try {
-    const { method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
+    const { plateNo, method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
     const processedBy = req.user?.id || 'u1';
     
     const updated = await processPayment(req.params.id, { 
+      plateNo,
       method, 
       channel, 
       amount, 

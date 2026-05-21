@@ -30,6 +30,10 @@ function toJsonArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizePlateNo(plateNo) {
+  return plateNo ? String(plateNo).replace(/[\s-]/g, '') : null;
+}
+
 // Function query config ที่จำเป็นสำหรับคำนวณ transaction
 async function getTransactionContext() {
   const [pricingConfig, systemSettings] = await Promise.all([
@@ -189,6 +193,22 @@ async function getTransactionById(id) {
   return prisma.transaction.findUnique({ where: { id } });
 }
 
+async function getLatestTransactionByPlateNo(plateNo, { payableOnly = false } = {}) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) return null;
+
+  const rows = await prisma.transaction.findMany({
+    where: {
+      plateNo: { contains: normalizedPlateNo, mode: 'insensitive' },
+      ...(payableOnly ? { status: { notIn: ['completed', 'cancelled'] } } : {})
+    },
+    orderBy: { entryAt: 'desc' },
+    take: 1
+  });
+
+  return rows[0] || null;
+}
+
 // Function query transaction ด้วย id และแปลงเป็นรูปแบบ API
 async function getTransactionApiById(id) {
   const [transaction, context] = await Promise.all([
@@ -199,9 +219,20 @@ async function getTransactionApiById(id) {
   return toTransactionApi(transaction, context);
 }
 
+async function getTransactionApiByPlateNo(plateNo, options = {}) {
+  const [transaction, context] = await Promise.all([
+    getLatestTransactionByPlateNo(plateNo, options),
+    getTransactionContext(),
+  ]);
+
+  return toTransactionApi(transaction, context);
+}
+
 // Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
-async function processPayment(id, { method, channel, amount, processedBy, device }) {
-  const transaction = await getTransactionById(id);
+async function processPayment(id, { plateNo, method, channel, amount, processedBy, device } = {}) {
+  const transaction = id
+    ? await getTransactionById(id)
+    : await getLatestTransactionByPlateNo(plateNo, { payableOnly: true });
   if (!transaction) return null;
 
   const context = await getTransactionContext();
@@ -369,6 +400,7 @@ module.exports = {
   listAllTransactions,
   getTransactionById,
   getTransactionApiById,
+  getTransactionApiByPlateNo,
   saveTransaction,
   updateTransaction,
   deleteTransaction,

@@ -226,6 +226,18 @@
           }
         },
         {
+          "name": "Process Payment By Plate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/transactions/payment",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plateNo\": \"2ขค5678\",\n  \"method\": \"cash\",\n  \"channel\": \"cashier\",\n  \"amount\": 40\n}"
+            }
+          }
+        },
+        {
           "name": "Patch Transaction",
           "request": {
             "method": "PATCH",
@@ -787,7 +799,7 @@
             "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/kiosk/transaction/{{transactionId}}?deviceId={{kioskDeviceId}}"
+            "url": "{{baseUrl}}/api/v1/kiosk/transaction?plateNo=7คง1001&deviceId={{kioskDeviceId}}"
           }
         },
         {
@@ -799,7 +811,7 @@
             "url": "{{baseUrl}}/api/v1/kiosk/payment",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"method\": \"qr\",\n  \"amount\": 40,\n  \"deviceId\": \"{{kioskDeviceId}}\"\n}"
+              "raw": "{\n  \"plateNo\": \"7คง1001\",\n  \"method\": \"qr\",\n  \"amount\": 40,\n  \"deviceId\": \"{{kioskDeviceId}}\"\n}"
             }
           }
         }
@@ -840,7 +852,7 @@
             "auth": { "type": "noauth" },
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/barrier-gate/transaction/{{transactionId}}?deviceId={{barrierGateDeviceId}}"
+            "url": "{{baseUrl}}/api/v1/barrier-gate/transaction?plateNo=2ขค5678&deviceId={{barrierGateDeviceId}}"
           }
         },
         {
@@ -852,7 +864,7 @@
             "url": "{{baseUrl}}/api/v1/barrier-gate/payment",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"transactionId\": \"{{transactionId}}\",\n  \"method\": \"wallet\",\n  \"amount\": 40,\n  \"deviceId\": \"{{barrierGateDeviceId}}\"\n}"
+              "raw": "{\n  \"plateNo\": \"2ขค5678\",\n  \"method\": \"wallet\",\n  \"amount\": 40,\n  \"deviceId\": \"{{barrierGateDeviceId}}\"\n}"
             }
           }
         }
