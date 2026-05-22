@@ -129,6 +129,7 @@ Content-Type: application/json
 ```json
 {
   "plateNo": "1กก1234",
+  "vehicleType": "car",
   "cameraId": "CAM-IN-01",
   "gateId": "GATE-A",
   "direction": "IN",
@@ -138,7 +139,16 @@ Content-Type: application/json
 }
 ```
 
-Backend จะ normalize `plateNo`, ตรวจข้อมูลจำเป็น, กันรายการซ้ำจาก `plateNo + cameraId + direction` ภายใน 10 วินาที และตอบ `OPEN_GATE`, `DENY`, `VALIDATION_ERROR` หรือ `IGNORE_DUPLICATE` ในรูปแบบ response เดียวกันเสมอ
+Backend จะ normalize `plateNo`, รองรับ `vehicleType` เฉพาะ `car` และ `motorcycle`, ตรวจข้อมูลจำเป็น, กันรายการซ้ำจาก `plateNo + cameraId + direction` ภายใน 10 วินาที และตอบ `OPEN_GATE`, `VALIDATION_ERROR` หรือ `IGNORE_DUPLICATE` ในรูปแบบ response เดียวกันเสมอ
+
+สถานะ transaction หลัก:
+
+- `pending` ยังไม่ได้จ่าย
+- `partially_paid` จ่ายบางส่วน
+- `completed` จ่ายครบหรือจบรายการแล้ว
+- `cancelled` ยกเลิก
+
+ค่า `exitAt` จะเป็น `null` ตอนรถเข้า และจะถูกเติมจาก `capturedAt` เมื่อกล้องส่ง `direction: "OUT"` ตอนรถออกจริง
 
 ## ทดสอบด้วย Postman
 

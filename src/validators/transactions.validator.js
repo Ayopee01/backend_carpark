@@ -18,6 +18,14 @@ function validateCameraTransactionPayload(payload = {}) {
     errors.push({ field: 'direction', message: 'direction must be IN or OUT' });
   }
 
+  if (
+    payload.vehicleType !== undefined &&
+    payload.vehicleType !== null &&
+    (!['car', 'motorcycle'].includes(String(payload.vehicleType).trim().toLowerCase()))
+  ) {
+    errors.push({ field: 'vehicleType', message: 'vehicleType must be car or motorcycle' });
+  }
+
   if (payload.capturedAt !== undefined && payload.capturedAt !== null && Number.isNaN(new Date(payload.capturedAt).getTime())) {
     errors.push({ field: 'capturedAt', message: 'capturedAt must be a valid date time' });
   }

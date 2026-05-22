@@ -34,6 +34,11 @@ function normalizePlateNo(plateNo) {
   return plateNo ? String(plateNo).trim().replace(/[\s-]/g, '') : null;
 }
 
+function normalizeVehicleType(vehicleType) {
+  const normalized = vehicleType ? String(vehicleType).trim().toLowerCase() : 'car';
+  return ['car', 'motorcycle'].includes(normalized) ? normalized : 'car';
+}
+
 function isLikelyPlateKeyword(value) {
   const normalized = normalizePlateNo(value);
   if (!normalized) return false;
@@ -81,9 +86,7 @@ function toTransactionApi(row, context = {}) {
   const totalPaid = Number(row.totalPaid ?? 0);
   const remainingAmount = Math.max(0, netAmount - totalPaid);
   let finalStatus = row.status;
-  if (['ALLOWED', 'DENIED'].includes(row.status)) {
-    finalStatus = row.status;
-  } else if (remainingAmount > 0) {
+  if (remainingAmount > 0) {
     finalStatus = totalPaid > 0 ? 'partially_paid' : 'pending';
   }
 
@@ -103,7 +106,6 @@ function toTransactionApi(row, context = {}) {
     billNo: row.billNo,
     plateNo: row.plateNo,
     vehicleType: row.vehicleType,
-    serviceType: row.serviceType,
     entryAt,
     exitAt: toIsoOrNull(row.exitAt),
     calculatedAt: cutoffAt,
@@ -150,7 +152,11 @@ function buildWhere({ keyword, plateNo, billNo, status, startDate, endDate } = {
     AND.push({ plateNo: { contains: String(plateNo).replace(/[\s-]/g, ''), mode: 'insensitive' } });
   }
   if (billNo) AND.push({ billNo: { contains: String(billNo), mode: 'insensitive' } });
-  if (status) AND.push({ status });
+  if (Array.isArray(status) && status.length) {
+    AND.push({ status: { in: status } });
+  } else if (status) {
+    AND.push({ status });
+  }
 
   if (startDate || endDate) {
     AND.push({
@@ -426,7 +432,7 @@ async function createTransaction({ plateNo, vehicleType = 'car', serviceType = '
       id: createId('t'),
       billNo,
       plateNo,
-      vehicleType,
+      vehicleType: normalizeVehicleType(vehicleType),
       serviceType,
       entryAt: entryTime,
       status: 'pending',
@@ -449,34 +455,15 @@ function createBillNo(date = new Date()) {
   return `PK${year}${month}${day}-${hours}${mins}${secs}-${String(Date.now()).slice(-4)}`;
 }
 
-// Function check registered/known vehicle from existing successful transaction history.
-async function hasKnownVehicleByPlateNo(plateNo) {
-  const normalizedPlateNo = normalizePlateNo(plateNo);
-  if (!normalizedPlateNo) return false;
-
-  const count = await prisma.transaction.count({
-    where: {
-      plateNo: normalizedPlateNo,
-      status: { not: 'DENIED' },
-    },
-  });
-
-  return count > 0;
-}
-
 // Function find repeated camera event in a short time window.
 async function findDuplicateCameraTransaction({ plateNo, cameraId, direction, capturedAt }, windowMs = 10000) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo || !cameraId || !direction) return null;
 
   const capturedTime = capturedAt instanceof Date ? capturedAt : new Date(capturedAt);
-  const from = new Date(capturedTime.getTime() - windowMs);
-  const to = new Date(capturedTime.getTime() + windowMs);
-
   const rows = await prisma.transaction.findMany({
     where: {
       plateNo: normalizedPlateNo,
-      entryAt: { gte: from, lte: to },
     },
     orderBy: { createdAt: 'desc' },
     take: 20,
@@ -484,13 +471,19 @@ async function findDuplicateCameraTransaction({ plateNo, cameraId, direction, ca
 
   return rows.find((row) => {
     const camera = row.receipt?.camera || {};
-    return camera.cameraId === cameraId && camera.direction === direction;
+    const cameraCapturedAt = camera.capturedAt ? new Date(camera.capturedAt) : null;
+    const isSameEventTime = cameraCapturedAt
+      ? Math.abs(cameraCapturedAt.getTime() - capturedTime.getTime()) <= windowMs
+      : false;
+
+    return camera.cameraId === cameraId && camera.direction === direction && isSameEventTime;
   }) || null;
 }
 
 // Function create transaction from LPR/camera body payload.
 async function createCameraTransaction({
   plateNo,
+  vehicleType,
   cameraId,
   gateId,
   direction,
@@ -498,20 +491,51 @@ async function createCameraTransaction({
   confidence,
   imageUrl,
   status,
-  reason,
 }) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo) throw new Error('plateNo is required');
 
   const capturedTime = capturedAt instanceof Date ? capturedAt : new Date(capturedAt || Date.now());
+
+  if (direction === 'OUT') {
+    const existing = await prisma.transaction.findFirst({
+      where: {
+        plateNo: normalizedPlateNo,
+        status: { notIn: ['completed', 'cancelled'] },
+      },
+      orderBy: { entryAt: 'desc' },
+    });
+
+    if (existing) {
+      return prisma.transaction.update({
+        where: { id: existing.id },
+        data: {
+          exitAt: capturedTime,
+          receipt: {
+            ...(existing.receipt || {}),
+            camera: {
+              cameraId,
+              gateId,
+              direction,
+              capturedAt: capturedTime.toISOString(),
+              ...(confidence !== undefined ? { confidence } : {}),
+              ...(imageUrl ? { imageUrl } : {}),
+            },
+          },
+        },
+      });
+    }
+  }
+
   const saved = await prisma.transaction.create({
     data: {
       id: createId('t'),
       billNo: createBillNo(capturedTime),
       plateNo: normalizedPlateNo,
-      vehicleType: 'car',
+      vehicleType: normalizeVehicleType(vehicleType),
       serviceType: 'parking',
       entryAt: capturedTime,
+      exitAt: direction === 'OUT' ? capturedTime : null,
       status,
       totalPaid: 0,
       payments: [],
@@ -523,7 +547,6 @@ async function createCameraTransaction({
           capturedAt: capturedTime.toISOString(),
           ...(confidence !== undefined ? { confidence } : {}),
           ...(imageUrl ? { imageUrl } : {}),
-          ...(reason ? { reason } : {}),
         },
       },
     },
@@ -547,7 +570,7 @@ module.exports = {
   createTransaction,
   createCameraTransaction,
   findDuplicateCameraTransaction,
-  hasKnownVehicleByPlateNo,
   normalizePlateNo,
+  normalizeVehicleType,
   toTransactionApi
 };

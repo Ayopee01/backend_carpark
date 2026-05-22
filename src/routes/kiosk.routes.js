@@ -186,7 +186,8 @@ router.get('/search', async (req, res, next) => {
       await updateKioskStatus(deviceId, { ip: req.ip });
     }
 
-    const result = await listTransactions({ plateNo, status: 'pending' });
+    // Search only transactions that can still be paid from kiosk/mobile.
+    const result = await listTransactions({ plateNo, status: ['pending', 'partially_paid'] });
     return res.json({
       count: result.meta ? result.meta.total : result.data.length,
       items: result.data,

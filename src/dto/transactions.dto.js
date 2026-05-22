@@ -3,9 +3,14 @@ function normalizePlateNo(plateNo) {
   return plateNo ? String(plateNo).trim().replace(/[\s-]/g, '') : '';
 }
 
+function normalizeVehicleType(vehicleType) {
+  return vehicleType ? String(vehicleType).trim().toLowerCase() : 'car';
+}
+
 function toCameraTransactionDto(payload = {}) {
   return {
     plateNo: normalizePlateNo(payload.plateNo),
+    vehicleType: normalizeVehicleType(payload.vehicleType),
     cameraId: String(payload.cameraId).trim(),
     gateId: String(payload.gateId).trim(),
     direction: String(payload.direction).trim().toUpperCase(),
@@ -21,5 +26,6 @@ function toCameraTransactionDto(payload = {}) {
 
 module.exports = {
   normalizePlateNo,
+  normalizeVehicleType,
   toCameraTransactionDto,
 };

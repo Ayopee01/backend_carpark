@@ -46,7 +46,7 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Create transaction from LPR camera body',
-        description: 'Camera/LPR sends plateNo in request body after converting the plate image to string. Backend normalizes plateNo, checks duplicate plateNo+cameraId+direction within 10 seconds, then creates ALLOWED or DENIED transaction.',
+        description: 'Camera/LPR sends plateNo in request body after converting the plate image to string. Backend normalizes plateNo, allows vehicleType only car or motorcycle, checks duplicate plateNo+cameraId+direction within 10 seconds, then creates a pending transaction. exitAt stays null for IN and is set from capturedAt for OUT.',
         requestBody: {
           required: true,
           content: {
@@ -59,6 +59,7 @@ const openapi = {
                   cameraId: { type: 'string' },
                   gateId: { type: 'string' },
                   direction: { type: 'string', enum: ['IN', 'OUT'] },
+                  vehicleType: { type: 'string', enum: ['car', 'motorcycle'], default: 'car' },
                   capturedAt: { type: 'string', format: 'date-time' },
                   confidence: { type: 'number' },
                   imageUrl: { type: 'string' }
@@ -69,6 +70,7 @@ const openapi = {
                 cameraId: 'CAM-IN-01',
                 gateId: 'GATE-A',
                 direction: 'IN',
+                vehicleType: 'car',
                 capturedAt: '2026-05-22T10:30:00+07:00',
                 confidence: 0.92,
                 imageUrl: 'https://example.com/plate.jpg'
@@ -77,7 +79,7 @@ const openapi = {
           }
         },
         responses: {
-          201: { description: 'OPEN_GATE or DENY response' },
+          201: { description: 'Transaction created from camera' },
           200: { description: 'IGNORE_DUPLICATE response' },
           400: { description: 'VALIDATION_ERROR response' }
         }
@@ -165,7 +167,7 @@ const openapi = {
     '/api/v1/kiosk/check-in': { post: { tags: ['Kiosk'], summary: 'Kiosk check-in', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Check-in success' } } } },
     '/api/v1/kiosk/activate': { post: { tags: ['Kiosk'], summary: 'Activate kiosk', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Activated' } } } },
     '/api/v1/kiosk/config': { get: { tags: ['Kiosk'], summary: 'Get kiosk config', responses: { 200: { description: 'Config' } } } },
-    '/api/v1/kiosk/search': { get: { tags: ['Kiosk'], summary: 'Search pending transactions by plateNo', responses: { 200: { description: 'Search results' } } } },
+    '/api/v1/kiosk/search': { get: { tags: ['Kiosk'], summary: 'Search payable transactions by plateNo', description: 'Public kiosk/mobile search by plateNo. Returns only transactions that can still be paid: pending or partially_paid. completed and cancelled transactions are excluded.', parameters: [{ in: 'query', name: 'plateNo', required: true, schema: { type: 'string' }, example: '3งจ9012' }, { in: 'query', name: 'deviceId', required: false, schema: { type: 'string' }, example: 'K-20260521-008' }], responses: { 200: { description: 'Search results with count and items' } } } },
     '/api/v1/kiosk/transaction': { get: { tags: ['Kiosk'], summary: 'Get kiosk transaction by plateNo', responses: { 200: { description: 'Transaction' } } } },
     '/api/v1/kiosk/transaction/{id}': { get: { tags: ['Kiosk'], summary: 'Get kiosk transaction', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Transaction' } } } },
     '/api/v1/kiosk/payment': { post: { tags: ['Kiosk'], summary: 'Kiosk payment', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Payment processed' } } } },

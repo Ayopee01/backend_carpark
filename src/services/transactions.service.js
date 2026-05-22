@@ -1,7 +1,6 @@
 const {
   createCameraTransaction,
   findDuplicateCameraTransaction,
-  hasKnownVehicleByPlateNo,
 } = require('../data/repositories/transactions.repo');
 
 const DUPLICATE_WINDOW_MS = 10 * 1000;
@@ -16,7 +15,6 @@ function toGateResponse(transaction, action, message, success) {
       plateNo: transaction.plateNo,
       direction: transaction.receipt?.camera?.direction,
       status: transaction.status,
-      ...(transaction.status === 'DENIED' ? { reason: transaction.receipt?.camera?.reason || 'VEHICLE_NOT_FOUND' } : {}),
     },
   };
 }
@@ -35,21 +33,11 @@ async function createTransactionFromCamera(dto) {
     };
   }
 
-  const isKnownVehicle = await hasKnownVehicleByPlateNo(dto.plateNo);
-  const status = isKnownVehicle ? 'ALLOWED' : 'DENIED';
-  const reason = isKnownVehicle ? undefined : 'VEHICLE_NOT_FOUND';
-  const transaction = await createCameraTransaction({ ...dto, status, reason });
-
-  if (isKnownVehicle) {
-    return {
-      statusCode: 201,
-      body: toGateResponse(transaction, 'OPEN_GATE', 'อนุญาตให้ผ่าน', true),
-    };
-  }
+  const transaction = await createCameraTransaction({ ...dto, status: 'pending' });
 
   return {
     statusCode: 201,
-    body: toGateResponse(transaction, 'DENY', 'ไม่พบทะเบียนในระบบ', false),
+    body: toGateResponse(transaction, 'OPEN_GATE', 'บันทึกรายการจากกล้องสำเร็จ', true),
   };
 }
 
