@@ -31,7 +31,7 @@ function toJsonArray(value) {
 }
 
 function normalizePlateNo(plateNo) {
-  return plateNo ? String(plateNo).replace(/[\s-]/g, '') : null;
+  return plateNo ? String(plateNo).trim().replace(/[\s-]/g, '') : null;
 }
 
 function isLikelyPlateKeyword(value) {
@@ -81,7 +81,9 @@ function toTransactionApi(row, context = {}) {
   const totalPaid = Number(row.totalPaid ?? 0);
   const remainingAmount = Math.max(0, netAmount - totalPaid);
   let finalStatus = row.status;
-  if (remainingAmount > 0) {
+  if (['ALLOWED', 'DENIED'].includes(row.status)) {
+    finalStatus = row.status;
+  } else if (remainingAmount > 0) {
     finalStatus = totalPaid > 0 ? 'partially_paid' : 'pending';
   }
 
@@ -333,7 +335,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
   }
 
   const saved = await prisma.transaction.update({
-    where: { id },
+    where: { id: transaction.id },
     data: updates
   });
 
@@ -437,6 +439,99 @@ async function createTransaction({ plateNo, vehicleType = 'car', serviceType = '
   return toTransactionApi(saved, context);
 }
 
+function createBillNo(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const mins = String(date.getMinutes()).padStart(2, '0');
+  const secs = String(date.getSeconds()).padStart(2, '0');
+  return `PK${year}${month}${day}-${hours}${mins}${secs}-${String(Date.now()).slice(-4)}`;
+}
+
+// Function check registered/known vehicle from existing successful transaction history.
+async function hasKnownVehicleByPlateNo(plateNo) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) return false;
+
+  const count = await prisma.transaction.count({
+    where: {
+      plateNo: normalizedPlateNo,
+      status: { not: 'DENIED' },
+    },
+  });
+
+  return count > 0;
+}
+
+// Function find repeated camera event in a short time window.
+async function findDuplicateCameraTransaction({ plateNo, cameraId, direction, capturedAt }, windowMs = 10000) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo || !cameraId || !direction) return null;
+
+  const capturedTime = capturedAt instanceof Date ? capturedAt : new Date(capturedAt);
+  const from = new Date(capturedTime.getTime() - windowMs);
+  const to = new Date(capturedTime.getTime() + windowMs);
+
+  const rows = await prisma.transaction.findMany({
+    where: {
+      plateNo: normalizedPlateNo,
+      entryAt: { gte: from, lte: to },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+  });
+
+  return rows.find((row) => {
+    const camera = row.receipt?.camera || {};
+    return camera.cameraId === cameraId && camera.direction === direction;
+  }) || null;
+}
+
+// Function create transaction from LPR/camera body payload.
+async function createCameraTransaction({
+  plateNo,
+  cameraId,
+  gateId,
+  direction,
+  capturedAt,
+  confidence,
+  imageUrl,
+  status,
+  reason,
+}) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) throw new Error('plateNo is required');
+
+  const capturedTime = capturedAt instanceof Date ? capturedAt : new Date(capturedAt || Date.now());
+  const saved = await prisma.transaction.create({
+    data: {
+      id: createId('t'),
+      billNo: createBillNo(capturedTime),
+      plateNo: normalizedPlateNo,
+      vehicleType: 'car',
+      serviceType: 'parking',
+      entryAt: capturedTime,
+      status,
+      totalPaid: 0,
+      payments: [],
+      receipt: {
+        camera: {
+          cameraId,
+          gateId,
+          direction,
+          capturedAt: capturedTime.toISOString(),
+          ...(confidence !== undefined ? { confidence } : {}),
+          ...(imageUrl ? { imageUrl } : {}),
+          ...(reason ? { reason } : {}),
+        },
+      },
+    },
+  });
+
+  return saved;
+}
+
 // Export Functions
 module.exports = {
   listTransactions,
@@ -450,5 +545,9 @@ module.exports = {
   deleteTransaction,
   processPayment,
   createTransaction,
+  createCameraTransaction,
+  findDuplicateCameraTransaction,
+  hasKnownVehicleByPlateNo,
+  normalizePlateNo,
   toTransactionApi
 };

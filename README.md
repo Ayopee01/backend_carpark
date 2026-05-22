@@ -116,6 +116,30 @@ http://localhost:8080/docs/openapi.json
 
 รายการ API และรายละเอียด request/response ให้ดูในหน้า Docs เป็นหลัก ไม่ต้องดูจาก README
 
+### Transaction จากกล้องอ่านป้ายทะเบียน
+
+ใช้ endpoint นี้สำหรับกล้อง LPR หลังจากแปลงป้ายทะเบียนเป็น string แล้วส่งเข้า Backend:
+
+```http
+POST /api/v1/transactions
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "plateNo": "1กก1234",
+  "cameraId": "CAM-IN-01",
+  "gateId": "GATE-A",
+  "direction": "IN",
+  "capturedAt": "2026-05-22T10:30:00+07:00",
+  "confidence": 0.92,
+  "imageUrl": "https://example.com/plate.jpg"
+}
+```
+
+Backend จะ normalize `plateNo`, ตรวจข้อมูลจำเป็น, กันรายการซ้ำจาก `plateNo + cameraId + direction` ภายใน 10 วินาที และตอบ `OPEN_GATE`, `DENY`, `VALIDATION_ERROR` หรือ `IGNORE_DUPLICATE` ในรูปแบบ response เดียวกันเสมอ
+
 ## ทดสอบด้วย Postman
 
 โปรเจกต์มี Postman Collection เตรียมไว้ที่:

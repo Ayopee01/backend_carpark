@@ -28,11 +28,98 @@ const openapi = {
     '/api/v1/overview/summary': { get: { tags: ['Overview'], summary: 'Overview summary', responses: { 200: { description: 'Overview' } } } },
 
     /* Transactions */
-    '/api/v1/transactions': { get: { tags: ['Transactions'], summary: 'List/search transactions. Use all=true to return all matched rows without pagination.', responses: { 200: { description: 'Transactions list' } } }, post: { tags: ['Transactions'], summary: 'Create transaction', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 201: { description: 'Created' } } } },
-    '/api/v1/transactions/{id}': { get: { tags: ['Transactions'], summary: 'Get transaction by id or plateNo', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Transaction details' } } }, patch: { tags: ['Transactions'], summary: 'Update transaction by id or plateNo', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Transactions'], summary: 'Delete transaction by id or plateNo', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Deleted' } } } },
-    '/api/v1/transactions/payment': { post: { tags: ['Transactions'], summary: 'Confirm payment by plateNo', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Payment processed' } } } },
-    '/api/v1/transactions/{id}/payment': { post: { tags: ['Transactions'], summary: 'Generate/confirm payment by id or plateNo', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Payment processed' } } } },
-    '/api/v1/transactions/{id}/status': { patch: { tags: ['Transactions'], summary: 'Update transaction status by id or plateNo', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } } },
+    '/api/v1/transactions': {
+      get: {
+        tags: ['Transactions'],
+        summary: 'List/search transactions',
+        description: 'Use page/per_page for normal listing. Search plate numbers with keyword, e.g. /api/v1/transactions?keyword=3งจ9012. Optional deviceId/deviceType query params may be sent by device UIs but are not required for search.',
+        parameters: [
+          { in: 'query', name: 'keyword', required: false, schema: { type: 'string' }, example: '3งจ9012' },
+          { in: 'query', name: 'page', required: false, schema: { type: 'integer', default: 1 }, example: 1 },
+          { in: 'query', name: 'per_page', required: false, schema: { type: 'integer', default: 10 }, example: 10 },
+          { in: 'query', name: 'all', required: false, schema: { type: 'boolean' }, example: false },
+          { in: 'query', name: 'deviceId', required: false, schema: { type: 'string' }, example: 'K-20260521-008' },
+          { in: 'query', name: 'deviceType', required: false, schema: { type: 'string', enum: ['kiosk', 'barrier_gate'] }, example: 'kiosk' }
+        ],
+        responses: { 200: { description: 'Transactions list' } }
+      },
+      post: {
+        tags: ['Transactions'],
+        summary: 'Create transaction from LPR camera body',
+        description: 'Camera/LPR sends plateNo in request body after converting the plate image to string. Backend normalizes plateNo, checks duplicate plateNo+cameraId+direction within 10 seconds, then creates ALLOWED or DENIED transaction.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['plateNo', 'cameraId', 'gateId', 'direction'],
+                properties: {
+                  plateNo: { type: 'string' },
+                  cameraId: { type: 'string' },
+                  gateId: { type: 'string' },
+                  direction: { type: 'string', enum: ['IN', 'OUT'] },
+                  capturedAt: { type: 'string', format: 'date-time' },
+                  confidence: { type: 'number' },
+                  imageUrl: { type: 'string' }
+                }
+              },
+              example: {
+                plateNo: '1กก1234',
+                cameraId: 'CAM-IN-01',
+                gateId: 'GATE-A',
+                direction: 'IN',
+                capturedAt: '2026-05-22T10:30:00+07:00',
+                confidence: 0.92,
+                imageUrl: 'https://example.com/plate.jpg'
+              }
+            }
+          }
+        },
+        responses: {
+          201: { description: 'OPEN_GATE or DENY response' },
+          200: { description: 'IGNORE_DUPLICATE response' },
+          400: { description: 'VALIDATION_ERROR response' }
+        }
+      }
+    },
+    '/api/v1/transactions/{id}': {
+      get: {
+        tags: ['Transactions'],
+        summary: 'Get transaction by id or plateNo',
+        description: 'The path parameter can be either transaction id or plateNo. If id is not found, the API resolves the latest transaction by plateNo.',
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: '3งจ9012' }],
+        responses: { 200: { description: 'Transaction details' } }
+      },
+      patch: {
+        tags: ['Transactions'],
+        summary: 'Update transaction by id or plateNo',
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: '3งจ9012' }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' }, example: { vehicleType: 'car', serviceType: 'parking' } } } },
+        responses: { 200: { description: 'Updated' } }
+      },
+      delete: { tags: ['Transactions'], summary: 'Delete transaction by id or plateNo', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: '3งจ9012' }], responses: { 200: { description: 'Deleted' } } }
+    },
+    '/api/v1/transactions/payment': { post: { tags: ['Transactions'], summary: 'Confirm payment by plateNo in body', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' }, example: { plateNo: '3งจ9012', method: 'cash', channel: 'cashier', amount: 40 } } } }, responses: { 200: { description: 'Payment processed' } } } },
+    '/api/v1/transactions/{id}/payment': {
+      post: {
+        tags: ['Transactions'],
+        summary: 'Confirm payment by id or plateNo in path',
+        description: 'Use /api/v1/transactions/{plateNo}/payment to pay by plate number. For plate numbers with spaces or special characters, URL-encode the path value.',
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: '3งจ9012' }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' }, example: { method: 'cash', channel: 'cashier', amount: 40 } } } },
+        responses: { 200: { description: 'Payment processed' } }
+      }
+    },
+    '/api/v1/transactions/{id}/status': {
+      patch: {
+        tags: ['Transactions'],
+        summary: 'Update transaction status by id or plateNo',
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: '3งจ9012' }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' }, example: { status: 'pending' } } } },
+        responses: { 200: { description: 'Updated' } }
+      }
+    },
 
     /* Users */
     '/api/v1/users': { get: { tags: ['Users'], summary: 'List users', responses: { 200: { description: 'Users' } } }, post: { tags: ['Users'], summary: 'Create user', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 201: { description: 'Created' } } } },

@@ -202,14 +202,14 @@
           }
         },
         {
-          "name": "Create Transaction",
+          "name": "Create Transaction From Camera",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "url": "{{baseUrl}}/api/v1/transactions",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"plateNo\": \"9กท1001\",\n  \"vehicleType\": \"car\",\n  \"serviceType\": \"parking\"\n}"
+              "raw": "{\n  \"plateNo\": \"1กก1234\",\n  \"cameraId\": \"CAM-IN-01\",\n  \"gateId\": \"GATE-A\",\n  \"direction\": \"IN\",\n  \"capturedAt\": \"2026-05-22T10:30:00+07:00\",\n  \"confidence\": 0.92,\n  \"imageUrl\": \"https://example.com/plate.jpg\"\n}"
             }
           }
         },
