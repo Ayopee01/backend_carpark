@@ -134,10 +134,15 @@ const openapi = {
     '/api/v1/members/{id}/permissions': { patch: { tags: ['Members'], summary: 'Update member permissions', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } } },
 
     /* Service Pricing */
-    '/api/v1/service-pricing/config': { get: { tags: ['Service Pricing'], summary: 'Get pricing config', responses: { 200: { description: 'Config' } } }, put: { tags: ['Service Pricing'], summary: 'Update pricing config', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } } },
-    '/api/v1/service-pricing/calculate': { post: { tags: ['Service Pricing'], summary: 'Preview pricing calculation from current rules', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Calculated pricing preview' } } } },
-    '/api/v1/service-pricing/rules': { post: { tags: ['Service Pricing'], summary: 'Create pricing rule', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 201: { description: 'Created' } } } },
-    '/api/v1/service-pricing/rules/{id}': { patch: { tags: ['Service Pricing'], summary: 'Update pricing rule', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Service Pricing'], summary: 'Delete pricing rule', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Deleted' } } } },
+    '/api/v1/service-pricing/config': {
+      get: { tags: ['Service Pricing'], summary: 'Get pricing config', description: 'Admin only. Returns all service pricing config items and master data.', responses: { 200: { description: 'Config' } } },
+      put: { tags: ['Service Pricing'], summary: 'Update pricing config', description: 'Admin only. Replaces/merges the pricing config object.', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } }, responses: { 200: { description: 'Updated' } } },
+      post: { tags: ['Service Pricing'], summary: 'Create pricing config item', description: 'Admin only. Adds one config item such as base_hour, next_hour, or overnight_day/week/month/year.', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' }, example: { name: 'Car base hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 20, status: 'active' } } } }, responses: { 201: { description: 'Created' } } }
+    },
+    '/api/v1/service-pricing/config/{id}': {
+      patch: { tags: ['Service Pricing'], summary: 'Update pricing config item by id', description: 'Admin only. Updates one config item by id.', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: 'pr_car_base_hour' }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' }, example: { price: 25, status: 'active' } } } }, responses: { 200: { description: 'Updated' } } },
+      delete: { tags: ['Service Pricing'], summary: 'Delete pricing config item by id', description: 'Admin only. Deletes one config item by id.', parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' }, example: 'pr_car_base_hour' }], responses: { 200: { description: 'Deleted' } } }
+    },
 
     /* Devices (and Kiosk admin) */
     '/api/v1/devices/config': { get: { tags: ['Devices'], summary: 'Get devices config', responses: { 200: { description: 'Devices' } } } },

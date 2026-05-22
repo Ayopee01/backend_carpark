@@ -141,11 +141,15 @@ const appConfigs = [
     data: {
       gracePeriod: 15,
       pricingRules: [
-        { id: 'pr_free_car', serviceType: 'parking', vehicleType: 'car', conditionType: 'range', hourStart: 1, hourEnd: 1, price: 0, status: 'active' },
-        { id: 'pr_car_2_3', serviceType: 'parking', vehicleType: 'car', conditionType: 'range', hourStart: 2, hourEnd: 3, price: 20, status: 'active' },
-        { id: 'pr_car_4_999', serviceType: 'parking', vehicleType: 'car', conditionType: 'range', hourStart: 4, hourEnd: 999, price: 30, status: 'active' },
-        { id: 'pr_motorcycle', serviceType: 'parking', vehicleType: 'motorcycle', conditionType: 'range', hourStart: 1, hourEnd: 999, price: 10, status: 'active' },
-        { id: 'pr_ev', serviceType: 'ev', vehicleType: 'car', conditionType: 'range', hourStart: 1, hourEnd: 999, price: 60, status: 'active' }
+        { id: 'pr_car_base_hour', name: 'Car base hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 20, status: 'active' },
+        { id: 'pr_car_next_hour', name: 'Car next hour from hour 3', feeType: 'next_hour', vehicleType: 'car', hourStart: 3, hourEnd: null, price: 10, status: 'active' },
+        { id: 'pr_car_overnight_day', name: 'Car overnight per day', feeType: 'overnight_day', vehicleType: 'car', periodUnit: 'day', periodStart: 1, periodEnd: null, price: 100, status: 'active' },
+        { id: 'pr_car_overnight_week', name: 'Car overnight per week', feeType: 'overnight_week', vehicleType: 'car', periodUnit: 'week', periodStart: 1, periodEnd: null, price: 600, status: 'active' },
+        { id: 'pr_car_overnight_month', name: 'Car overnight per month', feeType: 'overnight_month', vehicleType: 'car', periodUnit: 'month', periodStart: 1, periodEnd: null, price: 2000, status: 'active' },
+        { id: 'pr_car_overnight_year', name: 'Car overnight per year', feeType: 'overnight_year', vehicleType: 'car', periodUnit: 'year', periodStart: 1, periodEnd: null, price: 20000, status: 'active' },
+        { id: 'pr_motorcycle_base_hour', name: 'Motorcycle base hour', feeType: 'base_hour', vehicleType: 'motorcycle', baseHours: 1, hourStart: 1, hourEnd: 1, price: 10, status: 'active' },
+        { id: 'pr_motorcycle_next_hour', name: 'Motorcycle next hour from hour 3', feeType: 'next_hour', vehicleType: 'motorcycle', hourStart: 3, hourEnd: null, price: 5, status: 'active' },
+        { id: 'pr_motorcycle_overnight_day', name: 'Motorcycle overnight per day', feeType: 'overnight_day', vehicleType: 'motorcycle', periodUnit: 'day', periodStart: 1, periodEnd: null, price: 50, status: 'active' }
       ],
       paymentChannels: [
         { code: 'cash', label: 'Cash', enabled: true },
@@ -160,14 +164,19 @@ const appConfigs = [
       ],
       masterData: {
         serviceTypes: [
-          { code: 'parking', label: 'Parking' },
-          { code: 'ev', label: 'EV Charge' },
-          { code: 'booking', label: 'Booking' }
+          { code: 'parking', label: 'Parking' }
         ],
         vehicleTypes: [
           { code: 'car', label: 'Car' },
-          { code: 'motorcycle', label: 'Motorcycle' },
-          { code: 'van', label: 'Van' }
+          { code: 'motorcycle', label: 'Motorcycle' }
+        ],
+        feeTypes: [
+          { code: 'base_hour', label: 'Base hour' },
+          { code: 'next_hour', label: 'Next hour' },
+          { code: 'overnight_day', label: 'Overnight per day' },
+          { code: 'overnight_week', label: 'Overnight per week' },
+          { code: 'overnight_month', label: 'Overnight per month' },
+          { code: 'overnight_year', label: 'Overnight per year' }
         ]
       }
     }

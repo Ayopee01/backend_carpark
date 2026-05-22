@@ -2,113 +2,105 @@
 const { createId } = require('../store');
 const defaults = require('../defaults');
 const { getConfig, setConfig } = require('./config.repo');
-const { calculateFee } = require('../../utils/pricing');
 
-// Constant key สำหรับอ้างอิง pricing config ใน table app_config
+// Constant key for pricing config in app_config table
 const CONFIG_KEY = 'pricing_config';
+const ALLOWED_FEE_TYPES = ['base_hour', 'next_hour', 'overnight_day', 'overnight_week', 'overnight_month', 'overnight_year'];
+const ALLOWED_VEHICLE_TYPES = ['car', 'motorcycle'];
 
-// Function query pricing config จาก database ถ้าไม่มีให้ใช้ค่า default
+function normalizeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizePricingItem(payload = {}, current = {}) {
+  const feeType = payload.feeType || current.feeType || 'base_hour';
+  const vehicleType = payload.vehicleType || current.vehicleType || 'car';
+
+  return {
+    ...current,
+    ...payload,
+    id: current.id || payload.id || createId('pr'),
+    name: payload.name || current.name || feeType,
+    feeType: ALLOWED_FEE_TYPES.includes(feeType) ? feeType : 'base_hour',
+    vehicleType: ALLOWED_VEHICLE_TYPES.includes(vehicleType) ? vehicleType : 'car',
+    price: normalizeNumber(payload.price ?? current.price, 0),
+    baseHours: normalizeNumber(payload.baseHours ?? current.baseHours, 1),
+    hourStart: normalizeNumber(payload.hourStart ?? current.hourStart, 1),
+    hourEnd: payload.hourEnd === null ? null : normalizeNumber(payload.hourEnd ?? current.hourEnd, 1),
+    periodUnit: payload.periodUnit || current.periodUnit || null,
+    periodStart: normalizeNumber(payload.periodStart ?? current.periodStart, 1),
+    periodEnd: payload.periodEnd === null ? null : normalizeNumber(payload.periodEnd ?? current.periodEnd, 1),
+    status: payload.status || current.status || 'active',
+  };
+}
+
+// Function query pricing config from database, fallback to defaults.
 async function getPricingConfig() {
   return getConfig(CONFIG_KEY, defaults.pricingConfig);
 }
 
-// Function update pricing config ทั้งก้อน
+// Function replace/merge pricing config as one admin config object.
 async function updatePricingConfig(body = {}) {
   const current = await getPricingConfig();
   const nextConfig = {
     ...current,
-    pricingRules: body.pricingRules || current.pricingRules,
+    ...body,
+    pricingRules: Array.isArray(body.pricingRules)
+      ? body.pricingRules.map((item) => normalizePricingItem(item))
+      : current.pricingRules,
     paymentChannels: body.paymentChannels || current.paymentChannels,
     serviceChannelMapping: body.serviceChannelMapping || current.serviceChannelMapping,
-    masterData: body.masterData || current.masterData
+    masterData: body.masterData || current.masterData,
   };
 
   return setConfig(CONFIG_KEY, nextConfig);
 }
 
-// Function create pricing rule ใหม่
-async function createPricingRule(payload = {}) {
+// Function add one pricing config item.
+async function createPricingConfigItem(payload = {}) {
   const current = await getPricingConfig();
-  const rule = {
-    id: createId('pr'),
-    serviceType: payload.serviceType,
-    vehicleType: payload.vehicleType,
-    conditionType: payload.conditionType || 'range',
-    hourStart: Number(payload.hourStart ?? 1),
-    hourEnd: payload.hourEnd === null ? null : Number(payload.hourEnd ?? 1),
-    price: Number(payload.price),
-    status: payload.status || 'active'
-  };
-
+  const item = normalizePricingItem(payload);
   const nextConfig = {
     ...current,
-    pricingRules: [...(current.pricingRules || []), rule]
+    pricingRules: [...(current.pricingRules || []), item],
   };
 
   await setConfig(CONFIG_KEY, nextConfig);
-  return rule;
+  return item;
 }
 
-// Function update pricing rule ด้วย id
-async function updatePricingRule(id, payload = {}) {
-  const current = await getPricingConfig();
-  const index = (current.pricingRules || []).findIndex((item) => item.id === id);
-  if (index === -1) return null;
-
-  const updatedRule = {
-    ...current.pricingRules[index],
-    ...payload
-  };
-
-  if (payload.hourStart !== undefined) updatedRule.hourStart = Number(payload.hourStart);
-  if (payload.hourEnd !== undefined) updatedRule.hourEnd = payload.hourEnd === null ? null : Number(payload.hourEnd);
-  if (payload.price !== undefined) updatedRule.price = Number(payload.price);
-
-  const nextRules = [...current.pricingRules];
-  nextRules[index] = updatedRule;
-
-  await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
-  return updatedRule;
-}
-
-// Function delete pricing rule ด้วย id
-async function deletePricingRule(id) {
+// Function update one pricing config item by id.
+async function updatePricingConfigItem(id, payload = {}) {
   const current = await getPricingConfig();
   const index = (current.pricingRules || []).findIndex((item) => item.id === id);
   if (index === -1) return null;
 
   const nextRules = [...current.pricingRules];
-  const [rule] = nextRules.splice(index, 1);
+  nextRules[index] = normalizePricingItem(payload, current.pricingRules[index]);
 
   await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
-  return rule;
+  return nextRules[index];
 }
 
-// Function preview à¸„à¸³à¸™à¸§à¸“à¸£à¸²à¸„à¸²à¸ˆà¸²à¸ pricing rules à¸›à¸±à¸ˆà¸ˆà¸¸à¸šà¸±à¸™
-async function calculatePricing(payload = {}) {
-  const config = await getPricingConfig();
-  const result = calculateFee(payload.entryAt, payload.exitAt || new Date().toISOString(), config.pricingRules || [], {
-    vehicleType: payload.vehicleType || 'car',
-    serviceType: payload.serviceType || 'parking'
-  });
+// Function delete one pricing config item by id.
+async function deletePricingConfigItem(id) {
+  const current = await getPricingConfig();
+  const index = (current.pricingRules || []).findIndex((item) => item.id === id);
+  if (index === -1) return null;
 
-  return {
-    input: {
-      entryAt: payload.entryAt,
-      exitAt: payload.exitAt || null,
-      vehicleType: payload.vehicleType || 'car',
-      serviceType: payload.serviceType || 'parking'
-    },
-    ...result
-  };
+  const nextRules = [...current.pricingRules];
+  const [item] = nextRules.splice(index, 1);
+
+  await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
+  return item;
 }
 
 // Export Functions
 module.exports = {
-  calculatePricing,
-  createPricingRule,
-  deletePricingRule,
+  createPricingConfigItem,
+  deletePricingConfigItem,
   getPricingConfig,
   updatePricingConfig,
-  updatePricingRule
+  updatePricingConfigItem,
 };

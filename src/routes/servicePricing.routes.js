@@ -1,20 +1,20 @@
 // Import Require
 const express = require('express');
 const {
-  calculatePricing,
-  createPricingRule,
-  deletePricingRule,
+  createPricingConfigItem,
+  deletePricingConfigItem,
   getPricingConfig,
   updatePricingConfig,
-  updatePricingRule
+  updatePricingConfigItem,
 } = require('../data/repositories/servicePricing.repo');
 const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
 
+// Service pricing config is an admin area and requires auth + pricing permission.
 router.use(authorize(['super_admin', 'staff'], 'pricing'));
 
-// Route query pricing config
+// Route query all pricing config.
 router.get('/config', async (req, res, next) => {
   try {
     const config = await getPricingConfig();
@@ -24,7 +24,7 @@ router.get('/config', async (req, res, next) => {
   }
 });
 
-// Route update pricing config
+// Route update pricing config as one config object.
 router.put('/config', async (req, res, next) => {
   try {
     const config = await updatePricingConfig(req.body || {});
@@ -34,55 +34,40 @@ router.put('/config', async (req, res, next) => {
   }
 });
 
-// Route preview pricing calculation from current rules
-router.post('/calculate', async (req, res, next) => {
+// Route add one pricing config item.
+router.post('/config', async (req, res, next) => {
   try {
     const payload = req.body || {};
-    if (!payload.entryAt) {
-      return res.status(400).json({ message: 'entryAt is required' });
+    if (payload.price === undefined) {
+      return res.status(400).json({ message: 'price is required' });
     }
 
-    const result = await calculatePricing(payload);
-    res.json(result);
+    const config = await createPricingConfigItem(payload);
+    res.status(201).json({ message: 'Pricing config item created', config });
   } catch (err) {
     next(err);
   }
 });
 
-// Route create pricing rule
-router.post('/rules', async (req, res, next) => {
+// Route update one pricing config item by id.
+router.patch('/config/:id', async (req, res, next) => {
   try {
-    const payload = req.body || {};
-    if (!payload.serviceType || !payload.vehicleType || payload.price === undefined) {
-      return res.status(400).json({ message: 'serviceType, vehicleType, and price are required' });
-    }
+    const config = await updatePricingConfigItem(req.params.id, req.body || {});
+    if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
-    const rule = await createPricingRule(payload);
-    res.status(201).json({ message: 'Pricing rule created', rule });
+    res.json({ message: 'Pricing config item updated', config });
   } catch (err) {
     next(err);
   }
 });
 
-// Route update pricing rule
-router.patch('/rules/:id', async (req, res, next) => {
+// Route delete one pricing config item by id.
+router.delete('/config/:id', async (req, res, next) => {
   try {
-    const rule = await updatePricingRule(req.params.id, req.body || {});
-    if (!rule) return res.status(404).json({ message: 'Pricing rule not found' });
+    const config = await deletePricingConfigItem(req.params.id);
+    if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
-    res.json({ message: 'Pricing rule updated', rule });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route delete pricing rule
-router.delete('/rules/:id', async (req, res, next) => {
-  try {
-    const rule = await deletePricingRule(req.params.id);
-    if (!rule) return res.status(404).json({ message: 'Pricing rule not found' });
-
-    res.json({ message: 'Pricing rule deleted', rule });
+    res.json({ message: 'Pricing config item deleted', config });
   } catch (err) {
     next(err);
   }

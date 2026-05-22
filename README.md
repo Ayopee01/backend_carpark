@@ -150,6 +150,25 @@ Backend จะ normalize `plateNo`, รองรับ `vehicleType` เฉพ�
 
 ค่า `exitAt` จะเป็น `null` ตอนรถเข้า และจะถูกเติมจาก `capturedAt` เมื่อกล้องส่ง `direction: "OUT"` ตอนรถออกจริง
 
+### Service Pricing Config
+
+ส่วนนี้เป็น Admin API และต้องใช้ Token ทุกเส้น:
+
+```http
+GET /api/v1/service-pricing/config
+PUT /api/v1/service-pricing/config
+POST /api/v1/service-pricing/config
+PATCH /api/v1/service-pricing/config/:id
+DELETE /api/v1/service-pricing/config/:id
+```
+
+ค่า config พื้นฐานใน seed:
+
+- `base_hour` ชั่วโมงแรก รถยนต์ 20 บาท
+- `next_hour` ชั่วโมงถัดไปตั้งแต่ชั่วโมงที่ 3 รถยนต์ 10 บาทต่อชั่วโมง
+- `overnight_day` ค่าปรับจอดค้างวันละ 100 บาท
+- รองรับ config ค่าปรับแบบ `overnight_week`, `overnight_month`, `overnight_year`
+
 ## ทดสอบด้วย Postman
 
 โปรเจกต์มี Postman Collection เตรียมไว้ที่:

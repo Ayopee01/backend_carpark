@@ -14,7 +14,7 @@
     { "key": "kioskDeviceId", "value": "K-SEED-001" },
     { "key": "barrierGateDeviceId", "value": "BG-SEED-001" },
     { "key": "activationCode", "value": "" },
-    { "key": "pricingRuleId", "value": "pr_car_2_3" },
+    { "key": "pricingRuleId", "value": "pr_car_base_hour" },
     { "key": "paymentMethodId", "value": "cash" },
     { "key": "paymentChannelId", "value": "ch_cashier" }
   ],
@@ -413,35 +413,23 @@
           }
         },
         {
-          "name": "Calculate Pricing",
+          "name": "Create Config Item",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/service-pricing/calculate",
+            "url": "{{baseUrl}}/api/v1/service-pricing/config",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"entryAt\": \"2026-05-01T08:00:00+07:00\",\n  \"exitAt\": \"2026-05-01T11:30:00+07:00\",\n  \"vehicleType\": \"car\",\n  \"serviceType\": \"parking\"\n}"
+              "raw": "{\n  \"name\": \"Car overnight per day\",\n  \"feeType\": \"overnight_day\",\n  \"vehicleType\": \"car\",\n  \"periodUnit\": \"day\",\n  \"periodStart\": 1,\n  \"periodEnd\": null,\n  \"price\": 100,\n  \"status\": \"active\"\n}"
             }
           }
         },
         {
-          "name": "Create Rule",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/service-pricing/rules",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"serviceType\": \"parking\",\n  \"vehicleType\": \"car\",\n  \"conditionType\": \"range\",\n  \"hourStart\": 5,\n  \"hourEnd\": 6,\n  \"price\": 40,\n  \"status\": \"active\"\n}"
-            }
-          }
-        },
-        {
-          "name": "Patch Rule",
+          "name": "Patch Config Item",
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/service-pricing/rules/{{pricingRuleId}}",
+            "url": "{{baseUrl}}/api/v1/service-pricing/config/{{pricingRuleId}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"price\": 25,\n  \"status\": \"active\"\n}"
@@ -449,11 +437,11 @@
           }
         },
         {
-          "name": "Delete Rule",
+          "name": "Delete Config Item",
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/service-pricing/rules/{{pricingRuleId}}"
+            "url": "{{baseUrl}}/api/v1/service-pricing/config/{{pricingRuleId}}"
           }
         }
       ]
