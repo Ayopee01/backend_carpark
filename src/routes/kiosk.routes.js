@@ -186,11 +186,13 @@ router.get('/search', async (req, res, next) => {
       await updateKioskStatus(deviceId, { ip: req.ip });
     }
 
-    // Search only transactions that can still be paid from kiosk/mobile.
-    const result = await listTransactions({ plateNo, status: ['pending', 'partially_paid'] });
+    // Search by plate first, then filter by computed API status.
+    // Some old rows store "completed" in DB but become "partially_paid" after overstay recalculation.
+    const result = await listTransactions({ plateNo, all: true });
+    const payableItems = result.data.filter((item) => ['pending', 'partially_paid'].includes(item.status));
     return res.json({
-      count: result.meta ? result.meta.total : result.data.length,
-      items: result.data,
+      count: payableItems.length,
+      items: payableItems,
     });
   } catch (err) {
     next(err);
