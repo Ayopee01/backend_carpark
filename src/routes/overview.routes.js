@@ -5,7 +5,8 @@ const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
 
-router.use(authorize(['super_admin', 'staff'], 'overview'));
+// Apply permission check สำหรับหน้า overview
+router.use(authorize('overview'));
 
 // Route query overview summary ตามช่วงวันที่
 router.get('/summary', async (req, res, next) => {

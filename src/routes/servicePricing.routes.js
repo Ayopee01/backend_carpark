@@ -3,22 +3,23 @@ const express = require('express');
 const {
   createPricingConfigItem,
   deletePricingConfigItem,
-  getPricingConfig,
+  getPricingConfigWithMeta,
   updatePricingConfig,
   updatePricingConfigItem,
 } = require('../data/repositories/servicePricing.repo');
+const { getExpectedConfigVersion } = require('../data/repositories/config.repo');
 const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
 
 // Service pricing config is an admin area and requires auth + pricing permission.
-router.use(authorize(['super_admin', 'staff'], 'pricing'));
+router.use(authorize('pricing'));
 
 // Route query all pricing config.
 router.get('/config', async (req, res, next) => {
   try {
-    const config = await getPricingConfig();
-    res.json(config);
+    const configWithMeta = await getPricingConfigWithMeta();
+    res.json(configWithMeta);
   } catch (err) {
     next(err);
   }
@@ -27,7 +28,7 @@ router.get('/config', async (req, res, next) => {
 // Route update pricing config as one config object.
 router.put('/config', async (req, res, next) => {
   try {
-    const config = await updatePricingConfig(req.body || {});
+    const config = await updatePricingConfig(req.body || {}, getExpectedConfigVersion(req));
     res.json({ message: 'Pricing config updated', config });
   } catch (err) {
     next(err);
@@ -42,7 +43,7 @@ router.post('/config', async (req, res, next) => {
       return res.status(400).json({ message: 'price is required' });
     }
 
-    const config = await createPricingConfigItem(payload);
+    const config = await createPricingConfigItem(payload, getExpectedConfigVersion(req));
     res.status(201).json({ message: 'Pricing config item created', config });
   } catch (err) {
     next(err);
@@ -52,7 +53,7 @@ router.post('/config', async (req, res, next) => {
 // Route update one pricing config item by id.
 router.patch('/config/:id', async (req, res, next) => {
   try {
-    const config = await updatePricingConfigItem(req.params.id, req.body || {});
+    const config = await updatePricingConfigItem(req.params.id, req.body || {}, getExpectedConfigVersion(req));
     if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
     res.json({ message: 'Pricing config item updated', config });
@@ -64,10 +65,15 @@ router.patch('/config/:id', async (req, res, next) => {
 // Route delete one pricing config item by id.
 router.delete('/config/:id', async (req, res, next) => {
   try {
-    const config = await deletePricingConfigItem(req.params.id);
+    const config = await deletePricingConfigItem(req.params.id, getExpectedConfigVersion(req));
     if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
-    res.json({ message: 'Pricing config item deleted', config });
+    res.json({
+      success: true,
+      status: 'delete_success',
+      message: 'Pricing config item deleted successfully',
+      config,
+    });
   } catch (err) {
     next(err);
   }

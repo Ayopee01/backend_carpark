@@ -3,7 +3,13 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { getConfig, setConfig } = require('../data/repositories/config.repo');
+const crypto = require('crypto');
+const {
+  getConfig,
+  getConfigWithMeta,
+  getExpectedConfigVersion,
+  setConfig,
+} = require('../data/repositories/config.repo');
 const appEvents = require('../utils/events');
 const { authorize } = require('../middleware/permission');
 const defaults = require('../data/defaults');
@@ -12,14 +18,17 @@ const router = express.Router();
 
 // Constant key สำหรับอ้างอิง theme config ใน table app_config
 const CONFIG_KEY = 'theme';
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // Constant config การเก็บไฟล์ logo ที่ upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, UPLOAD_DIR);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
     cb(null, `logo-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
@@ -29,11 +38,12 @@ const upload = multer({
   storage,
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|svg|webp/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    const allowedExt = new Set(['.jpeg', '.jpg', '.png', '.webp']);
+    const allowedMime = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const extname = allowedExt.has(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedMime.has(file.mimetype);
     if (extname && mimetype) return cb(null, true);
-    return cb(new Error('Only images (jpg, png, svg, webp) are allowed!'));
+    return cb(new Error('Only images (jpg, png, webp) are allowed!'));
   }
 });
 
@@ -56,13 +66,31 @@ function normalizeTheme(theme) {
   };
 }
 
-router.use(authorize(['super_admin', 'staff'], 'theme'));
+function normalizeThemeWithMeta(theme) {
+  return {
+    ...normalizeTheme(theme),
+    version: theme?.version ?? 0,
+    configUpdatedAt: theme?.configUpdatedAt ?? null,
+  };
+}
+
+// Function ลบไฟล์ logo เฉพาะที่อยู่ใน uploads เพื่อกัน path traversal จากค่า config
+function deleteUploadedLogo(logoUrl) {
+  if (!logoUrl || !String(logoUrl).startsWith('/uploads/')) return;
+  const filePath = path.join(UPLOAD_DIR, path.basename(logoUrl));
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+// Apply permission check สำหรับจัดการ theme
+router.use(authorize('theme'));
 
 // Route query theme ปัจจุบัน
 router.get('/', async (req, res, next) => {
   try {
-    const theme = await getConfig(CONFIG_KEY, defaults.theme);
-    res.json(normalizeTheme({ ...DEFAULT_THEME, ...theme }));
+    const theme = await getConfigWithMeta(CONFIG_KEY, defaults.theme);
+    res.json(normalizeThemeWithMeta({ ...DEFAULT_THEME, ...theme }));
   } catch (err) {
     next(err);
   }
@@ -101,9 +129,9 @@ router.put('/', async (req, res, next) => {
       updatedAt: new Date().toISOString()
     };
 
-    const saved = await setConfig(CONFIG_KEY, nextTheme);
+    const saved = await setConfig(CONFIG_KEY, nextTheme, { expectedVersion: getExpectedConfigVersion(req) });
     appEvents.emit('theme_updated', saved);
-    res.json({ message: 'Theme updated', theme: saved });
+    res.json({ message: 'Theme updated', theme: normalizeThemeWithMeta(saved) });
   } catch (err) {
     next(err);
   }
@@ -122,13 +150,6 @@ router.post('/upload-logo', upload.single('logo'), async (req, res, next) => {
       ...(await getConfig(CONFIG_KEY, defaults.theme))
     });
 
-    if (current.logoUrl) {
-      const oldPath = path.join(process.cwd(), current.logoUrl);
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
-      }
-    }
-
     const nextTheme = {
       themeColor: current.themeColor,
       logoUrl,
@@ -137,15 +158,21 @@ router.post('/upload-logo', upload.single('logo'), async (req, res, next) => {
       updatedAt: new Date().toISOString()
     };
 
-    const saved = await setConfig(CONFIG_KEY, nextTheme);
+    const saved = await setConfig(CONFIG_KEY, nextTheme, { expectedVersion: getExpectedConfigVersion(req) });
+    if (current.logoUrl) {
+      deleteUploadedLogo(current.logoUrl);
+    }
     appEvents.emit('theme_updated', saved);
 
     return res.json({
       message: 'Logo uploaded successfully',
       logoUrl,
-      theme: saved
+      theme: normalizeThemeWithMeta(saved)
     });
   } catch (err) {
+    if (req.file) {
+      deleteUploadedLogo(`/uploads/${req.file.filename}`);
+    }
     next(err);
   }
 });
@@ -158,13 +185,6 @@ router.delete('/logo', async (req, res, next) => {
       ...(await getConfig(CONFIG_KEY, defaults.theme))
     });
 
-    if (current.logoUrl) {
-      const filePath = path.join(process.cwd(), current.logoUrl);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
-
     const nextTheme = {
       themeColor: current.themeColor,
       logoUrl: null,
@@ -173,9 +193,12 @@ router.delete('/logo', async (req, res, next) => {
       updatedAt: new Date().toISOString()
     };
 
-    const saved = await setConfig(CONFIG_KEY, nextTheme);
+    const saved = await setConfig(CONFIG_KEY, nextTheme, { expectedVersion: getExpectedConfigVersion(req) });
+    if (current.logoUrl) {
+      deleteUploadedLogo(current.logoUrl);
+    }
     appEvents.emit('theme_updated', saved);
-    return res.json({ message: 'Logo deleted and reset successfully', theme: saved });
+    return res.json({ message: 'Logo deleted and reset successfully', theme: normalizeThemeWithMeta(saved) });
   } catch (err) {
     next(err);
   }

@@ -1,5 +1,5 @@
 // Import Require
-const { createUser, deleteUser, getUserById, listAllUsers, updateUser } = require('./users.repo');
+const { createUser, deleteUser, getUserById, isUsernameTaken, listAllUsers, updateUser } = require('./users.repo');
 
 // Function แบ่ง Fullname ออกเป็น FirstName และ LastName
 function splitName(name = '') {
@@ -50,10 +50,37 @@ async function getMemberStats() {
 
 // Function create member ใหม่โดย create user record ในระบบ
 async function createMember(data) {
+  const username = data.username || data.email?.split('@')[0];
   const name = data.name || `${data.firstName || ''} ${data.lastName || ''}`.trim();
+  if (!username) {
+    const err = new Error('username or email is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!data.password) {
+    const err = new Error('password is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!name) {
+    const err = new Error('name, firstName, or lastName is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (data.permissions !== undefined && !Array.isArray(data.permissions)) {
+    const err = new Error('permissions must be an array');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (await isUsernameTaken(username)) {
+    const err = new Error('Username already exists');
+    err.statusCode = 409;
+    throw err;
+  }
+
   const user = await createUser({
-    username: data.username || data.email?.split('@')[0],
-    password: data.password || '123456',
+    username,
+    password: data.password,
     name,
     email: data.email,
     role: data.role || 'staff',

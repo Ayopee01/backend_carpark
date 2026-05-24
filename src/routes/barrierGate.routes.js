@@ -6,9 +6,11 @@ const {
   searchBarrierGate,
   updateBarrierGateStatus,
 } = require('../data/repositories/barrierGates.repo');
+const { requireDeviceAuth } = require('../middleware/deviceAuth');
 
 const router = express.Router();
 
+// Route activate Barrier Gate ด้วย activation code
 router.post('/activate', async (req, res, next) => {
   try {
     const { code } = req.body;
@@ -23,7 +25,8 @@ router.post('/activate', async (req, res, next) => {
   }
 });
 
-router.post('/check-in', async (req, res, next) => {
+// Route check-in เพื่ออัปเดต heartbeat และสถานะ online ของ Barrier Gate
+router.post('/check-in', requireDeviceAuth(['barrier_gate']), async (req, res, next) => {
   try {
     const { deviceId, name, location, version } = req.body;
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
@@ -54,7 +57,8 @@ router.post('/check-in', async (req, res, next) => {
   }
 });
 
-router.get('/transaction', async (req, res, next) => {
+// Route ค้นหา transaction สำหรับ Barrier Gate ด้วยทะเบียนรถ
+router.get('/transaction', requireDeviceAuth(['barrier_gate']), async (req, res, next) => {
   try {
     const { plateNo, deviceId } = req.query || {};
     if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
@@ -76,7 +80,8 @@ router.get('/transaction', async (req, res, next) => {
   }
 });
 
-router.get('/transaction/:id', async (req, res, next) => {
+// Route query transaction สำหรับ Barrier Gate ด้วย transaction id
+router.get('/transaction/:id', requireDeviceAuth(['barrier_gate']), async (req, res, next) => {
   try {
     const { deviceId } = req.query || {};
     if (deviceId) {
@@ -97,7 +102,8 @@ router.get('/transaction/:id', async (req, res, next) => {
   }
 });
 
-router.post('/payment', async (req, res, next) => {
+// Route รับชำระเงินจาก Barrier Gate และบันทึกข้อมูลอุปกรณ์ที่ทำรายการ
+router.post('/payment', requireDeviceAuth(['barrier_gate']), async (req, res, next) => {
   try {
     const { transactionId, plateNo, method, amount, deviceId } = req.body;
     if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
@@ -146,4 +152,5 @@ router.post('/payment', async (req, res, next) => {
   }
 });
 
+// Export router
 module.exports = router;

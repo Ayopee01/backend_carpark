@@ -1,18 +1,20 @@
 // Import Require
 const { createId } = require('../store');
 const defaults = require('../defaults');
-const { getConfig, setConfig } = require('./config.repo');
+const { getConfig, getConfigWithMeta, setConfig, stripConfigMeta } = require('./config.repo');
 
 // Constant key for pricing config in app_config table
 const CONFIG_KEY = 'pricing_config';
 const ALLOWED_FEE_TYPES = ['base_hour', 'next_hour', 'overnight_day', 'overnight_week', 'overnight_month', 'overnight_year'];
 const ALLOWED_VEHICLE_TYPES = ['car', 'motorcycle'];
 
+// Function แปลงค่าเป็น number ถ้าแปลงไม่ได้ให้ใช้ fallback
 function normalizeNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
 
+// Function normalize pricing rule ให้มี field และค่ามาตรฐานที่ระบบรองรับเสมอ
 function normalizePricingItem(payload = {}, current = {}) {
   const feeType = payload.feeType || current.feeType || 'base_hour';
   const vehicleType = payload.vehicleType || current.vehicleType || 'car';
@@ -40,51 +42,57 @@ async function getPricingConfig() {
   return getConfig(CONFIG_KEY, defaults.pricingConfig);
 }
 
+// Function query pricing config พร้อม version สำหรับ optimistic locking.
+async function getPricingConfigWithMeta() {
+  return getConfigWithMeta(CONFIG_KEY, defaults.pricingConfig);
+}
+
 // Function replace/merge pricing config as one admin config object.
-async function updatePricingConfig(body = {}) {
+async function updatePricingConfig(body = {}, expectedVersion) {
+  const cleanBody = stripConfigMeta(body);
   const current = await getPricingConfig();
   const nextConfig = {
     ...current,
-    ...body,
-    pricingRules: Array.isArray(body.pricingRules)
-      ? body.pricingRules.map((item) => normalizePricingItem(item))
+    ...cleanBody,
+    pricingRules: Array.isArray(cleanBody.pricingRules)
+      ? cleanBody.pricingRules.map((item) => normalizePricingItem(item))
       : current.pricingRules,
-    paymentChannels: body.paymentChannels || current.paymentChannels,
-    serviceChannelMapping: body.serviceChannelMapping || current.serviceChannelMapping,
-    masterData: body.masterData || current.masterData,
+    paymentChannels: cleanBody.paymentChannels || current.paymentChannels,
+    serviceChannelMapping: cleanBody.serviceChannelMapping || current.serviceChannelMapping,
+    masterData: cleanBody.masterData || current.masterData,
   };
 
-  return setConfig(CONFIG_KEY, nextConfig);
+  return setConfig(CONFIG_KEY, nextConfig, { expectedVersion });
 }
 
 // Function add one pricing config item.
-async function createPricingConfigItem(payload = {}) {
+async function createPricingConfigItem(payload = {}, expectedVersion) {
   const current = await getPricingConfig();
-  const item = normalizePricingItem(payload);
+  const item = normalizePricingItem(stripConfigMeta(payload));
   const nextConfig = {
     ...current,
     pricingRules: [...(current.pricingRules || []), item],
   };
 
-  await setConfig(CONFIG_KEY, nextConfig);
-  return item;
+  const saved = await setConfig(CONFIG_KEY, nextConfig, { expectedVersion });
+  return { ...item, version: saved.version, configUpdatedAt: saved.configUpdatedAt };
 }
 
 // Function update one pricing config item by id.
-async function updatePricingConfigItem(id, payload = {}) {
+async function updatePricingConfigItem(id, payload = {}, expectedVersion) {
   const current = await getPricingConfig();
   const index = (current.pricingRules || []).findIndex((item) => item.id === id);
   if (index === -1) return null;
 
   const nextRules = [...current.pricingRules];
-  nextRules[index] = normalizePricingItem(payload, current.pricingRules[index]);
+  nextRules[index] = normalizePricingItem(stripConfigMeta(payload), current.pricingRules[index]);
 
-  await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
-  return nextRules[index];
+  const saved = await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules }, { expectedVersion });
+  return { ...nextRules[index], version: saved.version, configUpdatedAt: saved.configUpdatedAt };
 }
 
 // Function delete one pricing config item by id.
-async function deletePricingConfigItem(id) {
+async function deletePricingConfigItem(id, expectedVersion) {
   const current = await getPricingConfig();
   const index = (current.pricingRules || []).findIndex((item) => item.id === id);
   if (index === -1) return null;
@@ -92,8 +100,8 @@ async function deletePricingConfigItem(id) {
   const nextRules = [...current.pricingRules];
   const [item] = nextRules.splice(index, 1);
 
-  await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
-  return item;
+  const saved = await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules }, { expectedVersion });
+  return { ...item, version: saved.version, configUpdatedAt: saved.configUpdatedAt };
 }
 
 // Export Functions
@@ -101,6 +109,7 @@ module.exports = {
   createPricingConfigItem,
   deletePricingConfigItem,
   getPricingConfig,
+  getPricingConfigWithMeta,
   updatePricingConfig,
   updatePricingConfigItem,
 };

@@ -78,6 +78,7 @@ model Transaction {
 model AppConfig {
   key       String   @id
   data      Json     @default("{}")
+  version   Int      @default(1)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("app_config")

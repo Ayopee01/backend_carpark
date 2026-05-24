@@ -1,6 +1,9 @@
 // Import Require
+const crypto = require('crypto');
 const defaults = require('../defaults');
-const { getConfig, setConfig } = require('./config.repo');
+const { createId } = require('../store');
+const { getConfig, getConfigWithMeta, setConfig, updateConfig } = require('./config.repo');
+const { hashToken } = require('../../utils/auth');
 
 // Constant key สำหรับอ้างอิง devices config ใน table app_config
 const CONFIG_KEY = 'devices';
@@ -8,21 +11,52 @@ const OFFLINE_AFTER_MINUTES = 5;
 const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate']);
 const appEvents = require('../../utils/events');
 
+// Function สร้าง device token แบบสุ่มเพื่อใช้ยืนยันตัวตนของ kiosk/barrier gate
+function createDeviceToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Function เปรียบเทียบ hash แบบ timing-safe เพื่อใช้ตรวจ device token
+function timingSafeStringEqual(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual || ''));
+  const expectedBuffer = Buffer.from(String(expected || ''));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+// Function ตรวจสอบว่า device เป็นอุปกรณ์ที่ต้อง activate ก่อนใช้งานหรือไม่
 function isActivationDevice(device) {
   return ACTIVATION_DEVICE_TYPES.has(device?.deviceType);
 }
 
+// Function ตรวจสอบวันหมดอายุของค่าเวลา เช่น activationExpiresAt
 function isExpired(value, now = new Date()) {
   if (!value) return false;
   const date = new Date(value);
   return !Number.isNaN(date.getTime()) && date < now;
 }
 
+// Function ตรวจสอบว่าอุปกรณ์ offline จาก lastSeen เกินเวลาที่กำหนดหรือไม่
 function isOfflineByLastSeen(lastSeen, now = new Date()) {
   if (!lastSeen) return true;
   const date = new Date(lastSeen);
   if (Number.isNaN(date.getTime())) return true;
   return now - date > OFFLINE_AFTER_MINUTES * 60000;
+}
+
+// Function ลบค่า token hash ออกจากข้อมูล device ก่อนส่งออก response
+function toSafeDevice(device) {
+  if (!device) return null;
+  const safe = { ...device };
+  delete safe.deviceTokenHash;
+  return safe;
+}
+
+// Function ลบค่า token hash ออกจาก config ก่อนส่งออก response
+function toSafeConfig(config) {
+  return {
+    ...config,
+    devices: (Array.isArray(config.devices) ? config.devices : []).map(toSafeDevice),
+  };
 }
 
 // Function เพิ่ม summary online/offline ให้ config devices
@@ -47,74 +81,85 @@ async function getDevicesConfig() {
   return refreshDeviceRuntimeState();
 }
 
+// Function query devices config พร้อม version สำหรับ admin update
+async function getDevicesConfigWithMeta() {
+  await refreshDeviceRuntimeState();
+  return withSummary(await getConfigWithMeta(CONFIG_KEY, defaults.devices));
+}
+
+// Function refresh สถานะ runtime ของ devices เช่น pending หมดอายุ หรือ active ที่ offline แล้ว
 async function refreshDeviceRuntimeState({ emitEvents = false } = {}) {
-  const config = await getConfig(CONFIG_KEY, defaults.devices);
   const now = new Date();
-  let changed = false;
-  const events = [];
+  let events = [];
 
-  const devices = (Array.isArray(config.devices) ? config.devices : [])
-    .filter((device) => {
-      const shouldRemove = device.status === 'pending_activation' && isExpired(device.activationExpiresAt, now);
-      if (shouldRemove) {
-        changed = true;
-        events.push({
-          type: 'device_activation_expired',
-          deviceId: device.deviceId,
-          id: device.id,
-          deviceCode: device.deviceCode,
-          deviceType: device.deviceType,
-          deviceName: device.deviceName,
-          status: 'expired',
-          isOnline: false,
-        });
-      }
-      return !shouldRemove;
-    })
-    .map((device) => {
-      if (
-        isActivationDevice(device) &&
-        device.status === 'active' &&
-        device.isOnline &&
-        isOfflineByLastSeen(device.lastSeen, now)
-      ) {
-        changed = true;
-        events.push({
-          type: 'device_status_changed',
-          deviceId: device.deviceId,
-          id: device.id,
-          deviceCode: device.deviceCode,
-          deviceType: device.deviceType,
-          deviceName: device.deviceName,
-          previousStatus: device.status,
-          status: 'offline',
-          isOnline: false,
-          lastSeen: device.lastSeen,
-        });
-        return {
-          ...device,
-          isOnline: false,
-          status: 'offline',
-        };
-      }
-      return device;
-    });
+  const saved = await updateConfig(CONFIG_KEY, (config = defaults.devices) => {
+    let changed = false;
+    events = [];
 
-  const nextConfig = withSummary({ ...config, devices });
-  if (changed) {
-    const saved = await setConfig(CONFIG_KEY, nextConfig);
-    const refreshed = withSummary(saved);
-    if (emitEvents) {
-      events.forEach((event) => appEvents.emit('device_event', event));
-      appEvents.emit('devices_config_updated', refreshed);
+    const devices = (Array.isArray(config.devices) ? config.devices : [])
+      .filter((device) => {
+        const shouldRemove = device.status === 'pending_activation' && isExpired(device.activationExpiresAt, now);
+        if (shouldRemove) {
+          changed = true;
+          events.push({
+            type: 'device_activation_expired',
+            deviceId: device.deviceId,
+            id: device.id,
+            deviceCode: device.deviceCode,
+            deviceType: device.deviceType,
+            deviceName: device.deviceName,
+            status: 'expired',
+            isOnline: false,
+          });
+        }
+        return !shouldRemove;
+      })
+      .map((device) => {
+        if (
+          isActivationDevice(device) &&
+          device.status === 'active' &&
+          device.isOnline &&
+          isOfflineByLastSeen(device.lastSeen, now)
+        ) {
+          changed = true;
+          events.push({
+            type: 'device_status_changed',
+            deviceId: device.deviceId,
+            id: device.id,
+            deviceCode: device.deviceCode,
+            deviceType: device.deviceType,
+            deviceName: device.deviceName,
+            previousStatus: device.status,
+            status: 'offline',
+            isOnline: false,
+            lastSeen: device.lastSeen,
+          });
+          return {
+            ...device,
+            isOnline: false,
+            status: 'offline',
+          };
+        }
+        return device;
+      });
+
+    if (!changed) {
+      return undefined;
     }
-    return refreshed;
+
+    return withSummary({ ...config, devices });
+  }, defaults.devices);
+
+  const refreshed = withSummary(saved);
+  if (events.length && emitEvents) {
+    events.forEach((event) => appEvents.emit('device_event', event));
+    appEvents.emit('devices_config_updated', toSafeConfig(refreshed));
   }
-  return nextConfig;
+  return refreshed;
 }
 
 // Function create device ใหม่
-async function createDevice(payload = {}) {
+async function createDevice(payload = {}, expectedVersion) {
   const config = await getDevicesConfig();
   const {
     deviceCode,
@@ -132,7 +177,7 @@ async function createDevice(payload = {}) {
   }
 
   const device = {
-    id: `d_${Date.now()}`,
+    id: createId('d'),
     deviceCode,
     deviceName,
     deviceType,
@@ -143,9 +188,9 @@ async function createDevice(payload = {}) {
     note: note || ''
   };
   const configWithDevice = withSummary({ ...config, devices: [...config.devices, device] });
-  const saved = await setConfig(CONFIG_KEY, configWithDevice);
+  const saved = await setConfig(CONFIG_KEY, configWithDevice, { expectedVersion });
   appEvents.emit('device_event', {
-    type: 'device_pending_activation_created',
+    type: 'device_created',
     deviceId: device.deviceId,
     id: device.id,
     deviceCode: device.deviceCode,
@@ -155,12 +200,13 @@ async function createDevice(payload = {}) {
     isOnline: device.isOnline,
     activationExpiresAt: device.activationExpiresAt,
   });
-  appEvents.emit('devices_config_updated', withSummary(saved));
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
 
-  return { ok: true, device, config: withSummary(saved) };
+  return { ok: true, device: toSafeDevice(device), config: toSafeConfig(withSummary(saved)) };
 }
 
-async function createPendingActivationDevice(payload = {}) {
+// Function สร้าง device สถานะ pending_activation เพื่อรอ Kiosk/Barrier Gate activate ด้วย code
+async function createPendingActivationDevice(payload = {}, expectedVersion) {
   const config = await getDevicesConfig();
   const {
     generatedDeviceId,
@@ -201,88 +247,145 @@ async function createPendingActivationDevice(payload = {}) {
     note: note || 'Waiting for activation'
   };
   const configWithDevice = withSummary({ ...config, devices: [...config.devices, device] });
-  const saved = await setConfig(CONFIG_KEY, configWithDevice);
+  const saved = await setConfig(CONFIG_KEY, configWithDevice, { expectedVersion });
 
-  return { ok: true, device, config: withSummary(saved) };
+  return { ok: true, device: toSafeDevice(device), config: toSafeConfig(withSummary(saved)) };
 }
 
+// Function เปลี่ยน device ที่รอ activate ให้เป็น active หลังอุปกรณ์ยืนยัน activation สำเร็จ
 async function activateRegisteredDevice(generatedDeviceId, details = {}) {
-  const config = await getDevicesConfig();
-  const devices = [...config.devices];
-  const index = devices.findIndex((device) => device.id === generatedDeviceId || device.deviceId === generatedDeviceId);
-  if (index === -1) return null;
+  const deviceToken = createDeviceToken();
+  let activatedDevice = null;
+  const saved = await updateConfig(CONFIG_KEY, (config = defaults.devices) => {
+    activatedDevice = null;
 
-  const current = devices[index];
-  devices[index] = {
-    ...current,
-    deviceId: generatedDeviceId,
-    activationCode: null,
-    activationExpiresAt: null,
-    deviceName: details.name || current.deviceName,
-    location: details.location || current.location || null,
-    ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
-    version: details.version || current.version || '1.0.0',
-    status: 'active',
-    isOnline: true,
-    activatedAt: details.activatedAt || new Date().toISOString(),
-    lastSeen: details.lastSeen || new Date().toISOString(),
-  };
+    const devices = [...(Array.isArray(config.devices) ? config.devices : [])];
+    const index = devices.findIndex((device) => device.id === generatedDeviceId || device.deviceId === generatedDeviceId);
+    if (index === -1) return undefined;
 
-  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+    const current = devices[index];
+    if (!isActivationDevice(current) || current.status !== 'pending_activation' || isExpired(current.activationExpiresAt)) {
+      return undefined;
+    }
+
+    activatedDevice = {
+      ...current,
+      deviceId: generatedDeviceId,
+      activationCode: null,
+      activationExpiresAt: null,
+      deviceName: details.name || current.deviceName,
+      location: details.location || current.location || null,
+      ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
+      version: details.version || current.version || '1.0.0',
+      status: 'active',
+      isOnline: true,
+      deviceTokenHash: hashToken(deviceToken),
+      deviceTokenIssuedAt: new Date().toISOString(),
+      activatedAt: details.activatedAt || new Date().toISOString(),
+      lastSeen: details.lastSeen || new Date().toISOString(),
+    };
+    devices[index] = activatedDevice;
+
+    return withSummary({ ...config, devices });
+  }, defaults.devices);
+  if (!activatedDevice) return null;
+
   appEvents.emit('device_event', {
     type: 'device_activated',
-    deviceId: devices[index].deviceId,
-    id: devices[index].id,
-    deviceCode: devices[index].deviceCode,
-    deviceType: devices[index].deviceType,
-    deviceName: devices[index].deviceName,
-    status: devices[index].status,
-    isOnline: devices[index].isOnline,
-    lastSeen: devices[index].lastSeen,
+    deviceId: activatedDevice.deviceId,
+    id: activatedDevice.id,
+    deviceCode: activatedDevice.deviceCode,
+    deviceType: activatedDevice.deviceType,
+    deviceName: activatedDevice.deviceName,
+    status: activatedDevice.status,
+    isOnline: activatedDevice.isOnline,
+    lastSeen: activatedDevice.lastSeen,
   });
-  appEvents.emit('devices_config_updated', withSummary(saved));
-  return { device: devices[index], config: withSummary(saved) };
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
+  return { device: toSafeDevice(activatedDevice), config: toSafeConfig(withSummary(saved)), deviceToken };
 }
 
-async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) {
+// Function ค้นหา registered device จาก deviceId หรือ internal id
+async function getRegisteredDevice(deviceId) {
+  if (!deviceId) return null;
   const config = await getDevicesConfig();
-  const devices = [...config.devices];
-  const index = devices.findIndex((device) => device.deviceId === generatedDeviceId || device.id === generatedDeviceId);
-  if (index === -1) return null;
+  return config.devices.find((device) => device.deviceId === deviceId || device.id === deviceId) || null;
+}
 
-  const current = devices[index];
-  devices[index] = {
-    ...current,
-    ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
-    version: details.version || current.version,
-    location: details.location || current.location,
-    deviceName: details.name || current.deviceName,
-    status: current.status === 'maintenance' ? 'maintenance' : 'active',
-    isOnline: current.status === 'maintenance' ? current.isOnline : true,
-    lastSeen: new Date().toISOString(),
-  };
+// Function ค้นหา pending activation device จาก code ที่เก็บใน config เพื่อรองรับกรณี server restart
+async function getPendingActivationDeviceByCode(code, deviceType = null) {
+  if (!code) return null;
+  const config = await getDevicesConfig();
+  return config.devices.find((device) => (
+    device.status === 'pending_activation' &&
+    device.activationCode === code &&
+    (!deviceType || device.deviceType === deviceType)
+  )) || null;
+}
 
-  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+// Function ตรวจสอบ device token ที่ส่งมาจาก kiosk/barrier gate
+async function verifyRegisteredDeviceToken(deviceId, token, allowedTypes = []) {
+  const device = await getRegisteredDevice(deviceId);
+  if (!device) return { ok: false, reason: 'not_found' };
+  if (allowedTypes.length && !allowedTypes.includes(device.deviceType)) {
+    return { ok: false, reason: 'invalid_type', device };
+  }
+  if (!['active', 'offline', 'maintenance'].includes(device.status)) {
+    return { ok: false, reason: 'inactive', device };
+  }
+  if (!device.deviceTokenHash || !token || !timingSafeStringEqual(hashToken(token), device.deviceTokenHash)) {
+    return { ok: false, reason: 'invalid_token', device };
+  }
+
+  return { ok: true, device: toSafeDevice(device) };
+}
+
+// Function อัปเดต heartbeat ของ registered device เพื่อบอกว่ายังออนไลน์และใช้งานอยู่
+async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) {
+  let current = null;
+  let updatedDevice = null;
+  const saved = await updateConfig(CONFIG_KEY, (config = defaults.devices) => {
+    const devices = [...(Array.isArray(config.devices) ? config.devices : [])];
+    const index = devices.findIndex((device) => device.deviceId === generatedDeviceId || device.id === generatedDeviceId);
+    if (index === -1) return undefined;
+
+    current = devices[index];
+    updatedDevice = {
+      ...current,
+      ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
+      version: details.version || current.version,
+      location: details.location || current.location,
+      deviceName: details.name || current.deviceName,
+      status: current.status === 'maintenance' ? 'maintenance' : 'active',
+      isOnline: current.status === 'maintenance' ? current.isOnline : true,
+      lastSeen: new Date().toISOString(),
+    };
+    devices[index] = updatedDevice;
+
+    return withSummary({ ...config, devices });
+  }, defaults.devices);
+  if (!updatedDevice) return null;
+
   if (!current.isOnline || current.status === 'offline') {
     appEvents.emit('device_event', {
       type: 'device_status_changed',
-      deviceId: devices[index].deviceId,
-      id: devices[index].id,
-      deviceCode: devices[index].deviceCode,
-      deviceType: devices[index].deviceType,
-      deviceName: devices[index].deviceName,
+      deviceId: updatedDevice.deviceId,
+      id: updatedDevice.id,
+      deviceCode: updatedDevice.deviceCode,
+      deviceType: updatedDevice.deviceType,
+      deviceName: updatedDevice.deviceName,
       previousStatus: current.status,
-      status: devices[index].status,
-      isOnline: devices[index].isOnline,
-      lastSeen: devices[index].lastSeen,
+      status: updatedDevice.status,
+      isOnline: updatedDevice.isOnline,
+      lastSeen: updatedDevice.lastSeen,
     });
   }
-  appEvents.emit('devices_config_updated', withSummary(saved));
-  return { device: devices[index], config: withSummary(saved) };
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
+  return { device: toSafeDevice(updatedDevice), config: toSafeConfig(withSummary(saved)) };
 }
 
 // Function update device ด้วย id
-async function updateDevice(id, body = {}) {
+async function updateDevice(id, body = {}, expectedVersion) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
   const index = devices.findIndex((item) => item.id === id);
@@ -304,21 +407,21 @@ async function updateDevice(id, body = {}) {
   });
 
   devices[index] = { ...devices[index], ...patch };
-  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
-  appEvents.emit('devices_config_updated', withSummary(saved));
+  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }), { expectedVersion });
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
 
-  return { device: devices[index], config: withSummary(saved) };
+  return { device: toSafeDevice(devices[index]), config: toSafeConfig(withSummary(saved)) };
 }
 
 // Function delete device ด้วย id
-async function deleteDevice(id) {
+async function deleteDevice(id, expectedVersion) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
   const index = devices.findIndex((item) => item.id === id);
   if (index === -1) return null;
 
   const [device] = devices.splice(index, 1);
-  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }), { expectedVersion });
   appEvents.emit('device_event', {
     type: 'device_deleted',
     deviceId: device.deviceId,
@@ -329,9 +432,9 @@ async function deleteDevice(id) {
     status: 'deleted',
     isOnline: false,
   });
-  appEvents.emit('devices_config_updated', withSummary(saved));
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
 
-  return { device, config: withSummary(saved) };
+  return { device: toSafeDevice(device), config: toSafeConfig(withSummary(saved)) };
 }
 
 // Export Functions
@@ -340,8 +443,14 @@ module.exports = {
   createDevice,
   createPendingActivationDevice,
   deleteDevice,
+  getRegisteredDevice,
+  getPendingActivationDeviceByCode,
   getDevicesConfig,
+  getDevicesConfigWithMeta,
   refreshDeviceRuntimeState,
+  toSafeConfig,
+  toSafeDevice,
+  verifyRegisteredDeviceToken,
   updateDevice,
   updateRegisteredDeviceHeartbeat,
   withSummary

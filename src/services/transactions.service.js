@@ -5,6 +5,7 @@ const {
 
 const DUPLICATE_WINDOW_MS = 10 * 1000;
 
+// Function สร้าง response มาตรฐานสำหรับ gate/camera integration
 function toGateResponse(transaction, action, message, success) {
   return {
     success,
@@ -19,6 +20,7 @@ function toGateResponse(transaction, action, message, success) {
   };
 }
 
+// Function รับ DTO จากกล้อง LPR แล้วสร้าง transaction หรือข้าม event ซ้ำในช่วงเวลาสั้น ๆ
 async function createTransactionFromCamera(dto) {
   const duplicate = await findDuplicateCameraTransaction(dto, DUPLICATE_WINDOW_MS);
   if (duplicate) {

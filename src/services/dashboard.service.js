@@ -1,5 +1,10 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
+const {
+  getPaymentAmount,
+  getTransactionPayments,
+  getTransactionRevenue,
+} = require('../utils/payments');
 
 // Constant รายการช่องทางรับชำระเงินที่ใช้สรุปหน้า dashboard
 const CHANNELS = [
@@ -28,74 +33,6 @@ const CHANNELS = [
     icon: 'gate'
   }
 ];
-
-// Function อ่านยอดเงินจาก payment หรือ fallback จาก transaction
-function getPaymentAmount(payment, transaction = null) {
-  const amount = Number(payment?.paidAmount ?? payment?.amount ?? 0);
-
-  if (Number.isFinite(amount) && amount > 0) {
-    return amount;
-  }
-
-  return Number(transaction?.netAmount ?? transaction?.amount ?? 0);
-}
-
-// Function แปลง payment method ให้เป็น channel ของ dashboard
-function getPaymentChannel(payment) {
-  const channel = payment?.channel;
-
-  if (channel === 'cashier') return 'cashier';
-  if (channel === 'mobile') return 'mobile';
-  if (channel === 'kiosk') return 'kiosk';
-  if (channel === 'gate') return 'gate';
-
-  const method = payment?.method;
-
-  if (method === 'cash') return 'cashier';
-  if (method === 'qr') return 'mobile';
-  if (method === 'epay') return 'mobile';
-  if (method === 'transfer') return 'mobile';
-
-  return 'cashier';
-}
-
-// Function ดึงรายการ payment ทั้งหมดจาก transaction
-function getTransactionPayments(transaction) {
-  if (Array.isArray(transaction.payments) && transaction.payments.length > 0) {
-    return transaction.payments.map((payment) => ({
-      ...payment,
-      channel: getPaymentChannel(payment),
-      amount: getPaymentAmount(payment, transaction),
-      transactionId: transaction.id
-    }));
-  }
-
-  if (transaction.payment && transaction.status === 'completed') {
-    return [
-      {
-        ...transaction.payment,
-        channel: getPaymentChannel(transaction.payment),
-        amount: getPaymentAmount(transaction.payment, transaction),
-        transactionId: transaction.id
-      }
-    ];
-  }
-
-  return [];
-}
-
-// Function คำนวณรายได้ของ transaction
-function getTransactionRevenue(transaction) {
-  const payments = getTransactionPayments(transaction);
-
-  if (payments.length > 0) {
-    return payments.reduce((sum, payment) => {
-      return sum + getPaymentAmount(payment, transaction);
-    }, 0);
-  }
-
-  return Number(transaction.netAmount ?? transaction.amount ?? 0);
-}
 
 // Function สร้างช่วงเวลาเริ่มต้นและสิ้นสุดของวันนี้
 function getTodayRange() {

@@ -3,9 +3,10 @@ const router = express.Router();
 const memberRepo = require('../data/repositories/members.repo');
 const { authorize } = require('../middleware/permission');
 
-// All member routes are restricted to super_admin as per UI requirement
-router.use(authorize(['super_admin']));
+// Member management access is driven by members.permissions.
+router.use(authorize('settings'));
 
+// Route query สถิติ member เช่น จำนวนทั้งหมด active และ admin
 router.get('/stats', async (req, res, next) => {
   try {
     const stats = await memberRepo.getMemberStats();
@@ -15,6 +16,7 @@ router.get('/stats', async (req, res, next) => {
   }
 });
 
+// Route query รายการ member ทั้งหมด พร้อมรองรับ filter จาก query string
 router.get('/', async (req, res, next) => {
   try {
     const members = await memberRepo.listMembers(req.query);
@@ -24,6 +26,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Route create member ใหม่
 router.post('/', async (req, res, next) => {
   try {
     const member = await memberRepo.createMember(req.body);
@@ -33,6 +36,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// Route update ข้อมูล member ตาม id
 router.patch('/:id', async (req, res, next) => {
   try {
     const member = await memberRepo.updateMember(req.params.id, req.body);
@@ -43,6 +47,7 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
+// Route update permissions ของ member ตาม id
 router.patch('/:id/permissions', async (req, res, next) => {
   try {
     const { permissions } = req.body;
@@ -57,6 +62,7 @@ router.patch('/:id/permissions', async (req, res, next) => {
   }
 });
 
+// Route delete member ตาม id
 router.delete('/:id', async (req, res, next) => {
   try {
     const success = await memberRepo.deleteMember(req.params.id);
@@ -67,5 +73,6 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Export router
 module.exports = router;
 

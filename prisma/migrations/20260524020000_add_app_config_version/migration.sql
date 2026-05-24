@@ -1,0 +1,2 @@
+ALTER TABLE "app_config"
+ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1;

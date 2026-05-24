@@ -1,7 +1,7 @@
 // Function คำนวณ pagination input ให้เป็นค่าที่ปลอดภัยสำหรับ query database
 function normalizePagination(page = 1, perPage = 10) {
   const safePage = Number(page) > 0 ? Number(page) : 1;
-  const safePerPage = Number(perPage) > 0 ? Number(perPage) : 10;
+  const safePerPage = Math.min(Number(perPage) > 0 ? Number(perPage) : 10, 100);
   const from = (safePage - 1) * safePerPage;
   const to = from + safePerPage - 1;
 

@@ -1,22 +1,24 @@
 // Import Require
 const express = require('express');
 const {
-  getReceiptSettings,
-  getSystemSettings,
+  getReceiptSettingsWithMeta,
+  getSystemSettingsWithMeta,
   updatePrinterSettings,
   updateReceiptSettings,
   updateSystemSettings
 } = require('../data/repositories/systemSettings.repo');
+const { getExpectedConfigVersion } = require('../data/repositories/config.repo');
 const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
 
-router.use(authorize(['super_admin', 'staff'], 'settings'));
+// Apply permission check สำหรับเมนู settings
+router.use(authorize('settings'));
 
 // Route query system settings
 router.get('/', async (req, res, next) => {
   try {
-    const settings = await getSystemSettings();
+    const settings = await getSystemSettingsWithMeta();
     res.json(settings);
   } catch (err) {
     next(err);
@@ -26,7 +28,7 @@ router.get('/', async (req, res, next) => {
 // Route query receipt settings
 router.get('/receipt', async (req, res, next) => {
   try {
-    const receipt = await getReceiptSettings();
+    const receipt = await getReceiptSettingsWithMeta();
     res.json(receipt);
   } catch (err) {
     next(err);
@@ -36,7 +38,7 @@ router.get('/receipt', async (req, res, next) => {
 // Route update printer settings
 router.put('/receipt/printer', async (req, res, next) => {
   try {
-    const printer = await updatePrinterSettings(req.body || {});
+    const printer = await updatePrinterSettings(req.body || {}, getExpectedConfigVersion(req));
     res.json({ message: 'Printer settings updated', printer });
   } catch (err) {
     next(err);
@@ -46,7 +48,7 @@ router.put('/receipt/printer', async (req, res, next) => {
 // Route update receipt settings
 router.put('/receipt', async (req, res, next) => {
   try {
-    const receipt = await updateReceiptSettings(req.body || {});
+    const receipt = await updateReceiptSettings(req.body || {}, getExpectedConfigVersion(req));
     res.json({ message: 'Receipt settings updated', receipt });
   } catch (err) {
     next(err);
@@ -56,7 +58,7 @@ router.put('/receipt', async (req, res, next) => {
 // Route update system settings
 router.put('/', async (req, res, next) => {
   try {
-    const settings = await updateSystemSettings(req.body || {});
+    const settings = await updateSystemSettings(req.body || {}, getExpectedConfigVersion(req));
     res.json({ message: 'System settings updated', settings });
   } catch (err) {
     next(err);

@@ -24,22 +24,33 @@ const { prisma } = require('./db/prisma');
 const openapi = require('./docs/openapi');
 
 // Function ใช้ CORS origins จาก .env
-function getCorsOrigins() {
+function getCorsOptions() {
   const origins = process.env.CORS_ORIGINS;
-  if (!origins || origins === '*') return true;
+  if (!origins || origins === '*') {
+    return {
+      origin: process.env.NODE_ENV === 'production' ? false : true,
+      credentials: true,
+    };
+  }
 
-  return origins.split(',').map((origin) => origin.trim());
+  const allowlist = origins.split(',').map((origin) => origin.trim()).filter(Boolean);
+  return {
+    origin(origin, callback) {
+      if (!origin || allowlist.includes(origin)) return callback(null, true);
+      const err = new Error('Not allowed by CORS');
+      err.statusCode = 403;
+      return callback(err);
+    },
+    credentials: true,
+  };
 }
 
 // Create Express app
 const app = express();
 
 // Middleware พื้นฐานสำหรับ request body, cors, log และ static uploads
-app.use(cors({
-  origin: getCorsOrigins(),
-  credentials: true
-}));
-app.use(express.json());
+app.use(cors(getCorsOptions()));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use('/uploads', express.static('uploads'));
 
@@ -107,11 +118,11 @@ app.get('/health/db', async (req, res) => {
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/overview', overviewRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
-app.use('/api/v1/users', authorize(['super_admin']), usersRoutes);
+app.use('/api/v1/users', authorize('settings'), usersRoutes);
 app.use('/api/v1/members', memberRoutes);
-app.use('/api/v1/service-pricing', authorize(['super_admin', 'staff']), servicePricingRoutes);
+app.use('/api/v1/service-pricing', servicePricingRoutes);
 app.use('/api/v1/payment-settings', paymentSettingsRouter);
-app.use('/api/v1/devices', devicesRoutes);
+app.use('/api/v1/devices', authorize('devices'), devicesRoutes);
 app.use('/api/v1/theme', themeRoutes);
 app.use('/api/v1/system-settings', systemSettingsRoutes);
 
@@ -123,7 +134,16 @@ app.use((req, res) => {
 // Middleware จัดการ error กลางของระบบ
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ message: err.message || 'Internal server error' });
+  const statusCode = err.statusCode || err.status || 500;
+  const message = process.env.NODE_ENV === 'production' && statusCode >= 500
+    ? 'Internal server error'
+    : err.message || 'Internal server error';
+  const body = { message };
+  if (statusCode === 409 && err.latest) {
+    body.code = 'CONFIG_VERSION_CONFLICT';
+    body.latest = err.latest;
+  }
+  res.status(statusCode).json(body);
 });
 
 // Export Express app

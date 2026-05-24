@@ -6,9 +6,8 @@ const { validateCameraTransactionPayload } = require('../validators/transactions
 
 const router = express.Router();
 
-// Apply permission check to all transaction routes.
-// All roles (super_admin, staff) can access, but staff must have 'transactions' permission.
-router.use(authorize(['super_admin', 'staff'], 'transactions'));
+// Apply permission check from members.permissions.
+router.use(authorize('transactions'));
 
 // Route list/search transactions with pagination controlled by frontend query params.
 router.get('/', async (req, res, next) => {
@@ -70,7 +69,7 @@ router.post('/payment', async (req, res, next) => {
     const { plateNo, method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
     if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
 
-    const processedBy = req.user?.id || 'u1';
+    const processedBy = req.user.id;
     const updated = await processPayment(null, {
       plateNo,
       method,
@@ -111,7 +110,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/:id/payment', async (req, res, next) => {
   try {
     const { plateNo, method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
-    const processedBy = req.user?.id || 'u1';
+    const processedBy = req.user.id;
     
     const updated = await processPayment(req.params.id, { 
       plateNo,

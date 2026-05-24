@@ -15,11 +15,12 @@ const {
 const { getConfig } = require('../data/repositories/config.repo');
 const defaults = require('../data/defaults');
 const appEvents = require('../utils/events');
+const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceAuth');
 
 const router = express.Router();
 
 // Route SSE สำหรับส่ง event update ไปยัง kiosk
-router.get('/events', async (req, res, next) => {
+router.get('/events', optionalDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { deviceId } = req.query;
     if (deviceId) {
@@ -53,7 +54,7 @@ router.get('/events', async (req, res, next) => {
 });
 
 // Route kiosk สร้างรายการรถเข้าและออกบิล
-router.post('/entry', async (req, res, next) => {
+router.post('/entry', requireDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { deviceId, plateNo, vehicleType } = req.body;
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
@@ -90,7 +91,7 @@ router.post('/entry', async (req, res, next) => {
 });
 
 // Route kiosk check-in เพื่อ update lastSeen และสถานะ online
-router.post('/check-in', async (req, res, next) => {
+router.post('/check-in', requireDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { deviceId, name, location, version } = req.body;
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
@@ -137,7 +138,7 @@ router.post('/activate', async (req, res, next) => {
 });
 
 // Route query config สำหรับ kiosk
-router.get('/config', async (req, res, next) => {
+router.get('/config', optionalDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { deviceId } = req.query;
     let status = 'unregistered';
@@ -173,7 +174,7 @@ router.get('/config', async (req, res, next) => {
 });
 
 // Route ค้นหา transaction ที่ยังค้างชำระด้วยทะเบียนรถ
-router.get('/search', async (req, res, next) => {
+router.get('/search', requireDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { plateNo, deviceId } = req.query || {};
     if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
@@ -200,7 +201,7 @@ router.get('/search', async (req, res, next) => {
 });
 
 // Route query transaction รายการเดียวสำหรับ kiosk payment
-router.get('/transaction', async (req, res, next) => {
+router.get('/transaction', requireDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { plateNo, deviceId } = req.query || {};
     if (!plateNo) return res.status(400).json({ message: 'plateNo is required in query' });
@@ -225,7 +226,8 @@ router.get('/transaction', async (req, res, next) => {
   }
 });
 
-router.get('/transaction/:id', async (req, res, next) => {
+// Route query transaction สำหรับ kiosk ด้วย transaction id
+router.get('/transaction/:id', requireDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { deviceId } = req.query || {};
     if (deviceId) {
@@ -250,7 +252,7 @@ router.get('/transaction/:id', async (req, res, next) => {
 });
 
 // Route รับชำระเงินจาก kiosk
-router.post('/payment', async (req, res, next) => {
+router.post('/payment', requireDeviceAuth(['kiosk']), async (req, res, next) => {
   try {
     const { transactionId, plateNo, method, amount, deviceId } = req.body;
     if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });

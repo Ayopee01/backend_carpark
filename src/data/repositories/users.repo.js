@@ -2,8 +2,20 @@
 const { createId } = require('../store');
 const { prisma } = require('../../db/prisma');
 const { pick } = require('../../utils/helpers');
-const { normalizePagination, buildMeta } = require('../../utils/pagination');
 const { hashPassword, verifyPassword } = require('../../utils/auth');
+
+const SAFE_USER_SELECT = {
+  id: true,
+  username: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  permissions: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+};
 
 // Function แปลง user record จาก database ให้อยู่ในรูปแบบ API
 function toUserApi(row) {
@@ -11,7 +23,6 @@ function toUserApi(row) {
   return {
     id: row.id,
     username: row.username,
-    passwordHash: row.passwordHash,
     name: row.name,
     email: row.email ?? null,
     phone: row.phone ?? null,
@@ -21,15 +32,6 @@ function toUserApi(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
-}
-
-// Function ลบข้อมูล password ออกจาก object user ก่อนส่งออก
-function withoutPassword(user) {
-  if (!user) return null;
-  const safe = { ...user };
-  delete safe.password;
-  delete safe.passwordHash;
-  return safe;
 }
 
 // Function สร้าง Prisma where สำหรับ search user จาก keyword
@@ -46,36 +48,16 @@ function buildKeywordFilter(keyword) {
   };
 }
 
-// Function query user แบบ pagination พร้อม meta
-async function listUsers({ keyword, page = 1, perPage = 10 } = {}) {
-  const { page: safePage, perPage: safePerPage, from } = normalizePagination(page, perPage);
-  const where = buildKeywordFilter(keyword);
-
-  const [rows, count] = await Promise.all([
-    prisma.user.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: from,
-      take: safePerPage
-    }),
-    prisma.user.count({ where })
-  ]);
-
-  return {
-    data: rows.map((row) => withoutPassword(toUserApi(row))),
-    meta: buildMeta(safePage, safePerPage, count)
-  };
-}
-
-// Function query user 
+// Function query user ทั้งหมดสำหรับรายการ Admin พร้อมค้นหาจาก keyword
 async function listAllUsers({ keyword } = {}) {
   const where = buildKeywordFilter(keyword);
   const rows = await prisma.user.findMany({
     where,
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: 'desc' },
+    select: SAFE_USER_SELECT
   });
 
-  return rows.map((row) => withoutPassword(toUserApi(row)));
+  return rows.map(toUserApi);
 }
 
 // Function หา active user จาก username และ password สำหรับ login
@@ -95,10 +77,11 @@ async function getUserById(id) {
   if (!id) return null;
 
   const user = await prisma.user.findUnique({
-    where: { id }
+    where: { id },
+    select: SAFE_USER_SELECT
   });
 
-  return withoutPassword(toUserApi(user));
+  return toUserApi(user);
 }
 
 // Function ตรวจสอบว่า username ถูกใช้งานแล้วหรือยัง
@@ -129,10 +112,11 @@ async function createUser(payload) {
       role: payload.role || 'staff',
       permissions: payload.permissions || [],
       status: payload.status || 'active'
-    }
+    },
+    select: SAFE_USER_SELECT
   });
 
-  return withoutPassword(toUserApi(user));
+  return toUserApi(user);
 }
 
 // Function update user ด้วย id
@@ -145,10 +129,11 @@ async function updateUser(id, patch = {}) {
 
   const user = await prisma.user.update({
     where: { id },
-    data: updates
+    data: updates,
+    select: SAFE_USER_SELECT
   });
 
-  return withoutPassword(toUserApi(user));
+  return toUserApi(user);
 }
 
 // Function delete user ด้วย id
@@ -157,15 +142,15 @@ async function deleteUser(id) {
   if (!existing) return null;
 
   const user = await prisma.user.delete({
-    where: { id }
+    where: { id },
+    select: SAFE_USER_SELECT
   });
 
-  return withoutPassword(toUserApi(user));
+  return toUserApi(user);
 }
 
 // Export Functions
 module.exports = {
-  listUsers,
   listAllUsers,
   findActiveUserByCredentials,
   getUserById,

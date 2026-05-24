@@ -1,5 +1,12 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
+const {
+  getPaymentAmount,
+  getTransactionPayments,
+  getTransactionRevenue,
+  isPaidTransaction,
+  isPendingTransaction,
+} = require('../utils/payments');
 
 // Constant timezone และการคำนวณวัน
 const TIME_ZONE_OFFSET = 7;
@@ -194,84 +201,6 @@ function getWeekRangeFromDate(value) {
     startDate: bangkokDateToUtcIso(weekStart.year, weekStart.month, weekStart.day, 0, 0, 0, 0),
     endDate: bangkokDateToUtcIso(weekEnd.year, weekEnd.month, weekEnd.day, 23, 59, 59, 999)
   };
-}
-
-// Function อ่านยอดเงินจาก payment หรือ fallback จาก transaction
-function getPaymentAmount(payment, transaction = null) {
-  const amount = Number(payment?.paidAmount ?? payment?.amount ?? 0);
-
-  if (Number.isFinite(amount) && amount > 0) {
-    return amount;
-  }
-
-  return Number(transaction?.netAmount ?? transaction?.amount ?? 0);
-}
-
-// Function normalize payment channel
-function normalizeChannel(payment) {
-  const channel = payment?.channel;
-
-  if (channel === 'cashier') return 'cashier';
-  if (channel === 'mobile') return 'mobile';
-  if (channel === 'kiosk') return 'kiosk';
-  if (channel === 'gate') return 'gate';
-
-  const method = payment?.method;
-
-  if (method === 'cash') return 'cashier';
-  if (method === 'qr') return 'mobile';
-  if (method === 'epay') return 'mobile';
-  if (method === 'transfer') return 'mobile';
-
-  return 'cashier';
-}
-
-// Function ดึงรายการ payment จาก transaction
-function getTransactionPayments(transaction) {
-  if (Array.isArray(transaction.payments) && transaction.payments.length > 0) {
-    return transaction.payments.map((payment) => ({
-      ...payment,
-      channel: normalizeChannel(payment),
-      amount: getPaymentAmount(payment, transaction),
-      transactionId: transaction.id
-    }));
-  }
-
-  if (transaction.payment && (transaction.status === 'completed' || transaction.status === 'paid')) {
-    return [
-      {
-        ...transaction.payment,
-        channel: normalizeChannel(transaction.payment),
-        amount: getPaymentAmount(transaction.payment, transaction),
-        transactionId: transaction.id
-      }
-    ];
-  }
-
-  return [];
-}
-
-// Function ตรวจสอบ paid status
-function isPaidTransaction(transaction) {
-  return transaction.status === 'completed' || transaction.status === 'paid';
-}
-
-// Function ตรวจสอบ pending status
-function isPendingTransaction(transaction) {
-  return transaction.status === 'pending' || transaction.status === 'partially_paid';
-}
-
-// Function คำนวณรายได้ของ transaction
-function getTransactionRevenue(transaction) {
-  const payments = getTransactionPayments(transaction);
-
-  if (payments.length > 0) {
-    return payments.reduce((sum, payment) => {
-      return sum + getPaymentAmount(payment, transaction);
-    }, 0);
-  }
-
-  return Number(transaction.netAmount ?? transaction.amount ?? 0);
 }
 
 // Function คำนวณ percent จากยอดรวม

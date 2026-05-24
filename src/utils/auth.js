@@ -14,6 +14,14 @@ const TOKEN_SECRET =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   'dev-token-secret-change-me';
 
+if (
+  process.env.NODE_ENV === 'production' &&
+  !process.env.AUTH_TOKEN_SECRET &&
+  !process.env.SUPABASE_SERVICE_ROLE_KEY
+) {
+  throw new Error('AUTH_TOKEN_SECRET is required in production');
+}
+
 // Function Hash Password ก่อนบันทึกลงฐานข้อมูล
 function hashPassword(password) {
   // สร้าง salt แบบสุ่ม ความยาว 16 bytes แล้วแปลงเป็น hex
@@ -64,11 +72,12 @@ function verifyPassword(password, encoded) {
     )
     .toString('hex');
 
+  const actualBuffer = Buffer.from(actualHash, 'hex');
+  const expectedBuffer = Buffer.from(expectedHash, 'hex');
+  if (actualBuffer.length !== expectedBuffer.length) return false;
+
   // เปรียบเทียบ hash ด้วย timingSafeEqual
-  return crypto.timingSafeEqual(
-    Buffer.from(actualHash, 'hex'),
-    Buffer.from(expectedHash, 'hex')
-  );
+  return crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 // Function แปลง object เป็น JSON string แล้วแปลงต่อเป็น base64url
@@ -123,23 +132,36 @@ function verifyToken(token) {
   // แยก token ออกเป็น 2 ส่วน
   // encoded = payload ที่ถูกเข้ารหัส base64url
   // signature = ลายเซ็นที่ใช้ตรวจสอบความถูกต้อง
-  const [encoded, signature] = token.split('.');
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+
+  const [encoded, signature] = parts;
+  if (!encoded || !signature) return null;
 
   // สร้าง signature ใหม่จาก encoded payload
   const expected = signPayload(encoded);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
 
   // ถ้าไม่มี signature หรือ signature ไม่ตรง ให้ถือว่า token ไม่ถูกต้อง
   if (
-    !signature ||
-    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
   ) {
     return null;
   }
 
-  // Decode payload กลับมาเป็น object
-  const payload = JSON.parse(
-    Buffer.from(encoded, 'base64url').toString('utf8')
-  );
+  let payload;
+  try {
+    // Decode payload กลับมาเป็น object
+    payload = JSON.parse(
+      Buffer.from(encoded, 'base64url').toString('utf8')
+    );
+  } catch (err) {
+    return null;
+  }
+
+  if (!payload || typeof payload !== 'object') return null;
 
   // ตรวจสอบวันหมดอายุ token หากไม่มี exp หรือ exp น้อยกว่าเวลาปัจจุบัน แปลว่าหมดอายุแล้ว
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {

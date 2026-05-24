@@ -1,11 +1,13 @@
 const { toCameraTransactionDto } = require('../dto/transactions.dto');
 
+// Function เพิ่ม error เมื่อ field ที่ต้องเป็น string ไม่มีค่า
 function pushRequiredStringError(errors, payload, field) {
   if (payload[field] === undefined || payload[field] === null || typeof payload[field] !== 'string' || payload[field].trim() === '') {
     errors.push({ field, message: `${field} is required` });
   }
 }
 
+// Function validate payload จากกล้องก่อนแปลงเป็น DTO สำหรับสร้าง transaction
 function validateCameraTransactionPayload(payload = {}) {
   const errors = [];
 

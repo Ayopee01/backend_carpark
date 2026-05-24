@@ -14,6 +14,30 @@ const router = express.Router();
 
 // Constant อายุ access token เป็น 1 ชั่วโมง
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts = new Map();
+
+// Function จำกัดจำนวนครั้ง login ต่อ ip/username ในช่วงเวลาสั้น ๆ
+function loginRateLimit(req, res, next) {
+  const username = String(req.body?.username || '').trim().toLowerCase();
+  const key = `${req.ip}:${username || 'unknown'}`;
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+
+  if (!current || current.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return next();
+  }
+
+  if (current.count >= LOGIN_MAX_ATTEMPTS) {
+    return res.status(429).json({ message: 'Too many login attempts. Please try again later.' });
+  }
+
+  current.count += 1;
+  loginAttempts.set(key, current);
+  return next();
+}
 
 // Function แปลง user object ให้ปลอดภัยก่อนส่งกลับ frontend
 function toSafeUser(user) {
@@ -40,7 +64,7 @@ function createRefreshToken(userId, sessionId) {
 }
 
 // Route login เพื่อสร้าง access token, refresh token และ session
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginRateLimit, async (req, res, next) => {
   try {
     const { username, password } = req.body;
     const user = await findActiveUserByCredentials(username, password);
@@ -48,6 +72,7 @@ router.post('/login', async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: 'Invalid username or password' });
     }
+    loginAttempts.delete(`${req.ip}:${String(username || '').trim().toLowerCase()}`);
 
     const sessionId = createId('sess');
     const refreshToken = createRefreshToken(user.id, sessionId);

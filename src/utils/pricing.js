@@ -1,14 +1,17 @@
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
+// Function ตรวจสอบว่า rule เปิดใช้งานและตรงกับประเภทรถหรือไม่
 function isActiveVehicleRule(rule, vehicleType) {
   return rule.status === 'active' && (!rule.vehicleType || rule.vehicleType === vehicleType);
 }
 
+// Function คัดเฉพาะ pricing rules ที่ active และใช้กับประเภทรถที่ส่งเข้ามา
 function getActiveRules(pricingRules = [], vehicleType = 'car') {
   return pricingRules.filter((rule) => isActiveVehicleRule(rule, vehicleType));
 }
 
+// Function คำนวณค่าจอดตาม rule รูปแบบใหม่ เช่น ชั่วโมงแรก ชั่วโมงถัดไป และค้างคืน
 function calculateModernFee(totalHours, diffMs, rules) {
   const baseRule = rules.find((rule) => rule.feeType === 'base_hour');
   const nextRule = rules.find((rule) => rule.feeType === 'next_hour');
@@ -71,6 +74,7 @@ function calculateModernFee(totalHours, diffMs, rules) {
   return { totalAmount, appliedRules };
 }
 
+// Function คำนวณค่าจอดตาม rule เดิมแบบช่วงชั่วโมง พร้อมเก็บชั่วโมงที่ยังไม่มี rule
 function calculateLegacyFee(totalHours, relevantRules) {
   let totalAmount = 0;
   const appliedRules = [];
