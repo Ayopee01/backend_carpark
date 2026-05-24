@@ -348,7 +348,13 @@ const openapi = {
         properties: {
           message: { type: 'string', example: 'Config has already been updated. Please reload the latest config before saving again.' },
           code: { type: 'string', example: 'CONFIG_VERSION_CONFLICT' },
-          latest: { type: 'object', additionalProperties: true },
+          latest: {
+            type: 'object',
+            properties: {
+              version: { type: 'integer', example: 17 },
+              configUpdatedAt: { type: 'string', format: 'date-time', example: '2026-05-24T16:41:34.773Z' },
+            },
+          },
         },
       },
     },

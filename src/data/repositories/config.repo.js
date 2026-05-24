@@ -52,6 +52,14 @@ function withConfigMeta(data, record) {
   };
 }
 
+// Function คืนเฉพาะ metadata ของ config สำหรับ conflict response โดยไม่ส่ง data JSON ทั้งก้อน
+function withConfigMetaOnly(record) {
+  return {
+    version: record?.version ?? 0,
+    configUpdatedAt: record?.updatedAt ? record.updatedAt.toISOString() : null,
+  };
+}
+
 // Function query record เต็มจาก app_config เพื่ออ่าน data + version + updatedAt
 async function getConfigRecord(key, fallback) {
   if (!key) throw new Error('config key is required');
@@ -105,7 +113,7 @@ async function setConfig(key, value, { expectedVersion } = {}) {
 
     if (updated.count === 0) {
       const latest = await getConfigRecord(key, undefined).catch(() => null);
-      throw new ConfigConflictError(key, latest ? withConfigMeta(latest.data, latest) : null);
+      throw new ConfigConflictError(key, latest ? withConfigMetaOnly(latest) : null);
     }
 
     return getConfigWithMeta(key);
@@ -159,4 +167,5 @@ module.exports = {
   stripConfigMeta,
   updateConfig,
   withConfigMeta,
+  withConfigMetaOnly,
 };

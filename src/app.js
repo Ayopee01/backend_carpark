@@ -133,8 +133,12 @@ app.use((req, res) => {
 
 // Middleware จัดการ error กลางของระบบ
 app.use((err, req, res, next) => {
-  console.error(err);
   const statusCode = err.statusCode || err.status || 500;
+  if (statusCode >= 500) {
+    console.error(err);
+  } else {
+    console.warn(`${statusCode} ${err.name || 'Error'}: ${err.message}`);
+  }
   const message = process.env.NODE_ENV === 'production' && statusCode >= 500
     ? 'Internal server error'
     : err.message || 'Internal server error';
