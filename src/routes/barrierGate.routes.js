@@ -13,7 +13,7 @@ const router = express.Router();
 // Route activate Barrier Gate ด้วย activation code
 router.post('/activate', async (req, res, next) => {
   try {
-    const { code } = req.body;
+    const code = req.body?.code === undefined || req.body?.code === null ? '' : String(req.body.code).trim();
     if (!code) return res.status(400).json({ message: 'Activation code is required' });
 
     const result = await activateBarrierGate(code);

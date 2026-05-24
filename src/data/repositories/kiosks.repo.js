@@ -98,16 +98,19 @@ async function generateActivationCode(details = {}) {
     expiresAt,
   });
 
-  return { code, deviceId: generatedId, expiresAt: expiresAt.toISOString() };
+  return { code, deviceId: generatedId, deviceType: 'kiosk', expiresAt: expiresAt.toISOString() };
 }
 
 // Function activate kiosk ด้วย activation code ที่ยังไม่หมดอายุ
 async function activateKiosk(code) {
+  const normalizedCode = code === undefined || code === null ? '' : String(code).trim();
+  if (!normalizedCode) return { success: false, message: 'Invalid or expired code' };
+
   cleanupExpiredActivationCodes();
-  let data = activationCodes.get(code);
+  let data = activationCodes.get(normalizedCode);
 
   if (!data) {
-    const pending = await getPendingActivationDeviceByCode(code, 'kiosk');
+    const pending = await getPendingActivationDeviceByCode(normalizedCode, 'kiosk');
     if (pending) {
       data = {
         deviceId: pending.id,
@@ -121,7 +124,7 @@ async function activateKiosk(code) {
 
   if (!data) return { success: false, message: 'Invalid or expired code' };
   if (data.expiresAt && data.expiresAt < new Date()) {
-    activationCodes.delete(code);
+    activationCodes.delete(normalizedCode);
     return { success: false, message: 'Code expired' };
   }
 
@@ -140,11 +143,12 @@ async function activateKiosk(code) {
     version: data.version || '1.0.0',
   });
 
-  activationCodes.delete(code);
+  activationCodes.delete(normalizedCode);
   return {
     success: true,
     message: 'Activation successful',
     deviceId: data.deviceId,
+    deviceType: 'kiosk',
     deviceToken: registered?.deviceToken,
     kiosk,
   };

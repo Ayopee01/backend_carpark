@@ -102,11 +102,14 @@ async function generateBarrierGateActivationCode(details = {}) {
 
 // Function เปิดใช้งาน Barrier Gate ด้วย Activation Code และบันทึกเป็น Registered Device
 async function activateBarrierGate(code) {
+  const normalizedCode = code === undefined || code === null ? '' : String(code).trim();
+  if (!normalizedCode) return { success: false, message: 'Invalid or expired code' };
+
   cleanupExpiredActivationCodes();
-  let data = activationCodes.get(code);
+  let data = activationCodes.get(normalizedCode);
 
   if (!data) {
-    const pending = await getPendingActivationDeviceByCode(code, 'barrier_gate');
+    const pending = await getPendingActivationDeviceByCode(normalizedCode, 'barrier_gate');
     if (pending) {
       data = {
         deviceId: pending.id,
@@ -120,7 +123,7 @@ async function activateBarrierGate(code) {
 
   if (!data) return { success: false, message: 'Invalid or expired code' };
   if (data.expiresAt && data.expiresAt < new Date()) {
-    activationCodes.delete(code);
+    activationCodes.delete(normalizedCode);
     return { success: false, message: 'Code expired' };
   }
 
@@ -139,7 +142,7 @@ async function activateBarrierGate(code) {
     version: data.version || '1.0.0',
   });
 
-  activationCodes.delete(code);
+  activationCodes.delete(normalizedCode);
   return {
     success: true,
     message: 'Barrier Gate activation successful',

@@ -315,10 +315,11 @@ async function getRegisteredDevice(deviceId) {
 // Function ค้นหา pending activation device จาก code ที่เก็บใน config เพื่อรองรับกรณี server restart
 async function getPendingActivationDeviceByCode(code, deviceType = null) {
   if (!code) return null;
+  const normalizedCode = String(code).trim();
   const config = await getDevicesConfig();
   return config.devices.find((device) => (
     device.status === 'pending_activation' &&
-    device.activationCode === code &&
+    String(device.activationCode || '').trim() === normalizedCode &&
     (!deviceType || device.deviceType === deviceType)
   )) || null;
 }
