@@ -26,6 +26,15 @@ const queryParam = (name, schema, example, required = false) => ({
   ...(example !== undefined ? { example } : {}),
 });
 
+const configVersionHeader = (example = 1) => ({
+  in: 'header',
+  name: 'X-Config-Version',
+  required: true,
+  schema: { type: 'integer' },
+  example,
+  description: 'Latest app_config version from the matching GET config endpoint.',
+});
+
 const requestBody = (schema, example, required = true) => ({
   required,
   content: json(schema, example),
@@ -260,8 +269,20 @@ const openapi = {
           deviceName: { type: 'string', example: 'Kiosk A' },
           deviceCode: { type: 'string', example: 'KIOSK-A' },
           location: { type: 'string', example: 'Main Lobby' },
-          version: { type: 'string', example: '1.0.0' },
+          deviceVersion: { type: 'string', example: '1.0.0' },
           note: { type: 'string' },
+        },
+      },
+      ActivationCodeResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Activation code generated' },
+          code: { type: 'string', example: '123456' },
+          deviceId: { type: 'string', example: 'K-20260524-001' },
+          deviceType: { type: 'string', example: 'kiosk' },
+          expiresAt: { type: 'string', format: 'date-time' },
+          configVersion: { type: 'integer', example: 13 },
+          configUpdatedAt: { type: 'string', format: 'date-time' },
         },
       },
       ActivationRequest: {
@@ -726,20 +747,26 @@ const openapi = {
       post: {
         tags: ['Devices'],
         summary: 'Generate kiosk activation code',
-        requestBody: requestBody({
-          allOf: [{ $ref: '#/components/schemas/ActivationCodeRequest' }, versionedObjectSchema],
-        }, { version: 1, deviceName: 'Kiosk A', location: 'Main Lobby' }),
-        responses: { 200: messageResponse('Activation code generated'), 400: messageResponse('version is required'), 409: messageResponse('Config conflict or device code already exists') },
+        parameters: [configVersionHeader(1)],
+        requestBody: requestBody({ $ref: '#/components/schemas/ActivationCodeRequest' }, { deviceName: 'Kiosk A', location: 'Main Lobby', deviceVersion: '1.0.0' }),
+        responses: {
+          200: { description: 'Activation code generated', content: json({ $ref: '#/components/schemas/ActivationCodeResponse' }) },
+          400: messageResponse('version is required'),
+          409: messageResponse('Config conflict or device code already exists'),
+        },
       },
     },
     '/api/v1/devices/barrier-gates/activation-code': {
       post: {
         tags: ['Devices'],
         summary: 'Generate barrier gate activation code',
-        requestBody: requestBody({
-          allOf: [{ $ref: '#/components/schemas/ActivationCodeRequest' }, versionedObjectSchema],
-        }, { version: 1, deviceName: 'Gate A', location: 'Exit 1' }),
-        responses: { 200: messageResponse('Activation code generated'), 400: messageResponse('version is required'), 409: messageResponse('Config conflict or device code already exists') },
+        parameters: [configVersionHeader(1)],
+        requestBody: requestBody({ $ref: '#/components/schemas/ActivationCodeRequest' }, { deviceName: 'Gate A', location: 'Exit 1', deviceVersion: '1.0.0' }),
+        responses: {
+          200: { description: 'Activation code generated', content: json({ $ref: '#/components/schemas/ActivationCodeResponse' }) },
+          400: messageResponse('version is required'),
+          409: messageResponse('Config conflict or device code already exists'),
+        },
       },
     },
     '/api/v1/devices/kiosks': {

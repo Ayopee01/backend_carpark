@@ -28,6 +28,37 @@ const router = express.Router();
 
 let runtimeMonitorStarted = false;
 
+// Function เตรียม payload สำหรับสร้าง activation code โดยแยก config version ออกจาก device/app version
+function toActivationPayload(body = {}, deviceType) {
+  const {
+    version,
+    deviceVersion,
+    appVersion,
+    configUpdatedAt,
+    ...details
+  } = body || {};
+  const normalizedDeviceVersion = deviceVersion || appVersion || (typeof version === 'string' ? version : undefined);
+
+  return {
+    ...details,
+    ...(normalizedDeviceVersion ? { version: String(normalizedDeviceVersion).trim() } : {}),
+    deviceType,
+  };
+}
+
+// Function สร้าง response แบบกระชับสำหรับ activation code
+function toActivationCodeResponse(message, result, pending) {
+  return {
+    message,
+    code: result.code,
+    deviceId: result.deviceId,
+    deviceType: result.deviceType || pending.device?.deviceType,
+    expiresAt: result.expiresAt,
+    configVersion: pending.config?.version,
+    configUpdatedAt: pending.config?.configUpdatedAt,
+  };
+}
+
 // Function เริ่ม background monitor สำหรับ refresh สถานะ device แบบ realtime
 function startDeviceRuntimeMonitor() {
   if (runtimeMonitorStarted) return;
@@ -148,18 +179,18 @@ router.delete('/:id', async (req, res, next) => {
 router.post('/kiosks/activation-code', async (req, res, next) => {
   try {
     const expectedVersion = getExpectedConfigVersion(req);
-    const result = await generateActivationCode(req.body || {});
+    const payload = toActivationPayload(req.body || {}, 'kiosk');
+    const result = await generateActivationCode(payload);
     const pending = await createPendingActivationDevice({
-      ...(req.body || {}),
+      ...payload,
       generatedDeviceId: result.deviceId,
       activationCode: result.code,
       activationExpiresAt: result.expiresAt,
-      deviceType: 'kiosk'
     }, expectedVersion);
     if (!pending.ok && pending.reason === 'duplicate') {
       return res.status(409).json({ message: 'Device code already exists' });
     }
-    res.json({ message: 'Activation code generated', ...result, device: pending.device, config: pending.config });
+    res.json(toActivationCodeResponse('Activation code generated', result, pending));
   } catch (err) {
     next(err);
   }
@@ -169,18 +200,18 @@ router.post('/kiosks/activation-code', async (req, res, next) => {
 router.post('/barrier-gates/activation-code', async (req, res, next) => {
   try {
     const expectedVersion = getExpectedConfigVersion(req);
-    const result = await generateBarrierGateActivationCode(req.body || {});
+    const payload = toActivationPayload(req.body || {}, 'barrier_gate');
+    const result = await generateBarrierGateActivationCode(payload);
     const pending = await createPendingActivationDevice({
-      ...(req.body || {}),
+      ...payload,
       generatedDeviceId: result.deviceId,
       activationCode: result.code,
       activationExpiresAt: result.expiresAt,
-      deviceType: 'barrier_gate'
     }, expectedVersion);
     if (!pending.ok && pending.reason === 'duplicate') {
       return res.status(409).json({ message: 'Device code already exists' });
     }
-    res.json({ message: 'Barrier Gate activation code generated', ...result, device: pending.device, config: pending.config });
+    res.json(toActivationCodeResponse('Barrier Gate activation code generated', result, pending));
   } catch (err) {
     next(err);
   }

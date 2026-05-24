@@ -28,10 +28,10 @@ function normalizeConfigVersion(value) {
 // Function อ่าน version จาก body/query/header สำหรับ optimistic locking
 function getExpectedConfigVersion(req) {
   const rawVersion =
-    req.body?.version ??
-    req.query?.version ??
     req.get?.('x-config-version') ??
-    req.get?.('if-match')?.replace(/"/g, '');
+    req.get?.('if-match')?.replace(/"/g, '') ??
+    req.query?.version ??
+    req.body?.version;
   const version = normalizeConfigVersion(rawVersion);
   if (!version) throw new ConfigVersionRequiredError();
   return version;
