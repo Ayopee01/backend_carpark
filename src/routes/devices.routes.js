@@ -1,65 +1,100 @@
 // Import Require
 const express = require('express');
 const {
-  createDevice,
   createPendingActivationDevice,
   deleteDevice,
   getDevicesConfigWithMeta,
   refreshDeviceRuntimeState,
   toSafeConfig,
-  updateDevice
+  updateDevice,
 } = require('../data/repositories/devices.repo');
-const { getExpectedConfigVersion } = require('../data/repositories/config.repo');
 const appEvents = require('../utils/events');
 const {
   deleteKiosk,
   editKiosk,
   generateActivationCode,
-  listAllKiosksWithMeta
 } = require('../data/repositories/kiosks.repo');
 const {
   deleteBarrierGate,
   editBarrierGate,
   generateBarrierGateActivationCode,
-  listAllBarrierGatesWithMeta
 } = require('../data/repositories/barrierGates.repo');
 
 const router = express.Router();
 
 let runtimeMonitorStarted = false;
 
-// Function เตรียม payload สำหรับสร้าง activation code โดยแยก config version ออกจาก device/app version
 function toActivationPayload(body = {}, deviceType) {
-  const {
-    version,
-    deviceVersion,
-    appVersion,
-    configUpdatedAt,
-    ...details
-  } = body || {};
-  const normalizedDeviceVersion = deviceVersion || appVersion || (typeof version === 'string' ? version : undefined);
+  const details = { ...(body || {}) };
+  delete details.version;
+  delete details.deviceVersion;
+  delete details.appVersion;
+  delete details.configUpdatedAt;
 
   return {
     ...details,
-    ...(normalizedDeviceVersion ? { version: String(normalizedDeviceVersion).trim() } : {}),
     deviceType,
   };
 }
 
-// Function สร้าง response แบบกระชับสำหรับ activation code
-function toActivationCodeResponse(message, result, pending) {
+function matchesKeyword(device, keyword) {
+  if (!keyword) return true;
+  const normalized = String(keyword).trim().toLowerCase();
+  return [
+    device.id,
+    device.deviceId,
+    device.deviceCode,
+    device.deviceName,
+    device.deviceType,
+    device.status,
+    device.location,
+    device.ipAddress,
+  ].some((value) => String(value || '').toLowerCase().includes(normalized));
+}
+
+function summarizeDevices(devices) {
   return {
-    message,
-    code: result.code,
-    deviceId: result.deviceId,
-    deviceType: result.deviceType || pending.device?.deviceType,
-    expiresAt: result.expiresAt,
-    configVersion: pending.config?.version,
-    configUpdatedAt: pending.config?.configUpdatedAt,
+    total: devices.length,
+    online: devices.filter((device) => device.isOnline).length,
+    offline: devices.filter((device) => !device.isOnline && device.status !== 'maintenance').length,
+    maintenance: devices.filter((device) => device.status === 'maintenance').length,
   };
 }
 
-// Function เริ่ม background monitor สำหรับ refresh สถานะ device แบบ realtime
+function toRuntimeStatus(status) {
+  if (status === 'active') return 'online';
+  return status;
+}
+
+async function syncRuntimeDevice(device, body = {}, action = 'update') {
+  const deviceId = device?.deviceId || device?.id;
+  if (!deviceId) return;
+
+  if (device.deviceType === 'kiosk') {
+    if (action === 'delete') {
+      await deleteKiosk(deviceId);
+      return;
+    }
+    await editKiosk(deviceId, {
+      name: body.deviceName || body.name || device.deviceName,
+      location: body.location || device.location,
+      status: toRuntimeStatus(body.status || device.status),
+    });
+  }
+
+  if (device.deviceType === 'barrier_gate') {
+    if (action === 'delete') {
+      await deleteBarrierGate(deviceId);
+      return;
+    }
+    await editBarrierGate(deviceId, {
+      name: body.deviceName || body.name || device.deviceName,
+      location: body.location || device.location,
+      status: toRuntimeStatus(body.status || device.status),
+    });
+  }
+}
+
 function startDeviceRuntimeMonitor() {
   if (runtimeMonitorStarted) return;
   runtimeMonitorStarted = true;
@@ -73,8 +108,8 @@ function startDeviceRuntimeMonitor() {
 
 startDeviceRuntimeMonitor();
 
-// Route SSE สำหรับส่งสถานะ device ไปยังหน้า admin แบบ realtime
-router.get('/events', async (req, res, next) => {
+// Admin SSE for realtime device updates.
+router.get('/events', async (req, res) => {
   try {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -101,199 +136,112 @@ router.get('/events', async (req, res, next) => {
       appEvents.off('devices_config_updated', sendConfigUpdated);
     });
   } catch (err) {
-    next(err);
+    const statusCode = err.statusCode || err.status || 500;
+    return res.status(statusCode).json({
+      status: 'error',
+      message: err.message || 'Internal server error',
+    });
   }
 });
 
-// Route query config devices ทั้งหมด
-router.get('/config', async (req, res, next) => {
+function toPublicActivationResponse(result, payload) {
+  return {
+    CodeActivate: result.code,
+    deviceName: payload.deviceName || payload.name || result.deviceId,
+    deviceType: result.deviceType,
+    status: 'active',
+    isOnline: true,
+  };
+}
+
+// List every managed device in one endpoint. Filter by deviceType/status/keyword when needed.
+router.get('/', async (req, res, next) => {
   try {
-    const config = await getDevicesConfigWithMeta();
-    res.json(toSafeConfig(config));
-  } catch (err) {
-    next(err);
-  }
-});
+    const config = toSafeConfig(await getDevicesConfigWithMeta());
+    let devices = Array.isArray(config.devices) ? config.devices : [];
+    const { deviceType, status, keyword } = req.query || {};
 
-// Route create device ใหม่
-router.post('/', async (req, res, next) => {
-  try {
-    const { deviceCode, deviceName, deviceType } = req.body || {};
-    if (!deviceCode || !deviceName || !deviceType) {
-      return res.status(400).json({ message: 'deviceCode, deviceName and deviceType are required' });
+    if (deviceType) {
+      devices = devices.filter((device) => device.deviceType === deviceType);
     }
-    if (['kiosk', 'barrier_gate'].includes(deviceType)) {
-      return res.status(400).json({
-        message: 'Kiosk and Barrier Gate devices must be created through activation-code endpoints'
-      });
+    if (status) {
+      devices = devices.filter((device) => device.status === status);
+    }
+    if (keyword) {
+      devices = devices.filter((device) => matchesKeyword(device, keyword));
     }
 
-    const result = await createDevice(req.body || {}, getExpectedConfigVersion(req));
-    if (!result.ok && result.reason === 'duplicate') {
-      return res.status(409).json({ message: 'Device code already exists' });
-    }
-
-    return res.status(201).json({
-      message: 'Device created',
-      device: result.device,
-      config: result.config
+    return res.json({
+      ...summarizeDevices(devices),
+      devices,
+      configUpdatedAt: config.configUpdatedAt,
     });
   } catch (err) {
     next(err);
   }
 });
 
-// Route update device ด้วย id
-router.put('/:id', async (req, res, next) => {
+// Create activation code for kiosk/barrier gate frontend roles.
+router.post('/', async (req, res, next) => {
   try {
-    const result = await updateDevice(req.params.id, req.body || {}, getExpectedConfigVersion(req));
+    const { deviceName, name, deviceType } = req.body || {};
+    if (!deviceName && !name) {
+      return res.status(400).json({ status: 'error', message: 'deviceName is required' });
+    }
+    if (!['kiosk', 'barrier_gate'].includes(deviceType)) {
+      return res.status(400).json({ status: 'error', message: 'deviceType must be kiosk or barrier_gate' });
+    }
+
+    const payload = toActivationPayload(req.body || {}, deviceType);
+    const result = deviceType === 'barrier_gate'
+      ? await generateBarrierGateActivationCode(payload)
+      : await generateActivationCode(payload);
+
+    const pending = await createPendingActivationDevice({
+      ...payload,
+      generatedDeviceId: result.deviceId,
+      activationCode: result.code,
+      activationExpiresAt: result.expiresAt,
+    });
+    if (!pending.ok && pending.reason === 'duplicate') {
+      return res.status(409).json({ status: 'error', message: 'Device code already exists' });
+    }
+
+    return res.status(201).json(toPublicActivationResponse(result, payload));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Update by id, deviceId, or deviceCode.
+router.put('/:deviceId', async (req, res, next) => {
+  try {
+    const result = await updateDevice(req.params.deviceId, req.body || {});
     if (!result) return res.status(404).json({ message: 'Device not found' });
+    await syncRuntimeDevice(result.device, req.body || {}, 'update');
 
     return res.json({
       message: 'Device updated',
       device: result.device,
-      config: result.config
+      config: result.config,
     });
   } catch (err) {
     next(err);
   }
 });
 
-// Route delete device ด้วย id
-router.delete('/:id', async (req, res, next) => {
+// Delete by id, deviceId, or deviceCode.
+router.delete('/:deviceId', async (req, res, next) => {
   try {
-    const result = await deleteDevice(req.params.id, getExpectedConfigVersion(req));
+    const result = await deleteDevice(req.params.deviceId);
     if (!result) return res.status(404).json({ message: 'Device not found' });
+    await syncRuntimeDevice(result.device, {}, 'delete');
 
     return res.json({
       message: 'Device deleted',
       device: result.device,
-      config: result.config
+      config: result.config,
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route สร้าง activation code สำหรับ kiosk
-router.post('/kiosks/activation-code', async (req, res, next) => {
-  try {
-    const expectedVersion = getExpectedConfigVersion(req);
-    const payload = toActivationPayload(req.body || {}, 'kiosk');
-    const result = await generateActivationCode(payload);
-    const pending = await createPendingActivationDevice({
-      ...payload,
-      generatedDeviceId: result.deviceId,
-      activationCode: result.code,
-      activationExpiresAt: result.expiresAt,
-    }, expectedVersion);
-    if (!pending.ok && pending.reason === 'duplicate') {
-      return res.status(409).json({ message: 'Device code already exists' });
-    }
-    res.json(toActivationCodeResponse('Activation code generated', result, pending));
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route สร้าง activation code สำหรับ barrier gate
-router.post('/barrier-gates/activation-code', async (req, res, next) => {
-  try {
-    const expectedVersion = getExpectedConfigVersion(req);
-    const payload = toActivationPayload(req.body || {}, 'barrier_gate');
-    const result = await generateBarrierGateActivationCode(payload);
-    const pending = await createPendingActivationDevice({
-      ...payload,
-      generatedDeviceId: result.deviceId,
-      activationCode: result.code,
-      activationExpiresAt: result.expiresAt,
-    }, expectedVersion);
-    if (!pending.ok && pending.reason === 'duplicate') {
-      return res.status(409).json({ message: 'Device code already exists' });
-    }
-    res.json(toActivationCodeResponse('Barrier Gate activation code generated', result, pending));
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route query kiosk ทั้งหมดพร้อม summary
-router.get('/kiosks', async (req, res, next) => {
-  try {
-    const result = await listAllKiosksWithMeta();
-    const kiosks = result.kiosks;
-    res.json({
-      total: kiosks.length,
-      online: kiosks.filter((kiosk) => kiosk.status === 'online').length,
-      offline: kiosks.filter((kiosk) => kiosk.status === 'offline').length,
-      maintenance: kiosks.filter((kiosk) => kiosk.status === 'maintenance').length,
-      kiosks,
-      version: result.version,
-      configUpdatedAt: result.configUpdatedAt
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route query barrier gate ทั้งหมดพร้อม summary
-router.get('/barrier-gates', async (req, res, next) => {
-  try {
-    const result = await listAllBarrierGatesWithMeta();
-    const barrierGates = result.barrierGates;
-    res.json({
-      total: barrierGates.length,
-      online: barrierGates.filter((barrierGate) => barrierGate.status === 'online').length,
-      offline: barrierGates.filter((barrierGate) => barrierGate.status === 'offline').length,
-      maintenance: barrierGates.filter((barrierGate) => barrierGate.status === 'maintenance').length,
-      barrierGates,
-      version: result.version,
-      configUpdatedAt: result.configUpdatedAt
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route update kiosk ด้วย deviceId
-router.put('/kiosks/:deviceId', async (req, res, next) => {
-  try {
-    const result = await editKiosk(req.params.deviceId, req.body || {}, getExpectedConfigVersion(req));
-    if (!result.success) return res.status(404).json(result);
-    res.json({ message: 'Kiosk updated', kiosk: result.kiosk });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route delete kiosk ด้วย deviceId
-router.delete('/kiosks/:deviceId', async (req, res, next) => {
-  try {
-    const result = await deleteKiosk(req.params.deviceId, getExpectedConfigVersion(req));
-    if (!result.success) return res.status(404).json(result);
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route update barrier gate ด้วย deviceId
-router.put('/barrier-gates/:deviceId', async (req, res, next) => {
-  try {
-    const result = await editBarrierGate(req.params.deviceId, req.body || {}, getExpectedConfigVersion(req));
-    if (!result.success) return res.status(404).json(result);
-    res.json({ message: 'Barrier Gate updated', barrierGate: result.barrierGate });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Route delete barrier gate ด้วย deviceId
-router.delete('/barrier-gates/:deviceId', async (req, res, next) => {
-  try {
-    const result = await deleteBarrierGate(req.params.deviceId, getExpectedConfigVersion(req));
-    if (!result.success) return res.status(404).json(result);
-    res.json(result);
   } catch (err) {
     next(err);
   }

@@ -11,12 +11,11 @@ const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const overviewRoutes = require('./routes/overview.routes');
 const transactionRoutes = require('./routes/transactions.routes');
-const usersRoutes = require('./routes/users.routes');
 const memberRoutes = require('./routes/members.routes');
 const servicePricingRoutes = require('./routes/servicePricing.routes');
 const paymentSettingsRouter = require('./routes/paymentSettings.routes');
-const kioskRoutes = require('./routes/kiosk.routes');
-const barrierGateRoutes = require('./routes/barrierGate.routes');
+const clientRoutes = require('./routes/client.routes');
+const deviceClientRoutes = require('./routes/deviceClient.routes');
 const devicesRoutes = require('./routes/devices.routes');
 const themeRoutes = require('./routes/theme.routes');
 const systemSettingsRoutes = require('./routes/systemSettings.routes');
@@ -75,8 +74,8 @@ app.get('/docs/openapi.json', (req, res) => {
 });
 
 // Route สำหรับ kiosk ที่ต้องเข้าถึงได้ก่อน auth middleware
-app.use('/api/v1/kiosk', kioskRoutes);
-app.use('/api/v1/barrier-gate', barrierGateRoutes);
+app.use('/api/v1/client', clientRoutes);
+app.use('/api/v1/devices', deviceClientRoutes);
 app.use(authMiddleware);
 app.use('/api/v1/auth', authRoutes);
 
@@ -118,7 +117,6 @@ app.get('/health/db', async (req, res) => {
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/overview', overviewRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
-app.use('/api/v1/users', authorize('settings'), usersRoutes);
 app.use('/api/v1/members', memberRoutes);
 app.use('/api/v1/service-pricing', servicePricingRoutes);
 app.use('/api/v1/payment-settings', paymentSettingsRouter);

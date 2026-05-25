@@ -63,38 +63,6 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// Route confirm payment by plateNo from body. Kept for backwards compatibility.
-router.post('/payment', async (req, res, next) => {
-  try {
-    const { plateNo, method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
-    if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
-
-    const processedBy = req.user.id;
-    const updated = await processPayment(null, {
-      plateNo,
-      method,
-      channel,
-      amount,
-      processedBy,
-      device: deviceId ? {
-        deviceId,
-        deviceType: deviceType || (channel === 'gate' ? 'barrier_gate' : channel) || 'unknown',
-        deviceName,
-        deviceLocation,
-      } : null,
-    });
-
-    if (!updated) return res.status(404).json({ message: 'Transaction not found for plateNo' });
-
-    res.json({
-      message: 'Payment confirmed successfully',
-      transaction: updated
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
 // Route get one transaction by transaction id or plateNo.
 router.get('/:id', async (req, res, next) => {
   try {

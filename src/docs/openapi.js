@@ -1,4 +1,6 @@
 // OpenAPI schema synchronized with the Express routes in src/routes.
+// Keep this file as the human-facing contract for Swagger UI.
+
 const json = (schema, example) => ({
   'application/json': {
     schema,
@@ -7,10 +9,27 @@ const json = (schema, example) => ({
 });
 
 const bearer = [{ bearerAuth: [] }];
-const deviceAuth = [{ deviceIdHeader: [], deviceTokenHeader: [] }];
+const deviceAuth = [{ deviceIdHeader: [], deviceTokenHeader: [] }, { deviceBearerAuth: [] }];
 const publicRoute = [];
 
-const idParam = (name = 'id', example = 'u_123') => ({
+const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
+
+const body = (schema, example, required = true) => ({
+  required,
+  content: json(schema, example),
+});
+
+const ok = (description = 'OK', schema = ref('AnyObject'), example) => ({
+  description,
+  content: json(schema, example),
+});
+
+const error = (description) => ({
+  description,
+  content: json(ref('ErrorResponse')),
+});
+
+const idParam = (name = 'id', example = 't_123') => ({
   in: 'path',
   name,
   required: true,
@@ -18,7 +37,7 @@ const idParam = (name = 'id', example = 'u_123') => ({
   example,
 });
 
-const queryParam = (name, schema, example, required = false) => ({
+const query = (name, schema, example, required = false) => ({
   in: 'query',
   name,
   required,
@@ -26,103 +45,124 @@ const queryParam = (name, schema, example, required = false) => ({
   ...(example !== undefined ? { example } : {}),
 });
 
-const configVersionHeader = (example = 1) => ({
+const configVersionHeader = {
   in: 'header',
   name: 'X-Config-Version',
-  required: true,
-  schema: { type: 'integer' },
-  example,
-  description: 'Latest app_config version from the matching GET config endpoint.',
-});
-
-const requestBody = (schema, example, required = true) => ({
-  required,
-  content: json(schema, example),
-});
-
-const objectSchema = {
-  type: 'object',
-  additionalProperties: true,
+  required: false,
+  schema: { type: 'integer', minimum: 0 },
+  example: 1,
+  description: 'Optional optimistic-lock version header. Config write endpoints also accept If-Match, query version, or body.version. Use the latest version returned by the matching GET endpoint.',
 };
 
-const versionedObjectSchema = {
-  type: 'object',
-  additionalProperties: true,
-  required: ['version'],
-  properties: {
-    version: { type: 'integer', example: 1, description: 'Latest app_config version from the GET response.' },
-  },
+const configVersionQuery = query('version', { type: 'integer', minimum: 0 }, 1, true);
+
+const bearer403 = {
+  401: error('Missing, invalid, expired, or revoked access token'),
+  403: error('Authenticated user does not have the required permission'),
 };
 
-const messageResponse = (description = 'OK') => ({
-  description,
-  content: json(objectSchema),
-});
+const configWriteResponses = {
+  400: error('Missing required fields or version'),
+  401: error('Missing, invalid, expired, or revoked access token'),
+  403: error('Authenticated user does not have the required permission'),
+  409: ok('Config version conflict', ref('ConfigConflictResponse')),
+};
 
 const openapi = {
   openapi: '3.0.3',
   info: {
     title: 'Smart Carpark API',
     version: '1.0.0',
-    description: 'Backend API for Smart Carpark admin, kiosk, barrier gate, payment, and device management.',
+    description: [
+      'Current API contract for the Smart Carpark backend.',
+      'Admin endpoints use Bearer access tokens. Device endpoints use X-Device-Id plus X-Device-Token, or Authorization: Device <token>.',
+      'Public/client endpoints are grouped under /api/v1/client and /api/v1/devices/config. Admin device management is grouped under /api/v1/devices.',
+    ].join('\n'),
   },
-  servers: [{ url: '/', description: 'https://carpark-uat.biza.me' }],
+  servers: [
+    { url: '/', description: 'Same origin' },
+  ],
   tags: [
-    { name: 'System', description: 'Root, health check, and API documentation endpoints.' },
     { name: 'Auth', description: 'Login, refresh token, logout, and current user endpoints.' },
-    { name: 'Dashboard', description: 'Daily dashboard summary for the admin app.' },
-    { name: 'Overview', description: 'Date range overview summary and chart data.' },
-    { name: 'Transactions', description: 'Parking transactions, camera events, payments, and transaction updates.' },
-    { name: 'Users', description: 'Admin user management.' },
-    { name: 'Members', description: 'Member and permission management.' },
-    { name: 'Service Pricing', description: 'Parking fee and pricing rule configuration.' },
-    { name: 'Payment Settings', description: 'Payment methods and channel mapping.' },
-    { name: 'Devices', description: 'Registered devices, activation codes, kiosks, and barrier gates.' },
-    { name: 'Kiosk', description: 'Public endpoints used by kiosk devices.' },
-    { name: 'Barrier Gate', description: 'Public endpoints used by barrier gate devices.' },
-    { name: 'Theme', description: 'Theme and logo configuration.' },
-    { name: 'System Settings', description: 'General system, receipt, and printer settings.' },
+    { name: 'Dashboard', description: 'Admin dashboard. Requires dashboard permission.' },
+    { name: 'Overview', description: 'Admin overview reports. Requires overview permission.' },
+    { name: 'Transactions', description: 'Admin transaction operations. Every endpoint in this group requires Auth Bearer token and transactions permission.' },
+    { name: 'Members', description: 'Member and permission management. Requires settings permission.' },
+    { name: 'Service Pricing', description: 'Pricing configuration. Requires pricing permission.' },
+    { name: 'Payment Settings', description: 'Payment methods and channel mapping. Requires pricing permission.' },
+    { name: 'Devices', description: 'Unified admin management for kiosk, barrier gate, and other devices. Requires devices permission.' },
+    { name: 'Client Events', description: 'Shared public/device endpoints for kiosk, barrier gate, and mobile clients.' },
+    { name: 'Theme', description: 'Theme and logo configuration. Requires theme permission.' },
+    { name: 'System Settings', description: 'General, receipt, and printer settings. Requires settings permission.' },
   ],
   components: {
     securitySchemes: {
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
-        bearerFormat: 'Signed access token',
+        bearerFormat: 'JWT-like signed access token',
       },
       deviceIdHeader: {
         type: 'apiKey',
         in: 'header',
         name: 'X-Device-Id',
-        description: 'Registered kiosk/barrier gate deviceId returned after activation.',
+        description: 'Registered deviceId returned after kiosk or barrier-gate activation.',
       },
       deviceTokenHeader: {
         type: 'apiKey',
         in: 'header',
         name: 'X-Device-Token',
-        description: 'Device token returned once during kiosk/barrier gate activation. Store it on the device and send it with device API calls.',
+        description: 'Device token returned once during activation.',
+      },
+      deviceBearerAuth: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'Authorization',
+        description: 'Alternative device credential format: Device <token>.',
       },
     },
     schemas: {
+      AnyObject: {
+        type: 'object',
+        additionalProperties: true,
+      },
       ErrorResponse: {
         type: 'object',
         properties: {
           message: { type: 'string' },
+          reason: { type: 'string' },
+          requiredPermission: { type: 'string' },
+        },
+      },
+      ConfigConflictResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Config has already been updated. Please reload the latest config before saving again.' },
+          code: { type: 'string', example: 'CONFIG_VERSION_CONFLICT' },
+          latest: {
+            type: 'object',
+            properties: {
+              version: { type: 'integer', example: 17 },
+              configUpdatedAt: { type: 'string', format: 'date-time' },
+            },
+          },
         },
       },
       User: {
         type: 'object',
         properties: {
-          id: { type: 'string' },
-          username: { type: 'string' },
-          name: { type: 'string' },
-          email: { type: 'string', nullable: true },
-          phone: { type: 'string', nullable: true },
+          id: { type: 'string', example: 'u_123' },
+          username: { type: 'string', example: 'admin1' },
+          name: { type: 'string', example: 'Admin One' },
+          email: { type: 'string', nullable: true, example: 'admin@example.com' },
+          phone: { type: 'string', nullable: true, example: '0812345678' },
           role: { type: 'string', example: 'staff' },
-          permissions: { type: 'array', items: { type: 'string' } },
+          permissions: {
+            type: 'array',
+            items: { type: 'string' },
+            example: ['dashboard', 'overview', 'transactions', 'pricing', 'devices', 'theme', 'settings'],
+          },
           status: { type: 'string', example: 'active' },
-          createdAt: { type: 'string', format: 'date-time' },
-          updatedAt: { type: 'string', format: 'date-time' },
         },
       },
       LoginRequest: {
@@ -153,10 +193,10 @@ const openapi = {
         type: 'object',
         required: ['username', 'password', 'name'],
         properties: {
-          username: { type: 'string', example: 'admin2' },
+          username: { type: 'string', example: 'staff1' },
           password: { type: 'string', example: '123456' },
-          name: { type: 'string', example: 'Admin Two' },
-          email: { type: 'string', example: 'admin2@example.com' },
+          name: { type: 'string', example: 'Staff One' },
+          email: { type: 'string', example: 'staff1@example.com' },
           phone: { type: 'string', example: '0812345678' },
           role: { type: 'string', example: 'staff' },
           permissions: { type: 'array', items: { type: 'string' }, example: ['dashboard', 'transactions'] },
@@ -180,109 +220,158 @@ const openapi = {
         type: 'object',
         required: ['password'],
         properties: {
-          username: { type: 'string', example: 'staff1', description: 'Required when email is not supplied.' },
+          username: { type: 'string', example: 'cashier1', description: 'Required when email is not supplied.' },
           password: { type: 'string', example: '123456' },
-          firstName: { type: 'string', example: 'Staff', description: 'Used with lastName when name is not supplied.' },
+          firstName: { type: 'string', example: 'Cashier' },
           lastName: { type: 'string', example: 'One' },
-          name: { type: 'string', example: 'Staff One', description: 'Required when firstName/lastName are not supplied.' },
-          email: { type: 'string', example: 'staff1@example.com', description: 'Can be used to derive username when username is not supplied.' },
+          name: { type: 'string', example: 'Cashier One', description: 'Required when firstName/lastName are not supplied.' },
+          email: { type: 'string', example: 'cashier1@example.com' },
           role: { type: 'string', example: 'staff' },
           status: { type: 'string', example: 'active' },
-          permissions: { type: 'array', items: { type: 'string' }, example: ['dashboard', 'transactions'] },
+          permissions: { type: 'array', items: { type: 'string' }, example: ['transactions'] },
         },
       },
       Transaction: {
         type: 'object',
         additionalProperties: true,
         properties: {
-          id: { type: 'string' },
-          billNo: { type: 'string' },
-          plateNo: { type: 'string' },
-          vehicleType: { type: 'string', enum: ['car', 'motorcycle'] },
+          id: { type: 'string', example: 't_123' },
+          billNo: { type: 'string', example: 'PK20260524-120000' },
+          plateNo: { type: 'string', example: '1ABC1234' },
+          vehicleType: { type: 'string', enum: ['car', 'motorcycle'], example: 'car' },
           entryAt: { type: 'string', format: 'date-time' },
           exitAt: { type: 'string', format: 'date-time', nullable: true },
           status: { type: 'string', enum: ['pending', 'partially_paid', 'completed', 'cancelled'] },
-          netAmount: { type: 'number' },
-          totalPaid: { type: 'number' },
-          remainingAmount: { type: 'number' },
+          netAmount: { type: 'number', example: 40 },
+          totalPaid: { type: 'number', example: 0 },
+          remainingAmount: { type: 'number', example: 40 },
         },
       },
       CameraTransactionRequest: {
         type: 'object',
         required: ['plateNo', 'cameraId', 'gateId', 'direction'],
         properties: {
-          plateNo: { type: 'string', example: '1กก1234' },
+          plateNo: { type: 'string', example: '3งจ9012' },
           vehicleType: { type: 'string', enum: ['car', 'motorcycle'], default: 'car' },
           cameraId: { type: 'string', example: 'CAM-IN-01' },
           gateId: { type: 'string', example: 'GATE-A' },
           direction: { type: 'string', enum: ['IN', 'OUT'], example: 'IN' },
-          capturedAt: { type: 'string', format: 'date-time', example: '2026-05-22T10:30:00+07:00' },
+          capturedAt: { type: 'string', format: 'date-time', example: '2026-05-25T10:30:00+07:00' },
           confidence: { type: 'number', example: 0.92 },
           imageUrl: { type: 'string', example: 'https://example.com/plate.jpg' },
+        },
+      },
+      TransactionUpdateRequest: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          plateNo: { type: 'string', example: '3งจ9012' },
+          vehicleType: { type: 'string', enum: ['car', 'motorcycle'] },
+          status: { type: 'string', enum: ['pending', 'partially_paid', 'completed', 'cancelled'] },
+          exitAt: { type: 'string', format: 'date-time' },
+          note: { type: 'string' },
         },
       },
       PaymentRequest: {
         type: 'object',
         properties: {
-          transactionId: { type: 'string' },
-          plateNo: { type: 'string', example: '1กก1234' },
+          transactionId: { type: 'string', example: 't_123' },
+          plateNo: { type: 'string', example: '3งจ9012' },
           method: { type: 'string', example: 'cash' },
           channel: { type: 'string', enum: ['cashier', 'mobile', 'kiosk', 'gate'], example: 'cashier' },
           amount: { type: 'number', example: 40 },
-          deviceId: { type: 'string' },
-          deviceType: { type: 'string' },
-          deviceName: { type: 'string' },
-          deviceLocation: { type: 'string' },
+          deviceId: { type: 'string', example: 'K-20260524-001' },
+          deviceType: { type: 'string', example: 'kiosk' },
+          deviceName: { type: 'string', example: 'Kiosk A' },
+          deviceLocation: { type: 'string', example: 'Main Lobby' },
         },
       },
-      Device: {
+      VersionedConfigWrite: {
+        type: 'object',
+        required: ['version'],
+        additionalProperties: true,
+        properties: {
+          version: { type: 'integer', example: 1 },
+        },
+      },
+      PricingRule: {
+        type: 'object',
+        required: ['price'],
+        properties: {
+          id: { type: 'string', example: 'pr_123' },
+          name: { type: 'string', example: 'Car first hour' },
+          feeType: { type: 'string', enum: ['base_hour', 'next_hour', 'overnight_day', 'overnight_week', 'overnight_month', 'overnight_year'] },
+          vehicleType: { type: 'string', enum: ['car', 'motorcycle'], example: 'car' },
+          price: { type: 'number', example: 20 },
+          baseHours: { type: 'number', example: 1 },
+          hourStart: { type: 'number', example: 1 },
+          hourEnd: { type: 'number', nullable: true, example: 2 },
+          periodUnit: { type: 'string', nullable: true, example: 'day' },
+          periodStart: { type: 'number', example: 1 },
+          periodEnd: { type: 'number', nullable: true },
+          status: { type: 'string', example: 'active' },
+          version: { type: 'integer', example: 1 },
+        },
+      },
+      PaymentMethodUpdateRequest: {
         type: 'object',
         additionalProperties: true,
         properties: {
-          id: { type: 'string' },
-          deviceId: { type: 'string', nullable: true },
-          deviceCode: { type: 'string' },
-          deviceName: { type: 'string' },
-          deviceType: { type: 'string', example: 'kiosk' },
-          status: { type: 'string', example: 'active' },
-          isOnline: { type: 'boolean' },
+          isActive: { type: 'boolean', example: true },
         },
       },
-      DeviceCreateRequest: {
+      ChannelMappingUpdateRequest: {
         type: 'object',
-        required: ['deviceCode', 'deviceName', 'deviceType'],
+        required: ['allowedMethods'],
         properties: {
-          deviceCode: { type: 'string', example: 'CAM-001' },
-          deviceName: { type: 'string', example: 'Entrance Camera 1' },
-          deviceType: { type: 'string', example: 'camera', description: 'kiosk and barrier_gate must be created through activation-code endpoints.' },
+          allowedMethods: { type: 'array', items: { type: 'string' }, example: ['cash', 'qr', 'wallet'] },
+        },
+      },
+      DeviceActivationCodeCreateRequest: {
+        type: 'object',
+        required: ['deviceName', 'deviceType'],
+        properties: {
+          deviceName: { type: 'string', example: 'Test Kiosk 1' },
+          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate'], example: 'kiosk', description: 'Controls which frontend role/screen the activation code belongs to.' },
+          deviceCode: { type: 'string', example: 'KIOSK-A' },
+          name: { type: 'string', example: 'Test Kiosk 1' },
+          location: { type: 'string', example: 'Main Lobby' },
           connectionType: { type: 'string', example: 'lan' },
-          ipAddress: { type: 'string', example: '192.168.1.10' },
+          note: { type: 'string' },
+        },
+      },
+      DeviceActivationCodeCreateResponse: {
+        type: 'object',
+        properties: {
+          CodeActivate: { type: 'string', example: '839725' },
+          deviceName: { type: 'string', example: 'Test Kiosk 1' },
+          deviceType: { type: 'string', example: 'kiosk' },
           status: { type: 'string', example: 'active' },
           isOnline: { type: 'boolean', example: true },
-          note: { type: 'string' },
         },
       },
-      ActivationCodeRequest: {
+      DeviceUpdateRequest: {
         type: 'object',
+        additionalProperties: false,
         properties: {
-          name: { type: 'string', example: 'Kiosk A' },
-          deviceName: { type: 'string', example: 'Kiosk A' },
           deviceCode: { type: 'string', example: 'KIOSK-A' },
-          location: { type: 'string', example: 'Main Lobby' },
-          deviceVersion: { type: 'string', example: '1.0.0' },
-          note: { type: 'string' },
+          deviceName: { type: 'string', example: 'Kiosk A' },
+          name: { type: 'string', example: 'Kiosk A', description: 'Alias for deviceName.' },
+          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate', 'camera'], example: 'kiosk' },
+          connectionType: { type: 'string', example: 'lan' },
+          ipAddress: { type: 'string', nullable: true, example: '192.168.1.20' },
+          ip: { type: 'string', nullable: true, example: '192.168.1.20', description: 'Alias for ipAddress.' },
+          location: { type: 'string', nullable: true, example: 'Main Lobby' },
+          status: { type: 'string', enum: ['pending_activation', 'active', 'offline', 'maintenance'], example: 'maintenance' },
+          isOnline: { type: 'boolean', example: false },
+          note: { type: 'string', example: 'Temporarily disabled for maintenance' },
         },
       },
-      ActivationCodeResponse: {
+      ActivationErrorResponse: {
         type: 'object',
         properties: {
-          message: { type: 'string', example: 'Activation code generated' },
-          code: { type: 'string', example: '123456' },
-          deviceId: { type: 'string', example: 'K-20260524-001' },
-          deviceType: { type: 'string', example: 'kiosk' },
-          expiresAt: { type: 'string', format: 'date-time' },
-          configVersion: { type: 'integer', example: 13 },
-          configUpdatedAt: { type: 'string', format: 'date-time' },
+          status: { type: 'string', example: 'error' },
+          message: { type: 'string', example: 'deviceType must be kiosk or barrier_gate' },
         },
       },
       ActivationRequest: {
@@ -299,10 +388,7 @@ const openapi = {
           message: { type: 'string', example: 'Activation successful' },
           deviceId: { type: 'string', example: 'K-20260524-001' },
           deviceType: { type: 'string', example: 'kiosk' },
-          deviceToken: {
-            type: 'string',
-            description: 'Returned only after activation. It is stored as a hash on the backend and cannot be read again later.',
-          },
+          deviceToken: { type: 'string', description: 'Returned only once during activation.' },
         },
       },
       CheckInRequest: {
@@ -310,26 +396,8 @@ const openapi = {
         required: ['deviceId'],
         properties: {
           deviceId: { type: 'string', example: 'K-20260524-001' },
-          name: { type: 'string' },
-          location: { type: 'string' },
-          version: { type: 'string', example: '1.0.0' },
-        },
-      },
-      PricingRule: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          name: { type: 'string' },
-          feeType: { type: 'string', enum: ['base_hour', 'next_hour', 'overnight_day', 'overnight_week', 'overnight_month', 'overnight_year'] },
-          vehicleType: { type: 'string', enum: ['car', 'motorcycle'] },
-          price: { type: 'number' },
-          baseHours: { type: 'number' },
-          hourStart: { type: 'number' },
-          hourEnd: { type: 'number', nullable: true },
-          periodUnit: { type: 'string', nullable: true },
-          periodStart: { type: 'number' },
-          periodEnd: { type: 'number', nullable: true },
-          status: { type: 'string', example: 'active' },
+          name: { type: 'string', example: 'Kiosk A' },
+          location: { type: 'string', example: 'Main Lobby' },
         },
       },
       ThemeUpdateRequest: {
@@ -338,84 +406,33 @@ const openapi = {
         properties: {
           version: { type: 'integer', example: 1 },
           themeColor: { type: 'string', nullable: true, example: '#2563eb' },
-          logoUrl: { type: 'string', nullable: true },
+          logoUrl: { type: 'string', nullable: true, example: '/uploads/logo.png' },
           themeMode: { type: 'string', example: 'custom' },
           customThemeColor: { type: 'string', nullable: true, example: '#2563eb' },
         },
       },
-      ConfigConflictResponse: {
+      PrinterSettingsUpdateRequest: {
         type: 'object',
+        required: ['version'],
+        additionalProperties: true,
         properties: {
-          message: { type: 'string', example: 'Config has already been updated. Please reload the latest config before saving again.' },
-          code: { type: 'string', example: 'CONFIG_VERSION_CONFLICT' },
-          latest: {
-            type: 'object',
-            properties: {
-              version: { type: 'integer', example: 17 },
-              configUpdatedAt: { type: 'string', format: 'date-time', example: '2026-05-24T16:41:34.773Z' },
-            },
-          },
+          version: { type: 'integer', example: 1 },
+          fontSize: { type: 'number', example: 12 },
+          billNumberFontSize: { type: 'number', example: 18 },
+          paperWidth: { type: 'number', example: 80 },
         },
       },
     },
   },
   security: bearer,
   paths: {
-    '/': {
-      get: {
-        tags: ['System'],
-        summary: 'API root metadata',
-        security: publicRoute,
-        responses: { 200: messageResponse('API metadata') },
-      },
-    },
-    '/health': {
-      get: {
-        tags: ['System'],
-        summary: 'Health check',
-        security: publicRoute,
-        responses: { 200: messageResponse('Service is healthy') },
-      },
-    },
-    '/health/db': {
-      get: {
-        tags: ['System'],
-        summary: 'Database connectivity check',
-        security: publicRoute,
-        responses: {
-          200: messageResponse('Database connection is healthy'),
-          500: messageResponse('Database connection failed'),
-        },
-      },
-    },
-    '/docs': {
-      get: {
-        tags: ['System'],
-        summary: 'Swagger UI',
-        security: publicRoute,
-        responses: { 200: { description: 'Swagger UI HTML' } },
-      },
-    },
-    '/docs/openapi.json': {
-      get: {
-        tags: ['System'],
-        summary: 'OpenAPI JSON document',
-        security: publicRoute,
-        responses: { 200: messageResponse('OpenAPI JSON') },
-      },
-    },
-
     '/api/v1/auth/login': {
       post: {
         tags: ['Auth'],
         summary: 'Login',
         security: publicRoute,
-        requestBody: requestBody({ $ref: '#/components/schemas/LoginRequest' }),
-        responses: {
-          200: { description: 'Login success', content: json({ $ref: '#/components/schemas/LoginResponse' }) },
-          401: messageResponse('Invalid username or password'),
-          429: messageResponse('Too many login attempts'),
-        },
+        requestBody: body(ref('LoginRequest')),
+        responses: { 200: ok('Login success', ref('LoginResponse')), 401: error('Invalid username or password'), 429: error('Too many login attempts') },
       },
     },
     '/api/v1/auth/refresh': {
@@ -423,25 +440,22 @@ const openapi = {
         tags: ['Auth'],
         summary: 'Refresh access token',
         security: publicRoute,
-        requestBody: requestBody({ $ref: '#/components/schemas/RefreshRequest' }),
-        responses: {
-          200: { description: 'Token refreshed', content: json({ $ref: '#/components/schemas/LoginResponse' }) },
-          401: messageResponse('Invalid refresh token'),
-        },
+        requestBody: body(ref('RefreshRequest')),
+        responses: { 200: ok('Token refreshed', ref('LoginResponse')), 401: error('Invalid refresh token or expired session') },
       },
     },
     '/api/v1/auth/logout': {
       post: {
         tags: ['Auth'],
         summary: 'Logout current session',
-        responses: { 200: messageResponse('Logged out') },
+        responses: { 200: ok('Logged out'), ...bearer403 },
       },
     },
     '/api/v1/auth/me': {
       get: {
         tags: ['Auth'],
         summary: 'Get current user from access token',
-        responses: { 200: { description: 'Current user', content: json({ type: 'object', properties: { user: { $ref: '#/components/schemas/User' } } }) } },
+        responses: { 200: ok('Current user', { type: 'object', properties: { user: ref('User') } }), ...bearer403 },
       },
     },
 
@@ -449,528 +463,373 @@ const openapi = {
       get: {
         tags: ['Dashboard'],
         summary: 'Get today dashboard summary',
-        responses: { 200: messageResponse('Dashboard summary') },
+        description: 'Requires permission: dashboard.',
+        responses: { 200: ok('Dashboard summary'), ...bearer403 },
       },
     },
     '/api/v1/overview/summary': {
       get: {
         tags: ['Overview'],
         summary: 'Get overview summary by date range',
+        description: 'Requires permission: overview.',
         parameters: [
-          queryParam('start_date', { type: 'string', description: 'YYYY-MM-DD or date-time' }, '2026-05-01'),
-          queryParam('end_date', { type: 'string', description: 'YYYY-MM-DD or date-time' }, '2026-05-24'),
+          query('start_date', { type: 'string', description: 'YYYY-MM-DD or date-time' }, '2026-05-01'),
+          query('end_date', { type: 'string', description: 'YYYY-MM-DD or date-time' }, '2026-05-25'),
         ],
-        responses: {
-          200: messageResponse('Overview summary'),
-          400: messageResponse('Invalid start_date or end_date'),
-        },
+        responses: { 200: ok('Overview summary'), 400: error('Invalid start_date or end_date'), ...bearer403 },
       },
     },
 
     '/api/v1/transactions': {
       get: {
         tags: ['Transactions'],
-        summary: 'List/search transactions',
+        summary: 'List transactions by page',
+        description: 'Admin flow. Requires Bearer token and transactions permission. Backend supports page=?&per_page=?; frontend controls the page/per_page values. Example: /api/v1/transactions?page=1&per_page=10, then /api/v1/transactions?page=2&per_page=10.',
         parameters: [
-          queryParam('keyword', { type: 'string' }, '1กก1234'),
-          queryParam('plate_no', { type: 'string' }, '1กก1234'),
-          queryParam('bill_no', { type: 'string' }, 'PK20260524-120000'),
-          queryParam('page', { type: 'integer', default: 1 }, 1),
-          queryParam('per_page', { type: 'integer', default: 10, maximum: 100 }, 10),
-          queryParam('all', { type: 'string', enum: ['true', '1', 'false', '0'] }, 'false'),
+          query('keyword', { type: 'string' }, '3งจ9012'),
+          query('plate_no', { type: 'string' }, '3งจ9012'),
+          query('bill_no', { type: 'string' }, 'PK20260524-120000'),
+          query('page', { type: 'integer', default: 1 }, 1),
+          query('per_page', { type: 'integer', default: 10, maximum: 100 }, 10),
+          query('all', { type: 'string', enum: ['true', '1', 'false', '0'] }, 'false'),
         ],
-        responses: { 200: messageResponse('Transactions list') },
+        responses: { 200: ok('Transactions list'), ...bearer403 },
       },
       post: {
         tags: ['Transactions'],
-        summary: 'Create transaction from LPR/camera payload',
-        description: 'Creates a pending transaction from an IN camera event. OUT events update the latest open transaction for the plate when possible. Duplicate camera events within 10 seconds are ignored.',
-        requestBody: requestBody({ $ref: '#/components/schemas/CameraTransactionRequest' }),
-        responses: {
-          201: messageResponse('Transaction created from camera'),
-          200: messageResponse('Duplicate camera event ignored'),
-          400: messageResponse('Validation error'),
-        },
-      },
-    },
-    '/api/v1/transactions/payment': {
-      post: {
-        tags: ['Transactions'],
-        summary: 'Confirm payment by plateNo in body',
-        deprecated: true,
-        description: 'Legacy endpoint kept for backwards compatibility. Prefer POST /api/v1/transactions/{id}/payment.',
-        requestBody: requestBody({ $ref: '#/components/schemas/PaymentRequest' }, { plateNo: '1กก1234', method: 'cash', channel: 'cashier', amount: 40 }),
-        responses: {
-          200: messageResponse('Payment confirmed'),
-          404: messageResponse('Transaction not found for plateNo'),
-        },
+        summary: 'Create or update transaction from camera/LPR body',
+        description: 'Admin/camera integration flow. Requires Bearer token and transactions permission. IN events create pending transactions. OUT events update the latest open transaction for the plate when possible. Duplicate camera events within 10 seconds are ignored.',
+        requestBody: body(ref('CameraTransactionRequest')),
+        responses: { 200: ok('Duplicate or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
       },
     },
     '/api/v1/transactions/{id}': {
       get: {
         tags: ['Transactions'],
         summary: 'Get transaction by id or plateNo',
-        parameters: [idParam('id', '1กก1234')],
-        responses: { 200: messageResponse('Transaction details'), 404: messageResponse('Not found') },
+        description: 'Admin flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. Example: /api/v1/transactions/3งจ9012.',
+        parameters: [idParam('id', '3งจ9012')],
+        responses: { 200: ok('Transaction', ref('Transaction')), 404: error('Not found'), ...bearer403 },
       },
       patch: {
         tags: ['Transactions'],
         summary: 'Update transaction fields by id or plateNo',
-        parameters: [idParam('id', 't_123')],
-        requestBody: requestBody(objectSchema, { vehicleType: 'car', serviceType: 'parking', status: 'pending' }),
-        responses: { 200: messageResponse('Updated'), 404: messageResponse('Not found') },
+        description: 'Admin flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo.',
+        parameters: [idParam('id', '3งจ9012')],
+        requestBody: body(ref('TransactionUpdateRequest')),
+        responses: { 200: ok('Transaction updated'), 404: error('Not found'), ...bearer403 },
       },
       delete: {
         tags: ['Transactions'],
         summary: 'Delete transaction by id or plateNo',
-        parameters: [idParam('id', 't_123')],
-        responses: { 200: messageResponse('Deleted'), 404: messageResponse('Not found') },
+        description: 'Admin flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo.',
+        parameters: [idParam('id', '3งจ9012')],
+        responses: { 200: ok('Transaction deleted'), 404: error('Not found'), ...bearer403 },
       },
     },
     '/api/v1/transactions/{id}/payment': {
       post: {
         tags: ['Transactions'],
-        summary: 'Confirm payment by id or plateNo in path',
-        parameters: [idParam('id', 't_123')],
-        requestBody: requestBody({ $ref: '#/components/schemas/PaymentRequest' }, { method: 'cash', channel: 'cashier', amount: 40 }),
-        responses: { 200: messageResponse('Payment confirmed'), 404: messageResponse('Transaction not found') },
+        summary: 'Confirm payment by transaction id or plateNo',
+        description: 'Admin payment flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. Example: POST /api/v1/transactions/3งจ9012/payment.',
+        parameters: [idParam('id', '3งจ9012')],
+        requestBody: body(ref('PaymentRequest'), {
+          method: 'cash',
+          channel: 'cashier',
+          amount: 40,
+        }),
+        responses: {
+          200: ok('Payment confirmed successfully', ref('Transaction')),
+          400: error('Validation error'),
+          404: error('Transaction not found'),
+          ...bearer403,
+        },
       },
+
     },
     '/api/v1/transactions/{id}/status': {
       patch: {
         tags: ['Transactions'],
-        summary: 'Legacy endpoint: update transaction status by id or plateNo',
-        deprecated: true,
-        parameters: [idParam('id', 't_123')],
-        requestBody: requestBody(objectSchema, { status: 'cancelled' }),
-        responses: { 200: messageResponse('Updated'), 404: messageResponse('Not found') },
-      },
-    },
-
-    '/api/v1/users': {
-      get: {
-        tags: ['Users'],
-        summary: 'List all admin users',
-        description: 'Returns all users because this screen is for a small admin list. Optional keyword searches name, email, username, and role.',
-        parameters: [queryParam('keyword', { type: 'string' }, 'admin')],
-        responses: {
-          200: {
-            description: 'Users list',
-            content: json({
-              type: 'object',
-              properties: {
-                message: { type: 'string', example: 'Users fetched' },
-                data: { type: 'array', items: { $ref: '#/components/schemas/User' } },
-              },
-            }),
-          },
-        },
-      },
-      post: {
-        tags: ['Users'],
-        summary: 'Create admin user',
-        requestBody: requestBody({ $ref: '#/components/schemas/UserCreateRequest' }),
-        responses: {
-          201: messageResponse('User created'),
-          400: messageResponse('Required fields missing'),
-          409: messageResponse('Username already exists'),
-        },
-      },
-    },
-    '/api/v1/users/{id}': {
-      put: {
-        tags: ['Users'],
-        summary: 'Update admin user',
-        parameters: [idParam('id', 'u_123')],
-        requestBody: requestBody({ $ref: '#/components/schemas/UserUpdateRequest' }),
-        responses: {
-          200: messageResponse('User updated'),
-          404: messageResponse('User not found'),
-          409: messageResponse('Username already exists'),
-        },
-      },
-      delete: {
-        tags: ['Users'],
-        summary: 'Delete admin user',
-        parameters: [idParam('id', 'u_123')],
-        responses: { 200: messageResponse('User deleted'), 404: messageResponse('User not found') },
+        summary: 'Update transaction status by id or plateNo',
+        description: 'Admin flow after payment. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. It currently calls the same update logic as PATCH /api/v1/transactions/{id}.',
+        parameters: [idParam('id', '3งจ9012')],
+        requestBody: body(ref('TransactionUpdateRequest'), { status: 'cancelled' }),
+        responses: { 200: ok('Transaction status updated'), 404: error('Not found'), ...bearer403 },
       },
     },
 
     '/api/v1/members/stats': {
-      get: { tags: ['Members'], summary: 'Get member stats', responses: { 200: messageResponse('Member stats') } },
+      get: {
+        tags: ['Members'],
+        summary: 'Get member stats',
+        description: 'Requires permission: settings.',
+        responses: { 200: ok('Member stats'), ...bearer403 },
+      },
     },
     '/api/v1/members': {
       get: {
         tags: ['Members'],
         summary: 'List members',
+        description: 'Requires permission: settings. Query parameters are passed through to the repository as filters.',
         parameters: [
-          queryParam('keyword', { type: 'string' }, 'staff'),
-          queryParam('status', { type: 'string' }, 'active'),
-          queryParam('role', { type: 'string' }, 'staff'),
+          query('keyword', { type: 'string' }, 'cashier'),
+          query('status', { type: 'string' }, 'active'),
+          query('role', { type: 'string' }, 'staff'),
         ],
-        responses: { 200: messageResponse('Members list') },
+        responses: { 200: ok('Members list'), ...bearer403 },
       },
       post: {
         tags: ['Members'],
         summary: 'Create member',
-        requestBody: requestBody({ $ref: '#/components/schemas/MemberCreateRequest' }),
-        responses: {
-          201: messageResponse('Member created'),
-          400: messageResponse('Required fields missing or invalid'),
-          409: messageResponse('Username already exists'),
-        },
+        description: 'Requires permission: settings.',
+        requestBody: body(ref('MemberCreateRequest')),
+        responses: { 201: ok('Member created'), 400: error('Invalid member payload'), ...bearer403 },
       },
     },
     '/api/v1/members/{id}': {
       patch: {
         tags: ['Members'],
         summary: 'Update member',
-        parameters: [idParam('id', 'u_123')],
-        requestBody: requestBody({ $ref: '#/components/schemas/MemberCreateRequest' }),
-        responses: { 200: messageResponse('Member updated'), 404: messageResponse('Member not found') },
+        description: 'Requires permission: settings.',
+        parameters: [idParam('id', 'm_123')],
+        requestBody: body(ref('UserUpdateRequest')),
+        responses: { 200: ok('Member updated'), 404: error('Member not found'), ...bearer403 },
       },
       delete: {
         tags: ['Members'],
         summary: 'Delete member',
-        parameters: [idParam('id', 'u_123')],
-        responses: { 200: messageResponse('Member deleted'), 404: messageResponse('Member not found') },
+        description: 'Requires permission: settings.',
+        parameters: [idParam('id', 'm_123')],
+        responses: { 200: ok('Member deleted'), 404: error('Member not found'), ...bearer403 },
       },
     },
     '/api/v1/members/{id}/permissions': {
       patch: {
         tags: ['Members'],
         summary: 'Update member permissions',
-        parameters: [idParam('id', 'u_123')],
-        requestBody: requestBody({
+        description: 'Requires permission: settings.',
+        parameters: [idParam('id', 'm_123')],
+        requestBody: body({
           type: 'object',
           required: ['permissions'],
           properties: { permissions: { type: 'array', items: { type: 'string' }, example: ['dashboard', 'transactions'] } },
         }),
-        responses: { 200: messageResponse('Permissions updated'), 400: messageResponse('Permissions must be an array'), 404: messageResponse('Member not found') },
+        responses: { 200: ok('Permissions updated'), 400: error('Permissions must be an array'), 404: error('Member not found'), ...bearer403 },
       },
     },
 
     '/api/v1/service-pricing/config': {
-      get: { tags: ['Service Pricing'], summary: 'Get pricing config', responses: { 200: messageResponse('Pricing config') } },
+      get: {
+        tags: ['Service Pricing'],
+        summary: 'Get pricing config with meta',
+        description: 'Requires permission: pricing.',
+        responses: { 200: ok('Pricing config'), ...bearer403 },
+      },
       put: {
         tags: ['Service Pricing'],
-        summary: 'Update pricing config object',
-        description: 'Requires the latest version from GET /api/v1/service-pricing/config. Returns 409 if another admin saved first.',
-        requestBody: requestBody(versionedObjectSchema),
-        responses: { 200: messageResponse('Pricing config updated'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        summary: 'Replace/update pricing config object',
+        description: 'Requires permission: pricing.',
+        parameters: [configVersionHeader],
+        requestBody: body(ref('VersionedConfigWrite'), { version: 1, rules: [] }),
+        responses: { 200: ok('Pricing config updated'), ...configWriteResponses },
       },
       post: {
         tags: ['Service Pricing'],
-        summary: 'Create one pricing rule',
-        description: 'Requires the latest pricing config version.',
-        requestBody: requestBody({
-          allOf: [{ $ref: '#/components/schemas/PricingRule' }, versionedObjectSchema],
-        }, { version: 1, name: 'Car base hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 20, status: 'active' }),
-        responses: { 201: messageResponse('Pricing rule created'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        summary: 'Create one pricing config item',
+        description: 'Requires permission: pricing. price is required.',
+        parameters: [configVersionHeader],
+        requestBody: body(ref('PricingRule'), { version: 1, name: 'Car first hour', feeType: 'base_hour', vehicleType: 'car', price: 20 }),
+        responses: { 201: ok('Pricing item created'), ...configWriteResponses },
       },
     },
     '/api/v1/service-pricing/config/{id}': {
       patch: {
         tags: ['Service Pricing'],
-        summary: 'Update one pricing rule',
-        parameters: [idParam('id', 'pr_123')],
-        requestBody: requestBody({
-          allOf: [{ $ref: '#/components/schemas/PricingRule' }, versionedObjectSchema],
-        }, { version: 1, price: 25, status: 'active' }),
-        responses: { 200: messageResponse('Pricing rule updated'), 400: messageResponse('version is required'), 404: messageResponse('Config item not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        summary: 'Update one pricing config item',
+        description: 'Requires permission: pricing.',
+        parameters: [idParam('id', 'pr_123'), configVersionHeader],
+        requestBody: body(ref('PricingRule'), { version: 1, price: 25, status: 'active' }),
+        responses: { 200: ok('Pricing item updated'), 404: error('Pricing config item not found'), ...configWriteResponses },
       },
       delete: {
         tags: ['Service Pricing'],
-        summary: 'Delete one pricing rule',
-        parameters: [idParam('id', 'pr_123'), queryParam('version', { type: 'integer' }, 1, true)],
-        responses: { 200: messageResponse('Pricing rule deleted'), 400: messageResponse('version is required'), 404: messageResponse('Config item not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        summary: 'Delete one pricing config item',
+        description: 'Requires permission: pricing.',
+        parameters: [idParam('id', 'pr_123'), configVersionQuery],
+        responses: { 200: ok('Pricing item deleted'), 404: error('Pricing config item not found'), ...configWriteResponses },
       },
     },
 
     '/api/v1/payment-settings/methods': {
-      get: { tags: ['Payment Settings'], summary: 'List payment methods', responses: { 200: messageResponse('Payment methods') } },
+      get: {
+        tags: ['Payment Settings'],
+        summary: 'List payment methods with meta',
+        description: 'Requires permission: pricing.',
+        responses: { 200: ok('Payment methods'), ...bearer403 },
+      },
     },
     '/api/v1/payment-settings/methods/{id}': {
       patch: {
         tags: ['Payment Settings'],
         summary: 'Update payment method',
+        description: 'Requires permission: pricing. No config version is required; this setting is managed by authorized admin users.',
         parameters: [idParam('id', 'cash')],
-        requestBody: requestBody(versionedObjectSchema, { version: 1, isActive: true }),
-        responses: { 200: messageResponse('Payment method updated'), 400: messageResponse('version is required'), 404: messageResponse('Method not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        requestBody: body(ref('PaymentMethodUpdateRequest'), { isActive: true }),
+        responses: { 200: ok('Payment method updated'), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Method not found') },
       },
     },
     '/api/v1/payment-settings/channels': {
-      get: { tags: ['Payment Settings'], summary: 'List service channels', responses: { 200: messageResponse('Service channels') } },
+      get: {
+        tags: ['Payment Settings'],
+        summary: 'List service channels with meta',
+        description: 'Requires permission: pricing.',
+        responses: { 200: ok('Service channels'), ...bearer403 },
+      },
     },
     '/api/v1/payment-settings/channels/{id}': {
       patch: {
         tags: ['Payment Settings'],
         summary: 'Update allowed payment methods for a channel',
+        description: 'Requires permission: pricing. No config version is required; this setting is managed by authorized admin users.',
         parameters: [idParam('id', 'ch_kiosk')],
-        requestBody: requestBody({ type: 'object', required: ['allowedMethods', 'version'], properties: { version: { type: 'integer', example: 1 }, allowedMethods: { type: 'array', items: { type: 'string' }, example: ['qr', 'wallet'] } } }),
-        responses: { 200: messageResponse('Channel mapping updated'), 400: messageResponse('version is required'), 404: messageResponse('Channel not found or invalid methods'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        requestBody: body(ref('ChannelMappingUpdateRequest'), { allowedMethods: ['qr', 'wallet'] }),
+        responses: { 200: ok('Channel mapping updated'), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Channel not found or invalid methods') },
       },
     },
 
     '/api/v1/devices/events': {
       get: {
         tags: ['Devices'],
-        summary: 'Server-Sent Events for device updates',
-        responses: { 200: { description: 'SSE stream' } },
+        summary: 'Admin Server-Sent Events stream for device updates',
+        description: 'Requires permission: devices.',
+        responses: { 200: { description: 'SSE stream' }, ...bearer403 },
       },
     },
     '/api/v1/devices/config': {
-      get: { tags: ['Devices'], summary: 'Get devices config with summary', responses: { 200: messageResponse('Devices config') } },
+      get: {
+        tags: ['Devices'],
+        summary: 'Get shared client config',
+        description: 'Shared config endpoint for mobile users, kiosks, and barrier gates. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate.',
+        security: [...deviceAuth, {}],
+        parameters: [query('deviceId', { type: 'string' }, 'K-20260524-001')],
+        responses: { 200: ok('Client config'), 400: error('Device identity mismatch'), 401: error('Invalid or unregistered deviceId'), 403: error('Invalid device credentials') },
+      },
     },
     '/api/v1/devices': {
+      get: {
+        tags: ['Devices'],
+        summary: 'List devices',
+        description: 'Requires permission: devices. Unified list for kiosks, barrier gates, and other devices. Use query filters instead of separate kiosk/barrier-gate endpoints.',
+        parameters: [
+          query('deviceType', { type: 'string', enum: ['kiosk', 'barrier_gate', 'camera'] }, 'kiosk'),
+          query('status', { type: 'string', enum: ['pending_activation', 'active', 'offline', 'maintenance'] }, 'active'),
+          query('keyword', { type: 'string' }, 'KIOSK-A'),
+        ],
+        responses: { 200: ok('Devices list'), ...bearer403 },
+      },
       post: {
         tags: ['Devices'],
-        summary: 'Create normal device',
-        description: 'deviceType kiosk and barrier_gate are rejected here. Use activation-code endpoints for those device types.',
-        requestBody: requestBody({
-          allOf: [{ $ref: '#/components/schemas/DeviceCreateRequest' }, versionedObjectSchema],
-        }, { version: 1, deviceCode: 'CAM-001', deviceName: 'Entrance Camera 1', deviceType: 'camera' }),
-        responses: { 201: messageResponse('Device created'), 400: messageResponse('Invalid device type, missing required fields, or version is required'), 409: messageResponse('Config conflict or device code already exists') },
-      },
-    },
-    '/api/v1/devices/{id}': {
-      put: {
-        tags: ['Devices'],
-        summary: 'Update device by id',
-        parameters: [idParam('id', 'd_123')],
-        requestBody: requestBody(versionedObjectSchema, { version: 1, deviceName: 'Entrance Camera 1', isOnline: true }),
-        responses: { 200: messageResponse('Device updated'), 400: messageResponse('version is required'), 404: messageResponse('Device not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
-      },
-      delete: {
-        tags: ['Devices'],
-        summary: 'Delete device by id',
-        parameters: [idParam('id', 'd_123'), queryParam('version', { type: 'integer' }, 1, true)],
-        responses: { 200: messageResponse('Device deleted'), 400: messageResponse('version is required'), 404: messageResponse('Device not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
-      },
-    },
-    '/api/v1/devices/kiosks/activation-code': {
-      post: {
-        tags: ['Devices'],
-        summary: 'Generate kiosk activation code',
-        parameters: [configVersionHeader(1)],
-        requestBody: requestBody({ $ref: '#/components/schemas/ActivationCodeRequest' }, { deviceName: 'Kiosk A', location: 'Main Lobby', deviceVersion: '1.0.0' }),
+        summary: 'Create activation code for frontend/device role',
+        description: 'Requires permission: devices. Creates an activation code that the frontend enters to activate a kiosk or barrier gate role. deviceType controls which role/screen the activated frontend should show. No config version is required.',
+        requestBody: body(ref('DeviceActivationCodeCreateRequest'), { deviceName: 'Test Kiosk 1', deviceType: 'kiosk' }),
         responses: {
-          200: { description: 'Activation code generated', content: json({ $ref: '#/components/schemas/ActivationCodeResponse' }) },
-          400: messageResponse('version is required'),
-          409: messageResponse('Config conflict or device code already exists'),
+          201: ok('Activation code created', ref('DeviceActivationCodeCreateResponse')),
+          400: { description: 'Invalid request', content: json(ref('ActivationErrorResponse')) },
+          409: { description: 'Duplicate device code', content: json(ref('ActivationErrorResponse')) },
+          ...bearer403,
         },
       },
     },
-    '/api/v1/devices/barrier-gates/activation-code': {
-      post: {
-        tags: ['Devices'],
-        summary: 'Generate barrier gate activation code',
-        parameters: [configVersionHeader(1)],
-        requestBody: requestBody({ $ref: '#/components/schemas/ActivationCodeRequest' }, { deviceName: 'Gate A', location: 'Exit 1', deviceVersion: '1.0.0' }),
-        responses: {
-          200: { description: 'Activation code generated', content: json({ $ref: '#/components/schemas/ActivationCodeResponse' }) },
-          400: messageResponse('version is required'),
-          409: messageResponse('Config conflict or device code already exists'),
-        },
-      },
-    },
-    '/api/v1/devices/kiosks': {
-      get: { tags: ['Devices'], summary: 'List kiosks with summary', responses: { 200: messageResponse('Kiosks list') } },
-    },
-    '/api/v1/devices/kiosks/{deviceId}': {
+    '/api/v1/devices/{deviceId}': {
       put: {
         tags: ['Devices'],
-        summary: 'Update kiosk by deviceId',
+        summary: 'Update device by id, deviceId, or deviceCode',
+        description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records. No config version is required.',
         parameters: [idParam('deviceId', 'K-20260524-001')],
-        requestBody: requestBody(versionedObjectSchema, { version: 1, name: 'Kiosk A', location: 'Main Lobby', status: 'maintenance' }),
-        responses: { 200: messageResponse('Kiosk updated'), 400: messageResponse('version is required'), 404: messageResponse('Kiosk not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        requestBody: body(ref('DeviceUpdateRequest'), { deviceName: 'Kiosk A', location: 'Main Lobby', status: 'maintenance' }),
+        responses: { 200: ok('Device updated'), 404: error('Device not found'), ...bearer403 },
       },
       delete: {
         tags: ['Devices'],
-        summary: 'Delete kiosk by deviceId',
-        parameters: [idParam('deviceId', 'K-20260524-001'), queryParam('version', { type: 'integer' }, 1, true)],
-        responses: { 200: messageResponse('Kiosk deleted'), 400: messageResponse('version is required'), 404: messageResponse('Kiosk not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
-      },
-    },
-    '/api/v1/devices/barrier-gates': {
-      get: { tags: ['Devices'], summary: 'List barrier gates with summary', responses: { 200: messageResponse('Barrier gates list') } },
-    },
-    '/api/v1/devices/barrier-gates/{deviceId}': {
-      put: {
-        tags: ['Devices'],
-        summary: 'Update barrier gate by deviceId',
-        parameters: [idParam('deviceId', 'BG-20260524-001')],
-        requestBody: requestBody(versionedObjectSchema, { version: 1, name: 'Gate A', location: 'Exit 1', status: 'maintenance' }),
-        responses: { 200: messageResponse('Barrier gate updated'), 400: messageResponse('version is required'), 404: messageResponse('Barrier Gate not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
-      },
-      delete: {
-        tags: ['Devices'],
-        summary: 'Delete barrier gate by deviceId',
-        parameters: [idParam('deviceId', 'BG-20260524-001'), queryParam('version', { type: 'integer' }, 1, true)],
-        responses: { 200: messageResponse('Barrier gate deleted'), 400: messageResponse('version is required'), 404: messageResponse('Barrier Gate not found'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        summary: 'Delete device by id, deviceId, or deviceCode',
+        description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records. No config version is required.',
+        parameters: [idParam('deviceId', 'K-20260524-001')],
+        responses: { 200: ok('Device deleted'), 404: error('Device not found'), ...bearer403 },
       },
     },
 
-    '/api/v1/kiosk/events': {
+    '/api/v1/client/events': {
       get: {
-        tags: ['Kiosk'],
-        summary: 'Kiosk SSE event stream',
-        description: 'If deviceId is supplied, X-Device-Token is required so the stream can be bound to a registered kiosk.',
+        tags: ['Client Events'],
+        summary: 'Shared client SSE event stream',
+        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. Current events include connected, ping, and theme_updated.',
         security: [...deviceAuth, {}],
-        parameters: [queryParam('deviceId', { type: 'string' }, 'K-20260524-001')],
-        responses: { 200: { description: 'SSE stream' }, 401: messageResponse('Unauthorized device'), 403: messageResponse('Kiosk under maintenance') },
+        parameters: [query('deviceId', { type: 'string' }, 'K-20260524-001')],
+        responses: { 200: { description: 'SSE stream' }, 400: error('Device identity mismatch'), 401: error('Unauthorized device'), 403: error('Device under maintenance or invalid device credentials') },
       },
     },
-    '/api/v1/kiosk/entry': {
+    '/api/v1/client/activate': {
       post: {
-        tags: ['Kiosk'],
-        summary: 'Create entry bill from kiosk',
-        security: deviceAuth,
-        requestBody: requestBody({ type: 'object', required: ['deviceId', 'plateNo'], properties: { deviceId: { type: 'string' }, plateNo: { type: 'string' }, vehicleType: { type: 'string', enum: ['car', 'motorcycle'] } } }, { deviceId: 'K-20260524-001', plateNo: '1กก1234', vehicleType: 'car' }),
-        responses: { 201: messageResponse('Entry bill created'), 400: messageResponse('Missing required fields'), 403: messageResponse('Invalid kiosk or maintenance') },
-      },
-    },
-    '/api/v1/kiosk/check-in': {
-      post: {
-        tags: ['Kiosk'],
-        summary: 'Kiosk heartbeat/check-in',
-        security: deviceAuth,
-        requestBody: requestBody({ $ref: '#/components/schemas/CheckInRequest' }),
-        responses: { 200: messageResponse('Check-in successful'), 401: messageResponse('Invalid or unregistered deviceId'), 403: messageResponse('Kiosk under maintenance') },
-      },
-    },
-    '/api/v1/kiosk/activate': {
-      post: {
-        tags: ['Kiosk'],
-        summary: 'Activate kiosk with activation code',
+        tags: ['Client Events'],
+        summary: 'Activate kiosk or barrier gate with activation code',
+        description: 'Shared activation endpoint for frontend clients. The role is determined by the activation code created from POST /api/v1/devices, so the frontend only needs to send the code.',
         security: publicRoute,
-        requestBody: requestBody({ $ref: '#/components/schemas/ActivationRequest' }),
-        responses: {
-          200: { description: 'Activation successful', content: json({ $ref: '#/components/schemas/ActivationResponse' }) },
-          400: messageResponse('Invalid or expired code'),
-        },
+        requestBody: body(ref('ActivationRequest')),
+        responses: { 200: ok('Activation successful', ref('ActivationResponse')), 400: error('Activation code is required, invalid, or expired') },
       },
     },
-    '/api/v1/kiosk/config': {
+    '/api/v1/client/transaction/{id}': {
       get: {
-        tags: ['Kiosk'],
-        summary: 'Get kiosk config/theme',
-        description: 'Can be called without deviceId for initial theme/config loading. If deviceId is supplied, X-Device-Token is required.',
+        tags: ['Client Events'],
+        summary: 'Get one payable transaction by id or plateNo',
+        description: 'Public lookup for kiosk, barrier gate, and mobile users. Path {id} accepts either a transaction id or a plateNo. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user.',
         security: publicRoute,
-        parameters: [queryParam('deviceId', { type: 'string' }, 'K-20260524-001')],
-        responses: { 200: messageResponse('Kiosk config'), 401: messageResponse('Invalid or unregistered deviceId') },
+        parameters: [idParam('id', '3งจ9012'), query('deviceId', { type: 'string' }, 'K-20260521-008')],
+        responses: { 200: ok('Transaction', ref('Transaction')), 403: error('Already processed'), 404: error('Transaction not found') },
       },
     },
-    '/api/v1/kiosk/search': {
-      get: {
-        tags: ['Kiosk'],
-        summary: 'Search payable transactions by plateNo',
-        security: deviceAuth,
-        parameters: [
-          queryParam('plateNo', { type: 'string' }, '1กก1234', true),
-          queryParam('deviceId', { type: 'string' }, 'K-20260524-001'),
-        ],
-        responses: { 200: messageResponse('Payable transactions'), 400: messageResponse('plateNo is required'), 401: messageResponse('Invalid device') },
-      },
-    },
-    '/api/v1/kiosk/transaction': {
-      get: {
-        tags: ['Kiosk'],
-        summary: 'Get one payable transaction by plateNo',
-        security: deviceAuth,
-        parameters: [
-          queryParam('plateNo', { type: 'string' }, '1กก1234', true),
-          queryParam('deviceId', { type: 'string' }, 'K-20260524-001'),
-        ],
-        responses: { 200: messageResponse('Transaction'), 404: messageResponse('Transaction not found') },
-      },
-    },
-    '/api/v1/kiosk/transaction/{id}': {
-      get: {
-        tags: ['Kiosk'],
-        summary: 'Get one kiosk transaction by id',
-        security: deviceAuth,
-        parameters: [idParam('id', 't_123'), queryParam('deviceId', { type: 'string' }, 'K-20260524-001')],
-        responses: { 200: messageResponse('Transaction'), 404: messageResponse('Transaction not found') },
-      },
-    },
-    '/api/v1/kiosk/payment': {
+    '/api/v1/client/payment': {
       post: {
-        tags: ['Kiosk'],
-        summary: 'Receive kiosk payment',
-        security: deviceAuth,
-        requestBody: requestBody({ $ref: '#/components/schemas/PaymentRequest' }, { transactionId: 't_123', method: 'qr_code', amount: 40, deviceId: 'K-20260524-001' }),
-        responses: { 200: messageResponse('Payment received'), 400: messageResponse('Payment processing failed'), 401: messageResponse('Invalid kiosk') },
-      },
-    },
-
-    '/api/v1/barrier-gate/activate': {
-      post: {
-        tags: ['Barrier Gate'],
-        summary: 'Activate barrier gate with activation code',
+        tags: ['Client Events'],
+        summary: 'Receive client payment',
+        description: 'Public payment endpoint for kiosk, barrier gate, and mobile users. deviceId is optional. If deviceId belongs to a barrier gate, channel is gate; if it belongs to a kiosk, channel is kiosk; otherwise channel is mobile.',
         security: publicRoute,
-        requestBody: requestBody({ $ref: '#/components/schemas/ActivationRequest' }),
-        responses: {
-          200: { description: 'Activation successful', content: json({ $ref: '#/components/schemas/ActivationResponse' }) },
-          400: messageResponse('Invalid or expired code'),
-        },
+        requestBody: body(ref('PaymentRequest'), { transactionId: 't_123', method: 'qr', amount: 40, deviceId: 'K-20260521-008' }),
+        responses: { 200: ok('Payment received'), 400: error('transactionId or plateNo is required, or payment failed') },
       },
     },
-    '/api/v1/barrier-gate/check-in': {
+    '/api/v1/client/check-in': {
       post: {
-        tags: ['Barrier Gate'],
-        summary: 'Barrier gate heartbeat/check-in',
+        tags: ['Client Events'],
+        summary: 'Shared kiosk/barrier gate heartbeat',
+        description: 'Shared check-in endpoint for activated kiosk and barrier gate devices. Use X-Device-Id and X-Device-Token. The backend detects the device type from the activated device record.',
         security: deviceAuth,
-        requestBody: requestBody({ $ref: '#/components/schemas/CheckInRequest' }, { deviceId: 'BG-20260524-001', name: 'Gate A', location: 'Exit 1', version: '1.0.0' }),
-        responses: { 200: messageResponse('Check-in successful'), 401: messageResponse('Invalid or unregistered deviceId'), 403: messageResponse('Barrier Gate under maintenance') },
+        requestBody: body(ref('CheckInRequest')),
+        responses: { 200: ok('Check-in successful'), 400: error('deviceId is required'), 401: error('Invalid or unregistered deviceId'), 403: error('Device under maintenance') },
       },
     },
-    '/api/v1/barrier-gate/transaction': {
-      get: {
-        tags: ['Barrier Gate'],
-        summary: 'Get payable transaction by plateNo',
-        security: deviceAuth,
-        parameters: [
-          queryParam('plateNo', { type: 'string' }, '1กก1234', true),
-          queryParam('deviceId', { type: 'string' }, 'BG-20260524-001'),
-        ],
-        responses: { 200: messageResponse('Transaction'), 404: messageResponse('Transaction not found') },
-      },
-    },
-    '/api/v1/barrier-gate/transaction/{id}': {
-      get: {
-        tags: ['Barrier Gate'],
-        summary: 'Get transaction by id',
-        security: deviceAuth,
-        parameters: [idParam('id', 't_123'), queryParam('deviceId', { type: 'string' }, 'BG-20260524-001')],
-        responses: { 200: messageResponse('Transaction'), 404: messageResponse('Transaction not found') },
-      },
-    },
-    '/api/v1/barrier-gate/payment': {
-      post: {
-        tags: ['Barrier Gate'],
-        summary: 'Receive payment from barrier gate',
-        security: deviceAuth,
-        requestBody: requestBody({ $ref: '#/components/schemas/PaymentRequest' }, { transactionId: 't_123', method: 'wallet', amount: 40, deviceId: 'BG-20260524-001' }),
-        responses: { 200: messageResponse('Payment received'), 400: messageResponse('Payment processing failed'), 401: messageResponse('Invalid barrier gate') },
-      },
-    },
-
     '/api/v1/theme': {
-      get: { tags: ['Theme'], summary: 'Get theme settings', responses: { 200: messageResponse('Theme settings') } },
+      get: {
+        tags: ['Theme'],
+        summary: 'Get theme settings with meta',
+        description: 'Requires permission: theme.',
+        responses: { 200: ok('Theme settings'), ...bearer403 },
+      },
       put: {
         tags: ['Theme'],
         summary: 'Update theme settings',
-        requestBody: requestBody({ $ref: '#/components/schemas/ThemeUpdateRequest' }),
-        responses: { 200: messageResponse('Theme updated'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        description: 'Requires permission: theme.',
+        parameters: [configVersionHeader],
+        requestBody: body(ref('ThemeUpdateRequest')),
+        responses: { 200: ok('Theme updated'), ...configWriteResponses },
       },
     },
     '/api/v1/theme/upload-logo': {
       post: {
         tags: ['Theme'],
         summary: 'Upload logo file',
-        description: 'Accepts jpg, png, or webp files up to 2MB. SVG is rejected for security.',
+        description: 'Requires permission: theme. Accepts jpg, png, or webp files up to 2MB. SVG is rejected.',
+        parameters: [configVersionHeader],
         requestBody: {
           required: true,
           content: {
@@ -986,55 +845,62 @@ const openapi = {
             },
           },
         },
-        responses: { 200: messageResponse('Logo uploaded'), 400: messageResponse('Please upload a file or version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        responses: { 200: ok('Logo uploaded'), ...configWriteResponses },
       },
     },
     '/api/v1/theme/logo': {
       delete: {
         tags: ['Theme'],
         summary: 'Delete logo and reset logoUrl',
-        parameters: [queryParam('version', { type: 'integer' }, 1, true)],
-        responses: { 200: messageResponse('Logo deleted'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        description: 'Requires permission: theme.',
+        parameters: [configVersionQuery],
+        responses: { 200: ok('Logo deleted'), ...configWriteResponses },
       },
     },
 
     '/api/v1/system-settings': {
-      get: { tags: ['System Settings'], summary: 'Get system settings', responses: { 200: messageResponse('System settings') } },
+      get: {
+        tags: ['System Settings'],
+        summary: 'Get system settings with meta',
+        description: 'Requires permission: settings.',
+        responses: { 200: ok('System settings'), ...bearer403 },
+      },
       put: {
         tags: ['System Settings'],
         summary: 'Update system settings',
-        requestBody: requestBody(versionedObjectSchema),
-        responses: { 200: messageResponse('System settings updated'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        description: 'Requires permission: settings.',
+        parameters: [configVersionHeader],
+        requestBody: body(ref('VersionedConfigWrite'), { version: 1, general: { systemName: 'Smart Carpark' } }),
+        responses: { 200: ok('System settings updated'), ...configWriteResponses },
       },
     },
     '/api/v1/system-settings/receipt': {
-      get: { tags: ['System Settings'], summary: 'Get receipt settings', responses: { 200: messageResponse('Receipt settings') } },
+      get: {
+        tags: ['System Settings'],
+        summary: 'Get receipt settings with meta',
+        description: 'Requires permission: settings.',
+        responses: { 200: ok('Receipt settings'), ...bearer403 },
+      },
       put: {
         tags: ['System Settings'],
         summary: 'Update receipt settings',
-        requestBody: requestBody(versionedObjectSchema),
-        responses: { 200: messageResponse('Receipt settings updated'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        description: 'Requires permission: settings.',
+        parameters: [configVersionHeader],
+        requestBody: body(ref('VersionedConfigWrite'), { version: 1, entryBill: { enabled: true } }),
+        responses: { 200: ok('Receipt settings updated'), ...configWriteResponses },
       },
     },
     '/api/v1/system-settings/receipt/printer': {
       put: {
         tags: ['System Settings'],
         summary: 'Update receipt printer settings',
-        requestBody: requestBody({
-          type: 'object',
-          required: ['version'],
-          properties: {
-            version: { type: 'integer', example: 1 },
-            fontSize: { type: 'number' },
-            billNumberFontSize: { type: 'number' },
-            paperWidth: { type: 'number' },
-          },
-        }, { version: 1, fontSize: 12, billNumberFontSize: 18, paperWidth: 80 }),
-        responses: { 200: messageResponse('Printer settings updated'), 400: messageResponse('version is required'), 409: { description: 'Config version conflict', content: json({ $ref: '#/components/schemas/ConfigConflictResponse' }) } },
+        description: 'Requires permission: settings.',
+        parameters: [configVersionHeader],
+        requestBody: body(ref('PrinterSettingsUpdateRequest')),
+        responses: { 200: ok('Printer settings updated'), ...configWriteResponses },
       },
     },
   },
 };
 
-// Export OpenAPI schema
 module.exports = openapi;

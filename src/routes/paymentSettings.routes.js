@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const paymentRepo = require('../data/repositories/paymentSettings.repo');
-const { getExpectedConfigVersion } = require('../data/repositories/config.repo');
 const { authorize } = require('../middleware/permission');
 
 // Payment settings access is driven by members.permissions.
@@ -20,7 +19,7 @@ router.get('/methods', async (req, res, next) => {
 // Route update payment method ตาม id
 router.patch('/methods/:id', async (req, res, next) => {
   try {
-    const method = await paymentRepo.updateMethod(req.params.id, req.body, getExpectedConfigVersion(req));
+    const method = await paymentRepo.updateMethod(req.params.id, req.body);
     if (!method) return res.status(404).json({ message: 'Method not found' });
     res.json({ message: 'Payment method updated', method });
   } catch (err) {
@@ -42,7 +41,7 @@ router.get('/channels', async (req, res, next) => {
 router.patch('/channels/:id', async (req, res, next) => {
   try {
     const { allowedMethods } = req.body;
-    const channel = await paymentRepo.updateChannelMapping(req.params.id, allowedMethods, getExpectedConfigVersion(req));
+    const channel = await paymentRepo.updateChannelMapping(req.params.id, allowedMethods);
     if (!channel) return res.status(404).json({ message: 'Channel not found or invalid methods' });
     res.json({ message: 'Channel mapping updated', channel });
   } catch (err) {

@@ -218,7 +218,6 @@ async function createPendingActivationDevice(payload = {}, expectedVersion) {
     deviceType,
     connectionType,
     location,
-    version,
     note
   } = payload;
 
@@ -241,7 +240,6 @@ async function createPendingActivationDevice(payload = {}, expectedVersion) {
     connectionType: connectionType || 'lan',
     ipAddress: null,
     location: location || null,
-    version: version || '1.0.0',
     status: 'pending_activation',
     isOnline: false,
     note: note || 'Waiting for activation'
@@ -276,7 +274,6 @@ async function activateRegisteredDevice(generatedDeviceId, details = {}) {
       deviceName: details.name || current.deviceName,
       location: details.location || current.location || null,
       ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
-      version: details.version || current.version || '1.0.0',
       status: 'active',
       isOnline: true,
       deviceTokenHash: hashToken(deviceToken),
@@ -354,7 +351,6 @@ async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) 
     updatedDevice = {
       ...current,
       ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
-      version: details.version || current.version,
       location: details.location || current.location,
       deviceName: details.name || current.deviceName,
       status: current.status === 'maintenance' ? 'maintenance' : 'active',
@@ -385,11 +381,15 @@ async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) 
   return { device: toSafeDevice(updatedDevice), config: toSafeConfig(withSummary(saved)) };
 }
 
-// Function update device ด้วย id
+function findDeviceIndex(devices, value) {
+  return devices.findIndex((item) => item.id === value || item.deviceId === value || item.deviceCode === value);
+}
+
+// Function update device ด้วย id, deviceId, หรือ deviceCode
 async function updateDevice(id, body = {}, expectedVersion) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
-  const index = devices.findIndex((item) => item.id === id);
+  const index = findDeviceIndex(devices, id);
   if (index === -1) return null;
 
   const allowedFields = [
@@ -398,6 +398,7 @@ async function updateDevice(id, body = {}, expectedVersion) {
     'deviceType',
     'connectionType',
     'ipAddress',
+    'location',
     'status',
     'isOnline',
     'note'
@@ -406,6 +407,9 @@ async function updateDevice(id, body = {}, expectedVersion) {
   allowedFields.forEach((field) => {
     if (field in body) patch[field] = body[field];
   });
+  if ('name' in body && !('deviceName' in patch)) patch.deviceName = body.name;
+  if ('ip' in body && !('ipAddress' in patch)) patch.ipAddress = body.ip;
+  if ('status' in patch && !('isOnline' in patch)) patch.isOnline = patch.status === 'active';
 
   devices[index] = { ...devices[index], ...patch };
   const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }), { expectedVersion });
@@ -414,11 +418,11 @@ async function updateDevice(id, body = {}, expectedVersion) {
   return { device: toSafeDevice(devices[index]), config: toSafeConfig(withSummary(saved)) };
 }
 
-// Function delete device ด้วย id
+// Function delete device ด้วย id, deviceId, หรือ deviceCode
 async function deleteDevice(id, expectedVersion) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
-  const index = devices.findIndex((item) => item.id === id);
+  const index = findDeviceIndex(devices, id);
   if (index === -1) return null;
 
   const [device] = devices.splice(index, 1);
