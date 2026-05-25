@@ -1,7 +1,6 @@
 const express = require('express');
 const { getConfig } = require('../data/repositories/config.repo');
-const { searchKiosk, updateKioskStatus } = require('../data/repositories/kiosks.repo');
-const { searchBarrierGate, updateBarrierGateStatus } = require('../data/repositories/barrierGates.repo');
+const { updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const defaults = require('../data/defaults');
 const { optionalDeviceAuth } = require('../middleware/deviceAuth');
 
@@ -14,27 +13,14 @@ router.get('/config', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
     let status = 'unregistered';
     let deviceType = 'public';
 
-    if (deviceId && req.device?.deviceType === 'kiosk') {
-      const kiosk = await searchKiosk(deviceId);
-      if (!kiosk) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
-      deviceType = 'kiosk';
-      if (kiosk.status !== 'maintenance') {
-        const updated = await updateKioskStatus(deviceId, { ip: req.ip });
-        status = updated.status;
+    if (deviceId) {
+      if (!req.device) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+      deviceType = req.device.deviceType;
+      if (req.device.status !== 'maintenance') {
+        const updated = await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
+        status = updated?.device?.status || req.device.status;
       } else {
-        status = kiosk.status;
-      }
-    }
-
-    if (deviceId && req.device?.deviceType === 'barrier_gate') {
-      const barrierGate = await searchBarrierGate(deviceId);
-      if (!barrierGate) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
-      deviceType = 'barrier_gate';
-      if (barrierGate.status !== 'maintenance') {
-        const updated = await updateBarrierGateStatus(deviceId, { ip: req.ip });
-        status = updated.status;
-      } else {
-        status = barrierGate.status;
+        status = req.device.status;
       }
     }
 

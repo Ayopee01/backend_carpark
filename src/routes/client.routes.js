@@ -4,59 +4,41 @@ const {
   getTransactionApiByIdOrPlateNo,
   processPayment,
 } = require('../data/repositories/transactions.repo');
-const { optionalDeviceAuth } = require('../middleware/deviceAuth');
-const { activateKiosk, searchKiosk, updateKioskStatus } = require('../data/repositories/kiosks.repo');
-const { activateBarrierGate, searchBarrierGate, updateBarrierGateStatus } = require('../data/repositories/barrierGates.repo');
+const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceAuth');
+const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
+const { activateKiosk } = require('../data/repositories/kiosks.repo');
+const { activateBarrierGate } = require('../data/repositories/barrierGates.repo');
 
 const router = express.Router();
+
+function createHttpError(statusCode, message) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
 
 async function resolveClientSource(deviceId, req) {
   if (!deviceId) return { clientType: 'mobile', device: null };
 
-  const kiosk = await searchKiosk(deviceId);
-  if (kiosk) {
-    let current = kiosk;
-    if (kiosk.status !== 'maintenance') {
-      current = await updateKioskStatus(deviceId, { ip: req.ip });
-    }
-    return {
-      clientType: 'kiosk',
-      device: {
-        deviceId: current.deviceId,
-        deviceType: 'kiosk',
-        deviceName: current.name,
-        deviceLocation: current.location,
-        status: current.status,
-      },
-    };
+  const device = await getRegisteredDevice(deviceId);
+  if (!device || !['kiosk', 'barrier_gate'].includes(device.deviceType)) {
+    throw createHttpError(401, 'Invalid or unregistered deviceId');
+  }
+  if (device.status === 'maintenance') {
+    throw createHttpError(403, 'Device is currently under maintenance');
   }
 
-  const barrierGate = await searchBarrierGate(deviceId);
-  if (barrierGate) {
-    let current = barrierGate;
-    if (barrierGate.status !== 'maintenance') {
-      current = await updateBarrierGateStatus(deviceId, { ip: req.ip });
-    }
-    return {
-      clientType: 'barrier_gate',
-      device: {
-        deviceId: current.deviceId,
-        deviceType: 'barrier_gate',
-        deviceName: current.name,
-        deviceLocation: current.location,
-        status: current.status,
-      },
-    };
-  }
+  const updated = await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
+  const current = updated?.device || device;
 
   return {
-    clientType: 'unknown_device',
+    clientType: current.deviceType === 'barrier_gate' ? 'barrier_gate' : 'kiosk',
     device: {
-      deviceId,
-      deviceType: 'unknown',
-      deviceName: null,
-      deviceLocation: null,
-      status: 'unknown',
+      deviceId: current.deviceId,
+      deviceType: current.deviceType,
+      deviceName: current.deviceName,
+      deviceLocation: current.location,
+      status: current.status,
     },
   };
 }
@@ -80,40 +62,27 @@ router.post('/activate', async (req, res, next) => {
 });
 
 // Shared heartbeat/check-in endpoint for kiosk and barrier gate devices.
-router.post('/check-in', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req, res, next) => {
+router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate']), async (req, res, next) => {
   try {
     const { deviceId, name, location } = req.body || {};
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
 
-    if (req.device?.deviceType === 'kiosk') {
-      const current = await searchKiosk(deviceId);
-      if (!current) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
-      if (current.status === 'maintenance') {
-        return res.status(403).json({
-          message: 'This kiosk is currently under maintenance. Check-in is disabled.',
-          status: current.status,
-        });
-      }
-
-      const kiosk = await updateKioskStatus(deviceId, { name, location, ip: req.ip });
-      return res.json({ message: 'Check-in successful', deviceType: 'kiosk', status: kiosk.status, device: kiosk });
+    if (req.device?.status === 'maintenance') {
+      return res.status(403).json({
+        message: 'This device is currently under maintenance. Check-in is disabled.',
+        status: req.device.status,
+      });
     }
 
-    if (req.device?.deviceType === 'barrier_gate') {
-      const current = await searchBarrierGate(deviceId);
-      if (!current) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
-      if (current.status === 'maintenance') {
-        return res.status(403).json({
-          message: 'This Barrier Gate is currently under maintenance. Check-in is disabled.',
-          status: current.status,
-        });
-      }
+    const result = await updateRegisteredDeviceHeartbeat(deviceId, { name, location, ip: req.ip });
+    if (!result?.device) return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
 
-      const barrierGate = await updateBarrierGateStatus(deviceId, { name, location, ip: req.ip });
-      return res.json({ message: 'Check-in successful', deviceType: 'barrier_gate', status: barrierGate.status, device: barrierGate });
-    }
-
-    return res.status(401).json({ message: 'Invalid or unregistered deviceId' });
+    return res.json({
+      message: 'Check-in successful',
+      deviceType: result.device.deviceType,
+      status: result.device.status,
+      device: result.device,
+    });
   } catch (err) {
     next(err);
   }
@@ -178,24 +147,13 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
     const { deviceId } = req.query;
     let clientType = 'public';
 
-    if (deviceId && req.device?.deviceType === 'kiosk') {
-      const kiosk = await searchKiosk(deviceId);
-      if (!kiosk) return res.status(401).json({ message: 'Unauthorized device' });
-      if (kiosk.status === 'maintenance') {
-        return res.status(403).json({ message: 'This kiosk is currently under maintenance', status: kiosk.status });
+    if (deviceId) {
+      if (!req.device) return res.status(401).json({ message: 'Unauthorized device' });
+      if (req.device.status === 'maintenance') {
+        return res.status(403).json({ message: 'This device is currently under maintenance', status: req.device.status });
       }
-      await updateKioskStatus(deviceId, { ip: req.ip });
-      clientType = 'kiosk';
-    }
-
-    if (deviceId && req.device?.deviceType === 'barrier_gate') {
-      const barrierGate = await searchBarrierGate(deviceId);
-      if (!barrierGate) return res.status(401).json({ message: 'Unauthorized device' });
-      if (barrierGate.status === 'maintenance') {
-        return res.status(403).json({ message: 'This Barrier Gate is currently under maintenance', status: barrierGate.status });
-      }
-      await updateBarrierGateStatus(deviceId, { ip: req.ip });
-      clientType = 'barrier_gate';
+      await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
+      clientType = req.device.deviceType;
     }
 
     res.setHeader('Content-Type', 'text/event-stream');

@@ -25,14 +25,13 @@ const router = express.Router();
 let runtimeMonitorStarted = false;
 
 function toActivationPayload(body = {}, deviceType) {
-  const details = { ...(body || {}) };
-  delete details.version;
-  delete details.deviceVersion;
-  delete details.appVersion;
-  delete details.configUpdatedAt;
-
   return {
-    ...details,
+    ...(body.deviceName ? { deviceName: body.deviceName } : {}),
+    ...(body.name ? { name: body.name } : {}),
+    ...(body.deviceCode ? { deviceCode: body.deviceCode } : {}),
+    ...(body.location ? { location: body.location } : {}),
+    ...(body.connectionType ? { connectionType: body.connectionType } : {}),
+    ...(body.note ? { note: body.note } : {}),
     deviceType,
   };
 }

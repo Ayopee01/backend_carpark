@@ -277,7 +277,7 @@ const openapi = {
         properties: {
           transactionId: { type: 'string', example: 't_123' },
           plateNo: { type: 'string', example: '3งจ9012' },
-          method: { type: 'string', example: 'cash' },
+          method: { type: 'string', enum: ['cash', 'qr', 'bank1', 'wallet', 'other'], example: 'cash', description: 'Must be active in payment_settings.methods and allowed by the selected channel.' },
           channel: { type: 'string', enum: ['cashier', 'mobile', 'kiosk', 'gate'], example: 'cashier' },
           amount: { type: 'number', example: 40 },
           deviceId: { type: 'string', example: 'K-20260524-001' },
@@ -531,7 +531,7 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Confirm payment by transaction id or plateNo',
-        description: 'Admin payment flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. Example: POST /api/v1/transactions/3งจ9012/payment.',
+        description: 'Admin payment flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. method must be active and allowed by channel in payment settings.',
         parameters: [idParam('id', '3งจ9012')],
         requestBody: body(ref('PaymentRequest'), {
           method: 'cash',
@@ -540,7 +540,7 @@ const openapi = {
         }),
         responses: {
           200: ok('Payment confirmed successfully', ref('Transaction')),
-          400: error('Validation error'),
+          400: error('Invalid payment method/channel, invalid amount, or payment failed'),
           404: error('Transaction not found'),
           ...bearer403,
         },
@@ -782,20 +782,20 @@ const openapi = {
       get: {
         tags: ['Client Events'],
         summary: 'Get one payable transaction by id or plateNo',
-        description: 'Public lookup for kiosk, barrier gate, and mobile users. Path {id} accepts either a transaction id or a plateNo. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user.',
+        description: 'Public lookup for kiosk, barrier gate, and mobile users. Path {id} accepts either a transaction id or a plateNo. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user. If deviceId is supplied, it must be an activated registered device.',
         security: publicRoute,
         parameters: [idParam('id', '3งจ9012'), query('deviceId', { type: 'string' }, 'K-20260521-008')],
-        responses: { 200: ok('Transaction', ref('Transaction')), 403: error('Already processed'), 404: error('Transaction not found') },
+        responses: { 200: ok('Transaction', ref('Transaction')), 401: error('Invalid or unregistered deviceId'), 403: error('Already processed or device under maintenance'), 404: error('Transaction not found') },
       },
     },
     '/api/v1/client/payment': {
       post: {
         tags: ['Client Events'],
         summary: 'Receive client payment',
-        description: 'Public payment endpoint for kiosk, barrier gate, and mobile users. deviceId is optional. If deviceId belongs to a barrier gate, channel is gate; if it belongs to a kiosk, channel is kiosk; otherwise channel is mobile.',
+        description: 'Public payment endpoint for kiosk, barrier gate, and mobile users. deviceId is optional. If deviceId belongs to a barrier gate, channel is gate; if it belongs to a kiosk, channel is kiosk; otherwise channel is mobile. The selected/default method must be active and allowed by the resolved channel.',
         security: publicRoute,
         requestBody: body(ref('PaymentRequest'), { transactionId: 't_123', method: 'qr', amount: 40, deviceId: 'K-20260521-008' }),
-        responses: { 200: ok('Payment received'), 400: error('transactionId or plateNo is required, or payment failed') },
+        responses: { 200: ok('Payment received'), 400: error('transactionId or plateNo is required, invalid payment method/channel, or payment failed'), 401: error('Invalid or unregistered deviceId'), 403: error('Device under maintenance') },
       },
     },
     '/api/v1/client/check-in': {

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { getConfig, getConfigWithMeta, setConfig, updateConfig } = require('./config.repo');
 const {
   activateRegisteredDevice,
+  getDevicesConfig,
   getPendingActivationDeviceByCode,
   updateRegisteredDeviceHeartbeat,
 } = require('./devices.repo');
@@ -85,10 +86,14 @@ async function searchKiosk(deviceId) {
 // Function create activation code สำหรับผูก kiosk ใหม่
 async function generateActivationCode(details = {}) {
   cleanupExpiredActivationCodes();
-  const { kiosks } = await getKiosksConfig();
+  const [{ kiosks }, devicesConfig] = await Promise.all([
+    getKiosksConfig(),
+    getDevicesConfig(),
+  ]);
   const code = createActivationCode();
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const count = (kiosks.length + activationCodes.size + 1).toString().padStart(3, '0');
+  const deviceCount = (devicesConfig.devices || []).filter((device) => device.deviceType === 'kiosk').length;
+  const count = (Math.max(kiosks.length, deviceCount) + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `K-${dateStr}-${count}`;
   const expiresAt = new Date(Date.now() + ACTIVATION_TTL_MS);
 
@@ -116,7 +121,6 @@ async function activateKiosk(code) {
         deviceId: pending.id,
         name: pending.deviceName,
         location: pending.location,
-        version: pending.version,
         expiresAt: pending.activationExpiresAt ? new Date(pending.activationExpiresAt) : null,
       };
     }
@@ -131,7 +135,6 @@ async function activateKiosk(code) {
   const registered = await activateRegisteredDevice(data.deviceId, {
     name: data.name,
     location: data.location,
-    version: data.version || '1.0.0',
   });
   if (!registered?.deviceToken) {
     return { success: false, message: 'Registered device is missing or expired' };
@@ -140,7 +143,6 @@ async function activateKiosk(code) {
   const kiosk = await updateKioskStatus(data.deviceId, {
     name: data.name,
     location: data.location,
-    version: data.version || '1.0.0',
   });
 
   activationCodes.delete(normalizedCode);
@@ -196,7 +198,6 @@ async function updateKioskStatus(deviceId, details = {}) {
         name: details.name || `Kiosk ${deviceId}`,
         location: details.location || 'Unknown',
         ip: details.ip || '0.0.0.0',
-        version: details.version || '1.0.0',
         status: 'online',
         firstSeen: now,
         lastSeen: now,
@@ -211,7 +212,6 @@ async function updateKioskStatus(deviceId, details = {}) {
         ...(details.name ? { name: details.name } : {}),
         ...(details.location ? { location: details.location } : {}),
         ...(details.ip ? { ip: details.ip } : {}),
-        ...(details.version ? { version: details.version } : {}),
       };
       kiosks[index] = kiosk;
     }
@@ -223,7 +223,6 @@ async function updateKioskStatus(deviceId, details = {}) {
     name: kiosk.name,
     location: kiosk.location,
     ip: kiosk.ip,
-    version: kiosk.version,
   });
   return kiosk;
 }

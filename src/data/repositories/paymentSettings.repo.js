@@ -84,6 +84,31 @@ async function updateChannelMapping(id, allowedMethods, expectedVersion) {
   return { ...channels[index], version: saved.version, configUpdatedAt: saved.configUpdatedAt };
 }
 
+async function validatePaymentSelection(channel, method) {
+  const settings = await getPaymentSettings();
+  const methods = Array.isArray(settings.methods) ? settings.methods : [];
+  const channels = Array.isArray(settings.channels) ? settings.channels : [];
+  const selectedMethod = methods.find((item) => item.id === method);
+
+  if (!selectedMethod) {
+    return { ok: false, message: 'Payment method not found' };
+  }
+  if (selectedMethod.isActive === false) {
+    return { ok: false, message: 'Payment method is inactive' };
+  }
+
+  const channelId = channel && channel.startsWith('ch_') ? channel : `ch_${channel}`;
+  const selectedChannel = channels.find((item) => item.id === channelId || item.id === channel || String(item.name || '').toLowerCase() === String(channel || '').toLowerCase());
+  if (!selectedChannel) {
+    return { ok: false, message: 'Payment channel not found' };
+  }
+  if (!Array.isArray(selectedChannel.allowedMethods) || !selectedChannel.allowedMethods.includes(method)) {
+    return { ok: false, message: 'Payment method is not allowed for this channel' };
+  }
+
+  return { ok: true, method: selectedMethod, channel: selectedChannel };
+}
+
 // Export Functions
 module.exports = {
   getPaymentSettingsWithMeta,
@@ -93,4 +118,5 @@ module.exports = {
   listChannels,
   listChannelsWithMeta,
   updateChannelMapping,
+  validatePaymentSelection,
 };

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { getConfig, getConfigWithMeta, setConfig, updateConfig } = require('./config.repo');
 const {
   activateRegisteredDevice,
+  getDevicesConfig,
   getPendingActivationDeviceByCode,
   updateRegisteredDeviceHeartbeat,
 } = require('./devices.repo');
@@ -84,10 +85,14 @@ async function searchBarrierGate(deviceId) {
 // Function สร้าง Activation Code สำหรับลงทะเบียน Barrier Gate ใหม่ พร้อมกำหนดวันหมดอายุ
 async function generateBarrierGateActivationCode(details = {}) {
   cleanupExpiredActivationCodes();
-  const { barrierGates } = await getBarrierGatesConfig();
+  const [{ barrierGates }, devicesConfig] = await Promise.all([
+    getBarrierGatesConfig(),
+    getDevicesConfig(),
+  ]);
   const code = createActivationCode();
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const count = (barrierGates.length + activationCodes.size + 1).toString().padStart(3, '0');
+  const deviceCount = (devicesConfig.devices || []).filter((device) => device.deviceType === 'barrier_gate').length;
+  const count = (Math.max(barrierGates.length, deviceCount) + activationCodes.size + 1).toString().padStart(3, '0');
   const generatedId = `BG-${dateStr}-${count}`;
   const expiresAt = new Date(Date.now() + ACTIVATION_TTL_MS);
 
@@ -115,7 +120,6 @@ async function activateBarrierGate(code) {
         deviceId: pending.id,
         name: pending.deviceName,
         location: pending.location,
-        version: pending.version,
         expiresAt: pending.activationExpiresAt ? new Date(pending.activationExpiresAt) : null,
       };
     }
@@ -130,7 +134,6 @@ async function activateBarrierGate(code) {
   const registered = await activateRegisteredDevice(data.deviceId, {
     name: data.name,
     location: data.location,
-    version: data.version || '1.0.0',
   });
   if (!registered?.deviceToken) {
     return { success: false, message: 'Registered device is missing or expired' };
@@ -139,7 +142,6 @@ async function activateBarrierGate(code) {
   const barrierGate = await updateBarrierGateStatus(data.deviceId, {
     name: data.name,
     location: data.location,
-    version: data.version || '1.0.0',
   });
 
   activationCodes.delete(normalizedCode);
@@ -211,7 +213,6 @@ async function updateBarrierGateStatus(deviceId, details = {}) {
         name: details.name || `Barrier Gate ${deviceId}`,
         location: details.location || 'Unknown',
         ip: details.ip || '0.0.0.0',
-        version: details.version || '1.0.0',
         status: 'online',
         firstSeen: now,
         lastSeen: now,
@@ -227,7 +228,6 @@ async function updateBarrierGateStatus(deviceId, details = {}) {
         ...(details.name ? { name: details.name } : {}),
         ...(details.location ? { location: details.location } : {}),
         ...(details.ip ? { ip: details.ip } : {}),
-        ...(details.version ? { version: details.version } : {}),
       };
       barrierGates[index] = barrierGate;
     }
@@ -239,7 +239,6 @@ async function updateBarrierGateStatus(deviceId, details = {}) {
     name: barrierGate.name,
     location: barrierGate.location,
     ip: barrierGate.ip,
-    version: barrierGate.version,
   });
   return barrierGate;
 }

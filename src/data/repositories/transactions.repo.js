@@ -4,7 +4,16 @@ const { prisma } = require('../../db/prisma');
 const { normalizePagination, buildMeta } = require('../../utils/pagination');
 const { calculateFee } = require('../../utils/pricing');
 const { getConfig } = require('./config.repo');
+const { validatePaymentSelection } = require('./paymentSettings.repo');
 const defaults = require('../defaults');
+
+const DEFAULT_PAYMENT_GRACE_PERIOD_MINUTES = 15;
+
+function createHttpError(statusCode, message) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
 
 // Function แปลงค่าให้เป็น number ถ้าแปลงไม่ได้ให้คืนค่า null
 function toNumberOrNull(value) {
@@ -262,16 +271,6 @@ async function getTransactionApiById(id) {
   return toTransactionApi(transaction, context);
 }
 
-// Function query transaction ล่าสุดด้วยทะเบียนรถแล้วแปลงเป็น API response
-async function getTransactionApiByPlateNo(plateNo, options = {}) {
-  const [transaction, context] = await Promise.all([
-    getLatestTransactionByPlateNo(plateNo, options),
-    getTransactionContext(),
-  ]);
-
-  return toTransactionApi(transaction, context);
-}
-
 // Function query transaction ด้วย id หรือทะเบียนรถ แล้วแปลงเป็น API response
 async function getTransactionApiByIdOrPlateNo(value, options = {}) {
   const [transaction, context] = await Promise.all([
@@ -285,10 +284,15 @@ async function getTransactionApiByIdOrPlateNo(value, options = {}) {
 // Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
 async function processPayment(id, { plateNo, method, channel, amount, processedBy, device } = {}) {
   const context = await getTransactionContext();
-  const gracePeriodMinutes = context.systemSettings?.receipt?.paymentBill?.expiryDuration ?? context.pricingConfig?.gracePeriod;
-
-  if (!Number.isFinite(Number(gracePeriodMinutes))) {
-    throw new Error('Missing grace period config. Set receipt.paymentBill.expiryDuration or pricing_config.gracePeriod in seed data.');
+  const configuredGracePeriod = context.systemSettings?.receipt?.paymentBill?.expiryDuration ?? context.pricingConfig?.gracePeriod;
+  const gracePeriodMinutes = Number.isFinite(Number(configuredGracePeriod))
+    ? Number(configuredGracePeriod)
+    : DEFAULT_PAYMENT_GRACE_PERIOD_MINUTES;
+  const paymentMethod = method || 'cash';
+  const paymentChannel = channel || 'cashier';
+  const paymentValidation = await validatePaymentSelection(paymentChannel, paymentMethod);
+  if (!paymentValidation.ok) {
+    throw createHttpError(400, paymentValidation.message);
   }
 
   const saved = await prisma.$transaction(async (tx) => {
@@ -315,8 +319,8 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
 
     const newPayment = {
       id: createId('pay'),
-      method: method || 'cash',
-      channel: channel || 'cashier',
+      method: paymentMethod,
+      channel: paymentChannel,
       paidAmount: payAmount,
       paidAt,
       expiryAt,
@@ -342,7 +346,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
       updatedAt: new Date(paidAt)
     };
 
-    if (channel === 'gate') {
+    if (paymentChannel === 'gate') {
       updates.exitTimeLimit = new Date(paidAt);
       updates.exitAt = new Date(paidAt);
       updates.status = 'completed';
@@ -539,7 +543,6 @@ module.exports = {
   listAllTransactions,
   getTransactionById,
   getTransactionApiById,
-  getTransactionApiByPlateNo,
   getTransactionApiByIdOrPlateNo,
   updateTransaction,
   deleteTransaction,
