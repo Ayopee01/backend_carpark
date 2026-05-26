@@ -69,9 +69,7 @@ function toDeviceMutationResponse(device) {
   if (!device) return null;
 
   return {
-    id: device.id,
     deviceId: device.deviceId || device.id,
-    deviceCode: device.deviceCode,
     deviceName: device.deviceName,
     deviceType: device.deviceType,
     connectionType: device.connectionType,
@@ -254,8 +252,8 @@ router.delete('/:deviceId', async (req, res, next) => {
     await syncRuntimeDevice(result.device, {}, 'delete');
 
     return res.json({
+      success: true,
       message: 'Device deleted',
-      device: toDeviceMutationResponse(result.device),
     });
   } catch (err) {
     next(err);

@@ -335,9 +335,7 @@ const openapi = {
       DeviceResponse: {
         type: 'object',
         properties: {
-          id: { type: 'string', example: 'K-20260525-010' },
           deviceId: { type: 'string', example: 'K-20260525-010' },
-          deviceCode: { type: 'string', example: 'K-20260525-010' },
           deviceName: { type: 'string', example: 'Test Kiosk 1' },
           deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate', 'camera', 'printer', 'lpr'], example: 'kiosk' },
           connectionType: { type: 'string', example: 'lan' },
@@ -353,6 +351,13 @@ const openapi = {
         properties: {
           message: { type: 'string', example: 'Device updated' },
           device: ref('DeviceResponse'),
+        },
+      },
+      DeleteSuccessResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string', example: 'Device deleted' },
         },
       },
       ActivationErrorResponse: {
@@ -755,7 +760,7 @@ const openapi = {
         summary: 'Delete device by id, deviceId, or deviceCode',
         description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records.',
         parameters: [idParam('deviceId', 'K-20260524-001')],
-        responses: { 200: ok('Device deleted', ref('DeviceMutationResponse')), 404: error('Device not found'), ...bearer403 },
+        responses: { 200: ok('Device deleted', ref('DeleteSuccessResponse')), 404: error('Device not found'), ...bearer403 },
       },
     },
 
