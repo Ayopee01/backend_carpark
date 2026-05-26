@@ -43,6 +43,33 @@ async function resolveClientSource(deviceId, req) {
   };
 }
 
+function toClientTransactionResponse(transaction, source) {
+  return {
+    transactionId: transaction.id,
+    billNo: transaction.billNo,
+    plateNo: transaction.plateNo,
+    vehicleType: transaction.vehicleType,
+    entryAt: transaction.entryAt,
+    calculatedAt: transaction.calculatedAt,
+    exitTimeLimit: transaction.exitTimeLimit,
+    isOverstay: transaction.isOverstay,
+    status: transaction.status,
+    amount: {
+      netAmount: transaction.netAmount,
+      paidAmount: transaction.totalPaid,
+      remainingAmount: transaction.remainingAmount,
+    },
+    duration: {
+      display: transaction.serviceDisplay,
+      hours: transaction.durationHour,
+      totalMinutes: transaction.totalMinutes,
+    },
+    qrData: transaction.qrData,
+    clientType: source.clientType,
+    device: source.device,
+  };
+}
+
 // Shared activation endpoint for kiosk and barrier gate frontends.
 router.post('/activate', async (req, res, next) => {
   try {
@@ -99,7 +126,7 @@ router.get('/transaction/:id', async (req, res, next) => {
       return res.status(403).json({ message: 'This transaction is already processed' });
     }
 
-    return res.json({ ...transaction, clientType: source.clientType, device: source.device });
+    return res.json(toClientTransactionResponse(transaction, source));
   } catch (err) {
     next(err);
   }
