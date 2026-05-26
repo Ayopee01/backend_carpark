@@ -93,7 +93,7 @@ router.get('/transaction/:id', async (req, res, next) => {
   try {
     const { deviceId } = req.query || {};
     const source = await resolveClientSource(deviceId, req);
-    const transaction = await getTransactionApiByIdOrPlateNo(req.params.id, { payableOnly: true });
+    const transaction = await getTransactionApiByIdOrPlateNo(req.params.id);
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
     if (transaction.status === 'completed' || transaction.status === 'cancelled') {
       return res.status(403).json({ message: 'This transaction is already processed' });

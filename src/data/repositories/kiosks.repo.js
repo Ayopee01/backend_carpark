@@ -99,6 +99,7 @@ async function generateActivationCode(details = {}) {
 
   activationCodes.set(code, {
     ...details,
+    name: details.deviceName || details.name,
     deviceId: generatedId,
     expiresAt,
   });
@@ -149,10 +150,12 @@ async function activateKiosk(code) {
   return {
     success: true,
     message: 'Activation successful',
-    deviceId: data.deviceId,
-    deviceType: 'kiosk',
     deviceToken: registered?.deviceToken,
-    kiosk,
+    deviceId: registered.device.deviceId,
+    deviceType: registered.device.deviceType,
+    deviceName: registered.device.deviceName,
+    location: registered.device.location,
+    status: registered.device.status,
   };
 }
 

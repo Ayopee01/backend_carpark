@@ -98,6 +98,7 @@ async function generateBarrierGateActivationCode(details = {}) {
 
   activationCodes.set(code, {
     ...details,
+    name: details.deviceName || details.name,
     deviceId: generatedId,
     expiresAt,
   });
@@ -148,10 +149,12 @@ async function activateBarrierGate(code) {
   return {
     success: true,
     message: 'Barrier Gate activation successful',
-    deviceId: data.deviceId,
-    deviceType: 'barrier_gate',
     deviceToken: registered?.deviceToken,
-    barrierGate,
+    deviceId: registered.device.deviceId,
+    deviceType: registered.device.deviceType,
+    deviceName: registered.device.deviceName,
+    location: registered.device.location,
+    status: registered.device.status,
   };
 }
 

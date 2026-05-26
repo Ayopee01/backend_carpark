@@ -386,9 +386,12 @@ const openapi = {
         properties: {
           success: { type: 'boolean', example: true },
           message: { type: 'string', example: 'Activation successful' },
+          deviceToken: { type: 'string', description: 'Secret device credential returned only once during activation. Store it on the device and send it with X-Device-Token or Authorization: Device <token>.' },
           deviceId: { type: 'string', example: 'K-20260524-001' },
           deviceType: { type: 'string', example: 'kiosk' },
-          deviceToken: { type: 'string', description: 'Returned only once during activation.' },
+          deviceName: { type: 'string', example: 'Test Kiosk 1' },
+          location: { type: 'string', nullable: true, example: 'Main Lobby' },
+          status: { type: 'string', example: 'active' },
         },
       },
       CheckInRequest: {
