@@ -45,27 +45,15 @@ const query = (name, schema, example, required = false) => ({
   ...(example !== undefined ? { example } : {}),
 });
 
-const configVersionHeader = {
-  in: 'header',
-  name: 'X-Config-Version',
-  required: false,
-  schema: { type: 'integer', minimum: 0 },
-  example: 1,
-  description: 'Optional optimistic-lock version header. Config write endpoints also accept If-Match, query version, or body.version. Use the latest version returned by the matching GET endpoint.',
-};
-
-const configVersionQuery = query('version', { type: 'integer', minimum: 0 }, 1, true);
-
 const bearer403 = {
   401: error('Missing, invalid, expired, or revoked access token'),
   403: error('Authenticated user does not have the required permission'),
 };
 
 const configWriteResponses = {
-  400: error('Missing required fields or version'),
+  400: error('Missing required fields or invalid payload'),
   401: error('Missing, invalid, expired, or revoked access token'),
   403: error('Authenticated user does not have the required permission'),
-  409: ok('Config version conflict', ref('ConfigConflictResponse')),
 };
 
 const openapi = {
@@ -132,20 +120,6 @@ const openapi = {
           message: { type: 'string' },
           reason: { type: 'string' },
           requiredPermission: { type: 'string' },
-        },
-      },
-      ConfigConflictResponse: {
-        type: 'object',
-        properties: {
-          message: { type: 'string', example: 'Config has already been updated. Please reload the latest config before saving again.' },
-          code: { type: 'string', example: 'CONFIG_VERSION_CONFLICT' },
-          latest: {
-            type: 'object',
-            properties: {
-              version: { type: 'integer', example: 17 },
-              configUpdatedAt: { type: 'string', format: 'date-time' },
-            },
-          },
         },
       },
       User: {
@@ -286,14 +260,6 @@ const openapi = {
           deviceLocation: { type: 'string', example: 'Main Lobby' },
         },
       },
-      VersionedConfigWrite: {
-        type: 'object',
-        required: ['version'],
-        additionalProperties: true,
-        properties: {
-          version: { type: 'integer', example: 1 },
-        },
-      },
       PricingRule: {
         type: 'object',
         required: ['price'],
@@ -310,7 +276,6 @@ const openapi = {
           periodStart: { type: 'number', example: 1 },
           periodEnd: { type: 'number', nullable: true },
           status: { type: 'string', example: 'active' },
-          version: { type: 'integer', example: 1 },
         },
       },
       PaymentMethodUpdateRequest: {
@@ -367,6 +332,29 @@ const openapi = {
           note: { type: 'string', example: 'Temporarily disabled for maintenance' },
         },
       },
+      DeviceResponse: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', example: 'K-20260525-010' },
+          deviceId: { type: 'string', example: 'K-20260525-010' },
+          deviceCode: { type: 'string', example: 'K-20260525-010' },
+          deviceName: { type: 'string', example: 'Test Kiosk 1' },
+          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate', 'camera', 'printer', 'lpr'], example: 'kiosk' },
+          connectionType: { type: 'string', example: 'lan' },
+          location: { type: 'string', nullable: true, example: 'Zone A' },
+          ipAddress: { type: 'string', nullable: true, example: '::ffff:172.23.0.2' },
+          status: { type: 'string', example: 'offline' },
+          isOnline: { type: 'boolean', example: false },
+          note: { type: 'string', example: 'Waiting for activation' },
+        },
+      },
+      DeviceMutationResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Device updated' },
+          device: ref('DeviceResponse'),
+        },
+      },
       ActivationErrorResponse: {
         type: 'object',
         properties: {
@@ -405,9 +393,7 @@ const openapi = {
       },
       ThemeUpdateRequest: {
         type: 'object',
-        required: ['version'],
         properties: {
-          version: { type: 'integer', example: 1 },
           themeColor: { type: 'string', nullable: true, example: '#2563eb' },
           logoUrl: { type: 'string', nullable: true, example: '/uploads/logo.png' },
           themeMode: { type: 'string', example: 'custom' },
@@ -416,10 +402,8 @@ const openapi = {
       },
       PrinterSettingsUpdateRequest: {
         type: 'object',
-        required: ['version'],
         additionalProperties: true,
         properties: {
-          version: { type: 'integer', example: 1 },
           fontSize: { type: 'number', example: 12 },
           billNumberFontSize: { type: 'number', example: 18 },
           paperWidth: { type: 'number', example: 80 },
@@ -632,16 +616,14 @@ const openapi = {
         tags: ['Service Pricing'],
         summary: 'Replace/update pricing config object',
         description: 'Requires permission: pricing.',
-        parameters: [configVersionHeader],
-        requestBody: body(ref('VersionedConfigWrite'), { version: 1, rules: [] }),
+        requestBody: body({ type: 'object', additionalProperties: true }, { pricingRules: [] }),
         responses: { 200: ok('Pricing config updated'), ...configWriteResponses },
       },
       post: {
         tags: ['Service Pricing'],
         summary: 'Create one pricing config item',
         description: 'Requires permission: pricing. price is required.',
-        parameters: [configVersionHeader],
-        requestBody: body(ref('PricingRule'), { version: 1, name: 'Car first hour', feeType: 'base_hour', vehicleType: 'car', price: 20 }),
+        requestBody: body(ref('PricingRule'), { name: 'Car first hour', feeType: 'base_hour', vehicleType: 'car', price: 20 }),
         responses: { 201: ok('Pricing item created'), ...configWriteResponses },
       },
     },
@@ -650,15 +632,15 @@ const openapi = {
         tags: ['Service Pricing'],
         summary: 'Update one pricing config item',
         description: 'Requires permission: pricing.',
-        parameters: [idParam('id', 'pr_123'), configVersionHeader],
-        requestBody: body(ref('PricingRule'), { version: 1, price: 25, status: 'active' }),
+        parameters: [idParam('id', 'pr_123')],
+        requestBody: body(ref('PricingRule'), { price: 25, status: 'active' }),
         responses: { 200: ok('Pricing item updated'), 404: error('Pricing config item not found'), ...configWriteResponses },
       },
       delete: {
         tags: ['Service Pricing'],
         summary: 'Delete one pricing config item',
         description: 'Requires permission: pricing.',
-        parameters: [idParam('id', 'pr_123'), configVersionQuery],
+        parameters: [idParam('id', 'pr_123')],
         responses: { 200: ok('Pricing item deleted'), 404: error('Pricing config item not found'), ...configWriteResponses },
       },
     },
@@ -675,7 +657,7 @@ const openapi = {
       patch: {
         tags: ['Payment Settings'],
         summary: 'Update payment method',
-        description: 'Requires permission: pricing. No config version is required; this setting is managed by authorized admin users.',
+        description: 'Requires permission: pricing. This setting is managed by authorized admin users.',
         parameters: [idParam('id', 'cash')],
         requestBody: body(ref('PaymentMethodUpdateRequest'), { isActive: true }),
         responses: { 200: ok('Payment method updated'), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Method not found') },
@@ -693,7 +675,7 @@ const openapi = {
       patch: {
         tags: ['Payment Settings'],
         summary: 'Update allowed payment methods for a channel',
-        description: 'Requires permission: pricing. No config version is required; this setting is managed by authorized admin users.',
+        description: 'Requires permission: pricing. This setting is managed by authorized admin users.',
         parameters: [idParam('id', 'ch_kiosk')],
         requestBody: body(ref('ChannelMappingUpdateRequest'), { allowedMethods: ['qr', 'wallet'] }),
         responses: { 200: ok('Channel mapping updated'), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Channel not found or invalid methods') },
@@ -749,7 +731,7 @@ const openapi = {
       post: {
         tags: ['Devices'],
         summary: 'Create activation code for frontend/device role',
-        description: 'Requires permission: devices. Creates an activation code that the frontend enters to activate a kiosk or barrier gate role. deviceType controls which role/screen the activated frontend should show. No config version is required.',
+        description: 'Requires permission: devices. Creates an activation code that the frontend enters to activate a kiosk or barrier gate role. deviceType controls which role/screen the activated frontend should show.',
         requestBody: body(ref('DeviceActivationCodeCreateRequest'), { deviceName: 'Test Kiosk 1', deviceType: 'kiosk' }),
         responses: {
           201: ok('Activation code created', ref('DeviceActivationCodeCreateResponse')),
@@ -763,17 +745,17 @@ const openapi = {
       put: {
         tags: ['Devices'],
         summary: 'Update device by id, deviceId, or deviceCode',
-        description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records. No config version is required.',
+        description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records.',
         parameters: [idParam('deviceId', 'K-20260524-001')],
         requestBody: body(ref('DeviceUpdateRequest'), { deviceName: 'Kiosk A', location: 'Main Lobby', status: 'maintenance' }),
-        responses: { 200: ok('Device updated'), 404: error('Device not found'), ...bearer403 },
+        responses: { 200: ok('Device updated', ref('DeviceMutationResponse')), 404: error('Device not found'), ...bearer403 },
       },
       delete: {
         tags: ['Devices'],
         summary: 'Delete device by id, deviceId, or deviceCode',
-        description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records. No config version is required.',
+        description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records.',
         parameters: [idParam('deviceId', 'K-20260524-001')],
-        responses: { 200: ok('Device deleted'), 404: error('Device not found'), ...bearer403 },
+        responses: { 200: ok('Device deleted', ref('DeviceMutationResponse')), 404: error('Device not found'), ...bearer403 },
       },
     },
 
@@ -838,7 +820,6 @@ const openapi = {
         tags: ['Theme'],
         summary: 'Update theme settings',
         description: 'Requires permission: theme.',
-        parameters: [configVersionHeader],
         requestBody: body(ref('ThemeUpdateRequest')),
         responses: { 200: ok('Theme updated'), ...configWriteResponses },
       },
@@ -848,17 +829,15 @@ const openapi = {
         tags: ['Theme'],
         summary: 'Upload logo file',
         description: 'Requires permission: theme. Accepts jpg, png, or webp files up to 2MB. SVG is rejected.',
-        parameters: [configVersionHeader],
         requestBody: {
           required: true,
           content: {
             'multipart/form-data': {
               schema: {
                 type: 'object',
-                required: ['logo', 'version'],
+                required: ['logo'],
                 properties: {
                   logo: { type: 'string', format: 'binary' },
-                  version: { type: 'integer', example: 1 },
                 },
               },
             },
@@ -872,7 +851,6 @@ const openapi = {
         tags: ['Theme'],
         summary: 'Delete logo and reset logoUrl',
         description: 'Requires permission: theme.',
-        parameters: [configVersionQuery],
         responses: { 200: ok('Logo deleted'), ...configWriteResponses },
       },
     },
@@ -888,8 +866,7 @@ const openapi = {
         tags: ['System Settings'],
         summary: 'Update system settings',
         description: 'Requires permission: settings.',
-        parameters: [configVersionHeader],
-        requestBody: body(ref('VersionedConfigWrite'), { version: 1, general: { systemName: 'Smart Carpark' } }),
+        requestBody: body({ type: 'object', additionalProperties: true }, { general: { systemName: 'Smart Carpark' } }),
         responses: { 200: ok('System settings updated'), ...configWriteResponses },
       },
     },
@@ -904,8 +881,7 @@ const openapi = {
         tags: ['System Settings'],
         summary: 'Update receipt settings',
         description: 'Requires permission: settings.',
-        parameters: [configVersionHeader],
-        requestBody: body(ref('VersionedConfigWrite'), { version: 1, entryBill: { enabled: true } }),
+        requestBody: body({ type: 'object', additionalProperties: true }, { entryBill: { enabled: true } }),
         responses: { 200: ok('Receipt settings updated'), ...configWriteResponses },
       },
     },
@@ -914,7 +890,6 @@ const openapi = {
         tags: ['System Settings'],
         summary: 'Update receipt printer settings',
         description: 'Requires permission: settings.',
-        parameters: [configVersionHeader],
         requestBody: body(ref('PrinterSettingsUpdateRequest')),
         responses: { 200: ok('Printer settings updated'), ...configWriteResponses },
       },

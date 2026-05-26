@@ -65,6 +65,24 @@ function toRuntimeStatus(status) {
   return status;
 }
 
+function toDeviceMutationResponse(device) {
+  if (!device) return null;
+
+  return {
+    id: device.id,
+    deviceId: device.deviceId || device.id,
+    deviceCode: device.deviceCode,
+    deviceName: device.deviceName,
+    deviceType: device.deviceType,
+    connectionType: device.connectionType,
+    location: device.location || null,
+    ipAddress: device.ipAddress || null,
+    status: device.status,
+    isOnline: Boolean(device.isOnline),
+    note: device.note || '',
+  };
+}
+
 async function syncRuntimeDevice(device, body = {}, action = 'update') {
   const deviceId = device?.deviceId || device?.id;
   if (!deviceId) return;
@@ -221,8 +239,7 @@ router.put('/:deviceId', async (req, res, next) => {
 
     return res.json({
       message: 'Device updated',
-      device: result.device,
-      config: result.config,
+      device: toDeviceMutationResponse(result.device),
     });
   } catch (err) {
     next(err);
@@ -238,8 +255,7 @@ router.delete('/:deviceId', async (req, res, next) => {
 
     return res.json({
       message: 'Device deleted',
-      device: result.device,
-      config: result.config,
+      device: toDeviceMutationResponse(result.device),
     });
   } catch (err) {
     next(err);

@@ -7,7 +7,6 @@ const crypto = require('crypto');
 const {
   getConfig,
   getConfigWithMeta,
-  getExpectedConfigVersion,
   setConfig,
 } = require('../data/repositories/config.repo');
 const appEvents = require('../utils/events');
@@ -69,7 +68,6 @@ function normalizeTheme(theme) {
 function normalizeThemeWithMeta(theme) {
   return {
     ...normalizeTheme(theme),
-    version: theme?.version ?? 0,
     configUpdatedAt: theme?.configUpdatedAt ?? null,
   };
 }
@@ -129,7 +127,7 @@ router.put('/', async (req, res, next) => {
       updatedAt: new Date().toISOString()
     };
 
-    const saved = await setConfig(CONFIG_KEY, nextTheme, { expectedVersion: getExpectedConfigVersion(req) });
+    const saved = await setConfig(CONFIG_KEY, nextTheme);
     appEvents.emit('theme_updated', saved);
     res.json({ message: 'Theme updated', theme: normalizeThemeWithMeta(saved) });
   } catch (err) {
@@ -158,7 +156,7 @@ router.post('/upload-logo', upload.single('logo'), async (req, res, next) => {
       updatedAt: new Date().toISOString()
     };
 
-    const saved = await setConfig(CONFIG_KEY, nextTheme, { expectedVersion: getExpectedConfigVersion(req) });
+    const saved = await setConfig(CONFIG_KEY, nextTheme);
     if (current.logoUrl) {
       deleteUploadedLogo(current.logoUrl);
     }
@@ -193,7 +191,7 @@ router.delete('/logo', async (req, res, next) => {
       updatedAt: new Date().toISOString()
     };
 
-    const saved = await setConfig(CONFIG_KEY, nextTheme, { expectedVersion: getExpectedConfigVersion(req) });
+    const saved = await setConfig(CONFIG_KEY, nextTheme);
     if (current.logoUrl) {
       deleteUploadedLogo(current.logoUrl);
     }

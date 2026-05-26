@@ -41,7 +41,7 @@ async function getKiosksConfig() {
   };
 }
 
-// Function query config ของ kiosks พร้อม version สำหรับ admin update
+// Function query config ของ kiosks สำหรับ admin update
 async function getKiosksConfigWithMeta() {
   const config = await getConfigWithMeta(CONFIG_KEY, { kiosks: [] });
   return {
@@ -51,8 +51,8 @@ async function getKiosksConfigWithMeta() {
 }
 
 // Function save รายการ kiosks กลับเข้า app_config
-async function saveKiosks(kiosks, expectedVersion) {
-  return setConfig(CONFIG_KEY, { kiosks }, { expectedVersion });
+async function saveKiosks(kiosks) {
+  return setConfig(CONFIG_KEY, { kiosks });
 }
 
 // Function คำนวณสถานะ kiosk จาก lastSeen โดยไม่เขียนค่ากลับ database
@@ -160,7 +160,7 @@ async function activateKiosk(code) {
 }
 
 // Function edit ข้อมูล kiosk ด้วย deviceId
-async function editKiosk(deviceId, details = {}, expectedVersion) {
+async function editKiosk(deviceId, details = {}) {
   const { kiosks } = await getKiosksConfig();
   const index = kiosks.findIndex((kiosk) => kiosk.deviceId === deviceId);
   if (index === -1) return { success: false, message: 'Kiosk not found' };
@@ -170,20 +170,20 @@ async function editKiosk(deviceId, details = {}, expectedVersion) {
     ...details,
     deviceId,
   };
-  const saved = await saveKiosks(kiosks, expectedVersion);
+  const saved = await saveKiosks(kiosks);
 
-  return { success: true, kiosk: { ...kiosks[index], version: saved.version, configUpdatedAt: saved.configUpdatedAt } };
+  return { success: true, kiosk: { ...kiosks[index], configUpdatedAt: saved.configUpdatedAt } };
 }
 
 // Function delete kiosk ด้วย deviceId
-async function deleteKiosk(deviceId, expectedVersion) {
+async function deleteKiosk(deviceId) {
   const { kiosks } = await getKiosksConfig();
   const index = kiosks.findIndex((kiosk) => kiosk.deviceId === deviceId);
   if (index === -1) return { success: false, message: 'Kiosk not found' };
 
   const [deleted] = kiosks.splice(index, 1);
-  const saved = await saveKiosks(kiosks, expectedVersion);
-  return { success: true, message: 'Kiosk deleted', kiosk: { ...deleted, version: saved.version, configUpdatedAt: saved.configUpdatedAt } };
+  const saved = await saveKiosks(kiosks);
+  return { success: true, message: 'Kiosk deleted', kiosk: { ...deleted, configUpdatedAt: saved.configUpdatedAt } };
 }
 
 // Function update สถานะ kiosk หรือ create kiosk ใหม่ถ้ายังไม่มีในระบบ
@@ -236,12 +236,11 @@ async function listAllKiosks() {
   return kiosks.map(withRuntimeStatus);
 }
 
-// Function query kiosk ทั้งหมดพร้อม version ของ config
+// Function query kiosk ทั้งหมดพร้อมเวลาแก้ไขล่าสุดของ config
 async function listAllKiosksWithMeta() {
   const config = await getKiosksConfigWithMeta();
   return {
     kiosks: config.kiosks.map(withRuntimeStatus),
-    version: config.version,
     configUpdatedAt: config.configUpdatedAt,
   };
 }

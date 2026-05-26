@@ -81,7 +81,7 @@ async function getDevicesConfig() {
   return refreshDeviceRuntimeState();
 }
 
-// Function query devices config พร้อม version สำหรับ admin update
+// Function query devices config สำหรับ admin update
 async function getDevicesConfigWithMeta() {
   await refreshDeviceRuntimeState();
   return withSummary(await getConfigWithMeta(CONFIG_KEY, defaults.devices));
@@ -159,7 +159,7 @@ async function refreshDeviceRuntimeState({ emitEvents = false } = {}) {
 }
 
 // Function create device ใหม่
-async function createDevice(payload = {}, expectedVersion) {
+async function createDevice(payload = {}) {
   const config = await getDevicesConfig();
   const {
     deviceCode,
@@ -188,7 +188,7 @@ async function createDevice(payload = {}, expectedVersion) {
     note: note || ''
   };
   const configWithDevice = withSummary({ ...config, devices: [...config.devices, device] });
-  const saved = await setConfig(CONFIG_KEY, configWithDevice, { expectedVersion });
+  const saved = await setConfig(CONFIG_KEY, configWithDevice);
   appEvents.emit('device_event', {
     type: 'device_created',
     deviceId: device.deviceId,
@@ -206,7 +206,7 @@ async function createDevice(payload = {}, expectedVersion) {
 }
 
 // Function สร้าง device สถานะ pending_activation เพื่อรอ Kiosk/Barrier Gate activate ด้วย code
-async function createPendingActivationDevice(payload = {}, expectedVersion) {
+async function createPendingActivationDevice(payload = {}) {
   const config = await getDevicesConfig();
   const {
     generatedDeviceId,
@@ -245,7 +245,7 @@ async function createPendingActivationDevice(payload = {}, expectedVersion) {
     note: note || 'Waiting for activation'
   };
   const configWithDevice = withSummary({ ...config, devices: [...config.devices, device] });
-  const saved = await setConfig(CONFIG_KEY, configWithDevice, { expectedVersion });
+  const saved = await setConfig(CONFIG_KEY, configWithDevice);
 
   return { ok: true, device: toSafeDevice(device), config: toSafeConfig(withSummary(saved)) };
 }
@@ -386,7 +386,7 @@ function findDeviceIndex(devices, value) {
 }
 
 // Function update device ด้วย id, deviceId, หรือ deviceCode
-async function updateDevice(id, body = {}, expectedVersion) {
+async function updateDevice(id, body = {}) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
   const index = findDeviceIndex(devices, id);
@@ -412,21 +412,21 @@ async function updateDevice(id, body = {}, expectedVersion) {
   if ('status' in patch && !('isOnline' in patch)) patch.isOnline = patch.status === 'active';
 
   devices[index] = { ...devices[index], ...patch };
-  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }), { expectedVersion });
+  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
   appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
 
   return { device: toSafeDevice(devices[index]), config: toSafeConfig(withSummary(saved)) };
 }
 
 // Function delete device ด้วย id, deviceId, หรือ deviceCode
-async function deleteDevice(id, expectedVersion) {
+async function deleteDevice(id) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
   const index = findDeviceIndex(devices, id);
   if (index === -1) return null;
 
   const [device] = devices.splice(index, 1);
-  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }), { expectedVersion });
+  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
   appEvents.emit('device_event', {
     type: 'device_deleted',
     deviceId: device.deviceId,

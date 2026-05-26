@@ -1,38 +1,30 @@
-// Import Require
 const defaults = require('../defaults');
 const { getConfig, getConfigWithMeta, setConfig, stripConfigMeta } = require('./config.repo');
 
-// Constant key สำหรับอ้างอิง config payment settings ใน table app_config
 const CONFIG_KEY = 'payment_settings';
 
-// Function query payment settings จาก database ถ้าไม่มีให้ใช้ค่า default
 async function getPaymentSettings() {
   return getConfig(CONFIG_KEY, defaults.paymentSettings);
 }
 
-// Function query payment settings พร้อม version สำหรับ optimistic locking
 async function getPaymentSettingsWithMeta() {
   return getConfigWithMeta(CONFIG_KEY, defaults.paymentSettings);
 }
 
-// Function query รายการ payment method ทั้งหมด
 async function listMethods() {
   const settings = await getPaymentSettings();
   return settings.methods || [];
 }
 
-// Function query รายการ payment method พร้อม version ของ config
 async function listMethodsWithMeta() {
   const settings = await getPaymentSettingsWithMeta();
   return {
     data: settings.methods || [],
-    version: settings.version,
     configUpdatedAt: settings.configUpdatedAt,
   };
 }
 
-// Function update payment method ด้วย id แล้ว save กลับเข้า config
-async function updateMethod(id, updates, expectedVersion) {
+async function updateMethod(id, updates) {
   const settings = await getPaymentSettings();
   const methods = [...(settings.methods || [])];
   const index = methods.findIndex((method) => method.id === id);
@@ -43,28 +35,24 @@ async function updateMethod(id, updates, expectedVersion) {
     ...stripConfigMeta(updates),
   };
 
-  const saved = await setConfig(CONFIG_KEY, { ...settings, methods }, { expectedVersion });
-  return { ...methods[index], version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  const saved = await setConfig(CONFIG_KEY, { ...settings, methods });
+  return { ...methods[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
-// Function query รายการ service channel ทั้งหมด
 async function listChannels() {
   const settings = await getPaymentSettings();
   return settings.channels || [];
 }
 
-// Function query รายการ service channel พร้อม version ของ config
 async function listChannelsWithMeta() {
   const settings = await getPaymentSettingsWithMeta();
   return {
     data: settings.channels || [],
-    version: settings.version,
     configUpdatedAt: settings.configUpdatedAt,
   };
 }
 
-// Function update mapping วิธีชำระเงินที่อนุญาตในแต่ละ channel
-async function updateChannelMapping(id, allowedMethods, expectedVersion) {
+async function updateChannelMapping(id, allowedMethods) {
   if (!Array.isArray(allowedMethods)) return null;
 
   const settings = await getPaymentSettings();
@@ -80,8 +68,8 @@ async function updateChannelMapping(id, allowedMethods, expectedVersion) {
     allowedMethods,
   };
 
-  const saved = await setConfig(CONFIG_KEY, { ...settings, channels }, { expectedVersion });
-  return { ...channels[index], version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  const saved = await setConfig(CONFIG_KEY, { ...settings, channels });
+  return { ...channels[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
 async function validatePaymentSelection(channel, method) {
@@ -109,7 +97,6 @@ async function validatePaymentSelection(channel, method) {
   return { ok: true, method: selectedMethod, channel: selectedChannel };
 }
 
-// Export Functions
 module.exports = {
   getPaymentSettingsWithMeta,
   listMethods,

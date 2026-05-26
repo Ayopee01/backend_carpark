@@ -7,7 +7,6 @@ const {
   updatePricingConfig,
   updatePricingConfigItem,
 } = require('../data/repositories/servicePricing.repo');
-const { getExpectedConfigVersion } = require('../data/repositories/config.repo');
 const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
@@ -28,7 +27,7 @@ router.get('/config', async (req, res, next) => {
 // Route update pricing config as one config object.
 router.put('/config', async (req, res, next) => {
   try {
-    const config = await updatePricingConfig(req.body || {}, getExpectedConfigVersion(req));
+    const config = await updatePricingConfig(req.body || {});
     res.json({ message: 'Pricing config updated', config });
   } catch (err) {
     next(err);
@@ -43,7 +42,7 @@ router.post('/config', async (req, res, next) => {
       return res.status(400).json({ message: 'price is required' });
     }
 
-    const config = await createPricingConfigItem(payload, getExpectedConfigVersion(req));
+    const config = await createPricingConfigItem(payload);
     res.status(201).json({ message: 'Pricing config item created', config });
   } catch (err) {
     next(err);
@@ -53,7 +52,7 @@ router.post('/config', async (req, res, next) => {
 // Route update one pricing config item by id.
 router.patch('/config/:id', async (req, res, next) => {
   try {
-    const config = await updatePricingConfigItem(req.params.id, req.body || {}, getExpectedConfigVersion(req));
+    const config = await updatePricingConfigItem(req.params.id, req.body || {});
     if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
     res.json({ message: 'Pricing config item updated', config });
@@ -65,7 +64,7 @@ router.patch('/config/:id', async (req, res, next) => {
 // Route delete one pricing config item by id.
 router.delete('/config/:id', async (req, res, next) => {
   try {
-    const config = await deletePricingConfigItem(req.params.id, getExpectedConfigVersion(req));
+    const config = await deletePricingConfigItem(req.params.id);
     if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
     res.json({

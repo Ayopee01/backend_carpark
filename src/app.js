@@ -57,7 +57,6 @@ app.use('/uploads', express.static('uploads'));
 app.get('/', (req, res) => {
   res.json({
     name: 'smart-carpark-api',
-    version: '1.0.0',
     docs: '/docs',
     openapi: '/docs/openapi.json',
   });

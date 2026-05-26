@@ -40,7 +40,7 @@ async function getBarrierGatesConfig() {
   };
 }
 
-// Function ดึง Config ของ Barrier Gate พร้อม version สำหรับ admin update
+// Function ดึง Config ของ Barrier Gate สำหรับ admin update
 async function getBarrierGatesConfigWithMeta() {
   const config = await getConfigWithMeta(CONFIG_KEY, { barrierGates: [] });
   return {
@@ -50,8 +50,8 @@ async function getBarrierGatesConfigWithMeta() {
 }
 
 // Function บันทึกรายการ Barrier Gate ทั้งหมดกลับเข้า Config
-async function saveBarrierGates(barrierGates, expectedVersion) {
-  return setConfig(CONFIG_KEY, { barrierGates }, { expectedVersion });
+async function saveBarrierGates(barrierGates) {
+  return setConfig(CONFIG_KEY, { barrierGates });
 }
 
 // Function คำนวณสถานะใช้งานจริงของ Barrier Gate จากค่า status และเวลา lastSeen
@@ -158,8 +158,8 @@ async function activateBarrierGate(code) {
   };
 }
 
-// Function แก้ไขข้อมูล Barrier Gate ตาม deviceId เช่น name, location, ip หรือ version
-async function editBarrierGate(deviceId, details = {}, expectedVersion) {
+// Function แก้ไขข้อมูล Barrier Gate ตาม deviceId เช่น name, location, ip
+async function editBarrierGate(deviceId, details = {}) {
   const { barrierGates } = await getBarrierGatesConfig();
   const index = barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
   if (index === -1) return { success: false, message: 'Barrier Gate not found' };
@@ -169,32 +169,30 @@ async function editBarrierGate(deviceId, details = {}, expectedVersion) {
     ...details,
     deviceId,
   };
-  const saved = await saveBarrierGates(barrierGates, expectedVersion);
+  const saved = await saveBarrierGates(barrierGates);
 
   return {
     success: true,
     barrierGate: {
       ...withRuntimeStatus(barrierGates[index]),
-      version: saved.version,
       configUpdatedAt: saved.configUpdatedAt,
     },
   };
 }
 
 // Function ลบ Barrier Gate ออกจาก Config ตาม deviceId
-async function deleteBarrierGate(deviceId, expectedVersion) {
+async function deleteBarrierGate(deviceId) {
   const { barrierGates } = await getBarrierGatesConfig();
   const index = barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
   if (index === -1) return { success: false, message: 'Barrier Gate not found' };
 
   const [deleted] = barrierGates.splice(index, 1);
-  const saved = await saveBarrierGates(barrierGates, expectedVersion);
+  const saved = await saveBarrierGates(barrierGates);
   return {
     success: true,
     message: 'Barrier Gate deleted',
     barrierGate: {
       ...deleted,
-      version: saved.version,
       configUpdatedAt: saved.configUpdatedAt,
     },
   };
@@ -252,12 +250,11 @@ async function listAllBarrierGates() {
   return barrierGates.map(withRuntimeStatus);
 }
 
-// Function แสดงรายการ Barrier Gate ทั้งหมดพร้อม version ของ config
+// Function แสดงรายการ Barrier Gate ทั้งหมดพร้อมเวลาแก้ไขล่าสุดของ config
 async function listAllBarrierGatesWithMeta() {
   const config = await getBarrierGatesConfigWithMeta();
   return {
     barrierGates: config.barrierGates.map(withRuntimeStatus),
-    version: config.version,
     configUpdatedAt: config.configUpdatedAt,
   };
 }

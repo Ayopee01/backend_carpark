@@ -8,13 +8,11 @@ const CONFIG_KEY = 'pricing_config';
 const ALLOWED_FEE_TYPES = ['base_hour', 'next_hour', 'overnight_day', 'overnight_week', 'overnight_month', 'overnight_year'];
 const ALLOWED_VEHICLE_TYPES = ['car', 'motorcycle'];
 
-// Function แปลงค่าเป็น number ถ้าแปลงไม่ได้ให้ใช้ fallback
 function normalizeNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
 
-// Function normalize pricing rule ให้มี field และค่ามาตรฐานที่ระบบรองรับเสมอ
 function normalizePricingItem(payload = {}, current = {}) {
   const feeType = payload.feeType || current.feeType || 'base_hour';
   const vehicleType = payload.vehicleType || current.vehicleType || 'car';
@@ -37,18 +35,15 @@ function normalizePricingItem(payload = {}, current = {}) {
   };
 }
 
-// Function query pricing config from database, fallback to defaults.
 async function getPricingConfig() {
   return getConfig(CONFIG_KEY, defaults.pricingConfig);
 }
 
-// Function query pricing config พร้อม version สำหรับ optimistic locking.
 async function getPricingConfigWithMeta() {
   return getConfigWithMeta(CONFIG_KEY, defaults.pricingConfig);
 }
 
-// Function replace/merge pricing config as one admin config object.
-async function updatePricingConfig(body = {}, expectedVersion) {
+async function updatePricingConfig(body = {}) {
   const cleanBody = stripConfigMeta(body);
   const current = await getPricingConfig();
   const nextConfig = {
@@ -62,11 +57,10 @@ async function updatePricingConfig(body = {}, expectedVersion) {
     masterData: cleanBody.masterData || current.masterData,
   };
 
-  return setConfig(CONFIG_KEY, nextConfig, { expectedVersion });
+  return setConfig(CONFIG_KEY, nextConfig);
 }
 
-// Function add one pricing config item.
-async function createPricingConfigItem(payload = {}, expectedVersion) {
+async function createPricingConfigItem(payload = {}) {
   const current = await getPricingConfig();
   const item = normalizePricingItem(stripConfigMeta(payload));
   const nextConfig = {
@@ -74,12 +68,11 @@ async function createPricingConfigItem(payload = {}, expectedVersion) {
     pricingRules: [...(current.pricingRules || []), item],
   };
 
-  const saved = await setConfig(CONFIG_KEY, nextConfig, { expectedVersion });
-  return { ...item, version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  const saved = await setConfig(CONFIG_KEY, nextConfig);
+  return { ...item, configUpdatedAt: saved.configUpdatedAt };
 }
 
-// Function update one pricing config item by id.
-async function updatePricingConfigItem(id, payload = {}, expectedVersion) {
+async function updatePricingConfigItem(id, payload = {}) {
   const current = await getPricingConfig();
   const index = (current.pricingRules || []).findIndex((item) => item.id === id);
   if (index === -1) return null;
@@ -87,12 +80,11 @@ async function updatePricingConfigItem(id, payload = {}, expectedVersion) {
   const nextRules = [...current.pricingRules];
   nextRules[index] = normalizePricingItem(stripConfigMeta(payload), current.pricingRules[index]);
 
-  const saved = await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules }, { expectedVersion });
-  return { ...nextRules[index], version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  const saved = await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
+  return { ...nextRules[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
-// Function delete one pricing config item by id.
-async function deletePricingConfigItem(id, expectedVersion) {
+async function deletePricingConfigItem(id) {
   const current = await getPricingConfig();
   const index = (current.pricingRules || []).findIndex((item) => item.id === id);
   if (index === -1) return null;
@@ -100,8 +92,8 @@ async function deletePricingConfigItem(id, expectedVersion) {
   const nextRules = [...current.pricingRules];
   const [item] = nextRules.splice(index, 1);
 
-  const saved = await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules }, { expectedVersion });
-  return { ...item, version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  const saved = await setConfig(CONFIG_KEY, { ...current, pricingRules: nextRules });
+  return { ...item, configUpdatedAt: saved.configUpdatedAt };
 }
 
 // Export Functions

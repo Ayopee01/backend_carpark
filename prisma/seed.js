@@ -223,8 +223,8 @@ const appConfigs = [
     key: 'kiosks',
     data: {
       kiosks: [
-        { deviceId: 'K-SEED-001', name: 'Payment Kiosk 1', location: 'Lobby A', ip: '192.168.1.120', version: '1.0.0', status: 'online', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' },
-        { deviceId: 'K-SEED-002', name: 'Payment Kiosk 2', location: 'Basement B1', ip: '192.168.1.121', version: '1.0.0', status: 'maintenance', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' }
+        { deviceId: 'K-SEED-001', name: 'Payment Kiosk 1', location: 'Lobby A', ip: '192.168.1.120', status: 'online', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' },
+        { deviceId: 'K-SEED-002', name: 'Payment Kiosk 2', location: 'Basement B1', ip: '192.168.1.121', status: 'maintenance', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' }
       ]
     }
   },
@@ -232,7 +232,7 @@ const appConfigs = [
     key: 'barrier_gates',
     data: {
       barrierGates: [
-        { deviceId: 'BG-SEED-001', deviceType: 'barrier_gate', name: 'Exit Barrier Gate 1', location: 'Gate A', ip: '192.168.1.50', version: '1.0.0', status: 'online', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' }
+        { deviceId: 'BG-SEED-001', deviceType: 'barrier_gate', name: 'Exit Barrier Gate 1', location: 'Gate A', ip: '192.168.1.50', status: 'online', firstSeen: '2026-05-01T08:00:00+07:00', lastSeen: '2026-05-16T08:00:00+07:00' }
       ]
     }
   },

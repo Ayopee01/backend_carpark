@@ -5,34 +5,28 @@ const { getConfig, getConfigWithMeta, setConfig, stripConfigMeta } = require('./
 // Constant key สำหรับอ้างอิง system settings ใน table app_config
 const CONFIG_KEY = 'system_settings';
 
-// Function query system settings จาก database ถ้าไม่มีให้ใช้ค่า default
 async function getSystemSettings() {
   return getConfig(CONFIG_KEY, defaults.systemSettings);
 }
 
-// Function query system settings พร้อม version สำหรับ optimistic locking
 async function getSystemSettingsWithMeta() {
   return getConfigWithMeta(CONFIG_KEY, defaults.systemSettings);
 }
 
-// Function query receipt settings
 async function getReceiptSettings() {
   const settings = await getSystemSettings();
   return settings.receipt || {};
 }
 
-// Function query receipt settings พร้อม version ของ system settings
 async function getReceiptSettingsWithMeta() {
   const settings = await getSystemSettingsWithMeta();
   return {
     ...(settings.receipt || {}),
-    version: settings.version,
     configUpdatedAt: settings.configUpdatedAt,
   };
 }
 
-// Function update printer settings ใน receipt
-async function updatePrinterSettings({ fontSize, billNumberFontSize, paperWidth } = {}, expectedVersion) {
+async function updatePrinterSettings({ fontSize, billNumberFontSize, paperWidth } = {}) {
   const current = await getSystemSettings();
   const newReceipt = {
     ...current.receipt,
@@ -40,21 +34,20 @@ async function updatePrinterSettings({ fontSize, billNumberFontSize, paperWidth 
       ...(current.receipt?.printer || {}),
       ...(fontSize !== undefined ? { fontSize } : {}),
       ...(billNumberFontSize !== undefined ? { billNumberFontSize } : {}),
-      ...(paperWidth !== undefined ? { paperWidth } : {})
-    }
+      ...(paperWidth !== undefined ? { paperWidth } : {}),
+    },
   };
 
   const saved = await setConfig(CONFIG_KEY, {
     ...current,
     receipt: newReceipt,
-    updatedAt: new Date().toISOString()
-  }, { expectedVersion });
+    updatedAt: new Date().toISOString(),
+  });
 
-  return { ...saved.receipt.printer, version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  return { ...saved.receipt.printer, configUpdatedAt: saved.configUpdatedAt };
 }
 
-// Function update receipt settings แบบ merge ค่าเดิมกับค่าใหม่
-async function updateReceiptSettings(body = {}, expectedVersion) {
+async function updateReceiptSettings(body = {}) {
   const current = await getSystemSettings();
   const cleanBody = stripConfigMeta(body);
   const newReceipt = {
@@ -62,31 +55,30 @@ async function updateReceiptSettings(body = {}, expectedVersion) {
     ...cleanBody,
     entryBill: {
       ...(current.receipt?.entryBill || {}),
-      ...(cleanBody.entryBill || {})
+      ...(cleanBody.entryBill || {}),
     },
     paymentBill: {
       ...(current.receipt?.paymentBill || {}),
-      ...(cleanBody.paymentBill || {})
-    }
+      ...(cleanBody.paymentBill || {}),
+    },
   };
 
   const saved = await setConfig(CONFIG_KEY, {
     ...current,
     receipt: newReceipt,
-    updatedAt: new Date().toISOString()
-  }, { expectedVersion });
+    updatedAt: new Date().toISOString(),
+  });
 
-  return { ...saved.receipt, version: saved.version, configUpdatedAt: saved.configUpdatedAt };
+  return { ...saved.receipt, configUpdatedAt: saved.configUpdatedAt };
 }
 
-// Function update system settings ทั้งก้อน
-async function updateSystemSettings(body = {}, expectedVersion) {
+async function updateSystemSettings(body = {}) {
   const current = await getSystemSettings();
   return setConfig(CONFIG_KEY, {
     ...current,
     ...stripConfigMeta(body),
-    updatedAt: new Date().toISOString()
-  }, { expectedVersion });
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 // Export Functions
@@ -97,5 +89,5 @@ module.exports = {
   getSystemSettingsWithMeta,
   updatePrinterSettings,
   updateReceiptSettings,
-  updateSystemSettings
+  updateSystemSettings,
 };
