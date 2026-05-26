@@ -7,7 +7,7 @@ const { getConfig } = require('./config.repo');
 const { validatePaymentSelection } = require('./paymentSettings.repo');
 const defaults = require('../defaults');
 
-const DEFAULT_PAYMENT_GRACE_PERIOD_MINUTES = 15;
+const DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES = 30;
 
 function createHttpError(statusCode, message) {
   const err = new Error(message);
@@ -284,10 +284,10 @@ async function getTransactionApiByIdOrPlateNo(value, options = {}) {
 // Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
 async function processPayment(id, { plateNo, method, channel, amount, processedBy, device } = {}) {
   const context = await getTransactionContext();
-  const configuredGracePeriod = context.systemSettings?.receipt?.paymentBill?.expiryDuration ?? context.pricingConfig?.gracePeriod;
-  const gracePeriodMinutes = Number.isFinite(Number(configuredGracePeriod))
-    ? Number(configuredGracePeriod)
-    : DEFAULT_PAYMENT_GRACE_PERIOD_MINUTES;
+  const configuredExitWindow = context.systemSettings?.receipt?.paymentBill?.expiryDuration;
+  const exitWindowMinutes = Number.isFinite(Number(configuredExitWindow))
+    ? Number(configuredExitWindow)
+    : DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES;
   const paymentMethod = method || 'cash';
   const paymentChannel = channel || 'cashier';
   const paymentValidation = await validatePaymentSelection(paymentChannel, paymentMethod);
@@ -313,7 +313,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
     const currentNetAmount = feeResult.totalAmount;
     const currentTotalPaid = Number(transaction.totalPaid ?? 0);
     const currentRemaining = Math.max(0, currentNetAmount - currentTotalPaid);
-    const expiryAt = new Date(new Date(paidAt).getTime() + gracePeriodMinutes * 60000).toISOString();
+    const expiryAt = new Date(new Date(paidAt).getTime() + exitWindowMinutes * 60000).toISOString();
     const payAmount = amount !== undefined ? Number(amount) : currentRemaining;
     if (!Number.isFinite(payAmount) || payAmount <= 0) return null;
 

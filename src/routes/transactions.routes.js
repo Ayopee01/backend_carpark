@@ -6,6 +6,42 @@ const { validateCameraTransactionPayload } = require('../validators/transactions
 
 const router = express.Router();
 
+function toAdminPaymentResponse(transaction) {
+  const latestPayment = Array.isArray(transaction.payments) && transaction.payments.length
+    ? transaction.payments[transaction.payments.length - 1]
+    : null;
+
+  return {
+    transaction: {
+      transactionId: transaction.id,
+      billNo: transaction.billNo,
+      plateNo: transaction.plateNo,
+      vehicleType: transaction.vehicleType,
+      status: transaction.status,
+    },
+    payment: latestPayment ? {
+      paymentId: latestPayment.id,
+      method: latestPayment.method,
+      channel: latestPayment.channel,
+      paidAmount: latestPayment.paidAmount,
+      paidAt: latestPayment.paidAt,
+      processedBy: latestPayment.processedBy,
+    } : null,
+    amount: {
+      netAmount: transaction.netAmount,
+      paidAmount: transaction.totalPaid,
+      remainingAmount: transaction.remainingAmount,
+    },
+    parking: {
+      entryAt: transaction.entryAt,
+      exitTimeLimit: transaction.exitTimeLimit,
+      isOverstay: transaction.isOverstay,
+      durationDisplay: transaction.serviceDisplay,
+      totalMinutes: transaction.totalMinutes,
+    },
+  };
+}
+
 // Apply permission check from members.permissions.
 router.use(authorize('transactions'));
 
@@ -96,9 +132,9 @@ router.post('/:id/payment', async (req, res, next) => {
 
     if (!updated) return res.status(404).json({ message: 'Transaction not found' });
     
-    res.json({ 
-      message: 'Payment confirmed successfully', 
-      transaction: updated 
+    res.json({
+      message: 'Payment confirmed successfully',
+      data: toAdminPaymentResponse(updated),
     });
   } catch (err) {
     next(err);
@@ -121,7 +157,11 @@ router.patch('/:id/status', async (req, res, next) => {
   try {
     const updated = await updateTransaction(req.params.id, req.body);
     if (!updated) return res.status(404).json({ message: 'Not found' });
-    res.json({ message: 'Updated successfully (legacy endpoint)', transaction: updated });
+    res.json({
+      success: true,
+      message: 'Transaction status updated successfully',
+      status: updated.status,
+    });
   } catch (err) {
     next(err);
   }

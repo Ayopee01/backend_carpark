@@ -260,6 +260,72 @@ const openapi = {
           deviceLocation: { type: 'string', example: 'Main Lobby' },
         },
       },
+      ClientPlatePaymentRequest: {
+        type: 'object',
+        properties: {
+          method: { type: 'string', enum: ['cash', 'qr', 'bank1', 'wallet', 'other'], example: 'qr', description: 'If omitted, backend uses qr for mobile/kiosk and wallet for barrier gate.' },
+          amount: { type: 'number', example: 40 },
+        },
+      },
+      AdminPaymentResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Payment confirmed successfully' },
+          data: {
+            type: 'object',
+            properties: {
+              transaction: {
+                type: 'object',
+                properties: {
+                  transactionId: { type: 'string', example: 't_aff4dec0-7933-48a4-a791-730b7ee8b95a' },
+                  billNo: { type: 'string', example: 'PK20260525-033000-3333' },
+                  plateNo: { type: 'string', example: '3งจ9019' },
+                  vehicleType: { type: 'string', example: 'car' },
+                  status: { type: 'string', example: 'completed' },
+                },
+              },
+              payment: {
+                type: 'object',
+                nullable: true,
+                properties: {
+                  paymentId: { type: 'string', example: 'pay_48bd0519-348f-4ae1-832a-8f15f50f534e' },
+                  method: { type: 'string', example: 'cash' },
+                  channel: { type: 'string', example: 'cashier' },
+                  paidAmount: { type: 'number', example: 435 },
+                  paidAt: { type: 'string', format: 'date-time' },
+                  processedBy: { type: 'string', example: 'u5' },
+                },
+              },
+              amount: {
+                type: 'object',
+                properties: {
+                  netAmount: { type: 'number', example: 435 },
+                  paidAmount: { type: 'number', example: 435 },
+                  remainingAmount: { type: 'number', example: 0 },
+                },
+              },
+              parking: {
+                type: 'object',
+                properties: {
+                  entryAt: { type: 'string', format: 'date-time' },
+                  exitTimeLimit: { type: 'string', format: 'date-time' },
+                  isOverstay: { type: 'boolean', example: false },
+                  durationDisplay: { type: 'string', example: '25-05-2026 | 32 : 18' },
+                  totalMinutes: { type: 'number', example: 1938 },
+                },
+              },
+            },
+          },
+        },
+      },
+      AdminTransactionStatusResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string', example: 'Transaction status updated successfully' },
+          status: { type: 'string', example: 'completed' },
+        },
+      },
       PricingRule: {
         type: 'object',
         required: ['price'],
@@ -531,7 +597,7 @@ const openapi = {
           amount: 40,
         }),
         responses: {
-          200: ok('Payment confirmed successfully', ref('Transaction')),
+          200: ok('Payment confirmed successfully', ref('AdminPaymentResponse')),
           400: error('Invalid payment method/channel, invalid amount, or payment failed'),
           404: error('Transaction not found'),
           ...bearer403,
@@ -546,7 +612,7 @@ const openapi = {
         description: 'Admin flow after payment. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. It currently calls the same update logic as PATCH /api/v1/transactions/{id}.',
         parameters: [idParam('id', '3งจ9012')],
         requestBody: body(ref('TransactionUpdateRequest'), { status: 'cancelled' }),
-        responses: { 200: ok('Transaction status updated'), 404: error('Not found'), ...bearer403 },
+        responses: { 200: ok('Transaction status updated', ref('AdminTransactionStatusResponse')), 404: error('Not found'), ...bearer403 },
       },
     },
 
@@ -784,14 +850,17 @@ const openapi = {
         responses: { 200: ok('Activation successful', ref('ActivationResponse')), 400: error('Activation code is required, invalid, or expired') },
       },
     },
-    '/api/v1/client/transaction/{id}': {
+    '/api/v1/client/transaction': {
       get: {
         tags: ['Client Events'],
-        summary: 'Get one payable transaction by id or plateNo',
-        description: 'Public lookup for kiosk, barrier gate, and mobile users. Path {id} accepts either a transaction id or a plateNo. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user. If deviceId is supplied, it must be an activated registered device.',
+        summary: 'Get one payable transaction by plateNo',
+        description: 'Public lookup for kiosk, barrier gate, and mobile users. Frontend sends the plate number from input as query param plateNo. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user. If deviceId is supplied, it must be an activated registered device.',
         security: publicRoute,
-        parameters: [idParam('id', '3งจ9012'), query('deviceId', { type: 'string' }, 'K-20260521-008')],
-        responses: { 200: ok('Transaction', ref('Transaction')), 401: error('Invalid or unregistered deviceId'), 403: error('Already processed or device under maintenance'), 404: error('Transaction not found') },
+        parameters: [
+          query('plateNo', { type: 'string' }, '3งจ9012', true),
+          query('deviceId', { type: 'string' }, 'K-20260521-008'),
+        ],
+        responses: { 200: ok('Transaction', ref('Transaction')), 400: error('plateNo is required'), 401: error('Invalid or unregistered deviceId'), 403: error('Already processed or device under maintenance'), 404: error('Transaction not found') },
       },
     },
     '/api/v1/client/payment': {
@@ -802,6 +871,17 @@ const openapi = {
         security: publicRoute,
         requestBody: body(ref('PaymentRequest'), { transactionId: 't_123', method: 'qr', amount: 40, deviceId: 'K-20260521-008' }),
         responses: { 200: ok('Payment received'), 400: error('transactionId or plateNo is required, invalid payment method/channel, or payment failed'), 401: error('Invalid or unregistered deviceId'), 403: error('Device under maintenance') },
+      },
+    },
+    '/api/v1/client/{plateNo}/payment': {
+      post: {
+        tags: ['Client Events'],
+        summary: 'Receive client payment by plateNo in path',
+        description: 'Public payment endpoint using the plate number from the URL path. No body is required. If deviceId is omitted, request is treated as mobile user. Kiosk/barrier gate can send deviceId as query param.',
+        security: publicRoute,
+        parameters: [idParam('plateNo', '3งจ9019'), query('deviceId', { type: 'string' }, 'K-20260521-008')],
+        requestBody: body(ref('ClientPlatePaymentRequest'), { method: 'qr', amount: 40 }, false),
+        responses: { 200: ok('Payment received'), 400: error('plateNo is required, invalid payment method/channel, or payment failed'), 401: error('Invalid or unregistered deviceId'), 403: error('Device under maintenance') },
       },
     },
     '/api/v1/client/check-in': {

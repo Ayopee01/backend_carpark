@@ -139,7 +139,6 @@ const appConfigs = [
   {
     key: 'pricing_config',
     data: {
-      gracePeriod: 15,
       pricingRules: [
         { id: 'pr_car_base_hour', name: 'Car base hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 20, status: 'active' },
         { id: 'pr_car_next_hour', name: 'Car next hour from hour 3', feeType: 'next_hour', vehicleType: 'car', hourStart: 3, hourEnd: null, price: 10, status: 'active' },
@@ -258,7 +257,7 @@ const appConfigs = [
       },
       receipt: {
         entryBill: { showDate: true, showEntryTime: true, showQrCode: true, showBillNo: true },
-        paymentBill: { showDate: true, showEntryTime: true, showQrCode: true, showBillNo: true, showExpiryTime: true, expiryDuration: 15 },
+        paymentBill: { showDate: true, showEntryTime: true, showQrCode: true, showBillNo: true, showExpiryTime: true, expiryDuration: 30 },
         printer: { fontSize: 12, billNumberFontSize: 16, paperWidth: 80 },
         paperWidth: '80mm',
         footerText: 'Thank you'

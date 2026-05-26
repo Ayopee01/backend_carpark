@@ -40,7 +40,11 @@ const systemSettings = {
     timezone: null,
     frontendUrl: null,
   },
-  receipt: {},
+  receipt: {
+    paymentBill: {
+      expiryDuration: 30,
+    },
+  },
   billing: {},
 };
 

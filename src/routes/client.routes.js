@@ -70,6 +70,43 @@ function toClientTransactionResponse(transaction, source) {
   };
 }
 
+async function handleClientPayment(req, res, next, pathPlateNo) {
+  try {
+    const { transactionId, plateNo: bodyPlateNo, method, amount, deviceId: bodyDeviceId } = req.body || {};
+    const plateNo = pathPlateNo || bodyPlateNo;
+    const deviceId = req.query?.deviceId || bodyDeviceId;
+    if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
+
+    const source = await resolveClientSource(deviceId, req);
+    const channel = source.clientType === 'barrier_gate'
+      ? 'gate'
+      : source.clientType === 'kiosk'
+        ? 'kiosk'
+        : 'mobile';
+    const defaultMethod = channel === 'gate' ? 'wallet' : 'qr';
+
+    const result = await processPayment(transactionId, {
+      plateNo,
+      method: method || defaultMethod,
+      channel,
+      amount,
+      processedBy: deviceId ? `${source.clientType}_${deviceId}` : 'mobile_user',
+      device: source.device && source.clientType !== 'mobile' ? source.device : null,
+    });
+
+    if (!result) return res.status(400).json({ message: 'Payment processing failed' });
+
+    return res.json({
+      message: 'Payment received successfully',
+      transaction: result,
+      clientType: source.clientType,
+      device: source.device,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Shared activation endpoint for kiosk and barrier gate frontends.
 router.post('/activate', async (req, res, next) => {
   try {
@@ -115,6 +152,26 @@ router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate']), async (re
   }
 });
 
+// Public transaction lookup by plateNo from frontend input for kiosk, barrier gate, or mobile clients.
+router.get('/transaction', async (req, res, next) => {
+  try {
+    const { plateNo, deviceId } = req.query || {};
+    const normalizedPlateNo = plateNo === undefined || plateNo === null ? '' : String(plateNo).trim();
+    if (!normalizedPlateNo) return res.status(400).json({ message: 'plateNo is required' });
+
+    const source = await resolveClientSource(deviceId, req);
+    const transaction = await getTransactionApiByIdOrPlateNo(normalizedPlateNo);
+    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    if (transaction.status === 'completed' || transaction.status === 'cancelled') {
+      return res.status(403).json({ message: 'This transaction is already processed' });
+    }
+
+    return res.json(toClientTransactionResponse(transaction, source));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Public transaction lookup by transaction id or plateNo for kiosk, barrier gate, or mobile clients.
 router.get('/transaction/:id', async (req, res, next) => {
   try {
@@ -132,40 +189,16 @@ router.get('/transaction/:id', async (req, res, next) => {
   }
 });
 
+// Public payment endpoint by plateNo in path for kiosk, barrier gate, or mobile clients.
+router.post('/:plateNo/payment', async (req, res, next) => {
+  const plateNo = req.params.plateNo === undefined || req.params.plateNo === null ? '' : String(req.params.plateNo).trim();
+  if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
+  return handleClientPayment(req, res, next, plateNo);
+});
+
 // Public payment endpoint for kiosk, barrier gate, or mobile clients.
 router.post('/payment', async (req, res, next) => {
-  try {
-    const { transactionId, plateNo, method, amount, deviceId } = req.body || {};
-    if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
-
-    const source = await resolveClientSource(deviceId, req);
-    const channel = source.clientType === 'barrier_gate'
-      ? 'gate'
-      : source.clientType === 'kiosk'
-        ? 'kiosk'
-        : 'mobile';
-    const defaultMethod = channel === 'gate' ? 'wallet' : 'qr';
-
-    const result = await processPayment(transactionId, {
-      plateNo,
-      method: method || defaultMethod,
-      channel,
-      amount,
-      processedBy: deviceId ? `${source.clientType}_${deviceId}` : 'mobile_user',
-      device: source.device && source.clientType !== 'mobile' ? source.device : null,
-    });
-
-    if (!result) return res.status(400).json({ message: 'Payment processing failed' });
-
-    return res.json({
-      message: 'Payment received successfully',
-      transaction: result,
-      clientType: source.clientType,
-      device: source.device,
-    });
-  } catch (err) {
-    next(err);
-  }
+  return handleClientPayment(req, res, next);
 });
 
 // Shared SSE stream for kiosk, barrier gate, and public/mobile clients.
