@@ -708,11 +708,27 @@ const openapi = {
     '/api/v1/devices/config': {
       get: {
         tags: ['Devices'],
-        summary: 'Get shared client config',
-        description: 'Shared config endpoint for mobile users, kiosks, and barrier gates. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate.',
-        security: [...deviceAuth, {}],
-        parameters: [query('deviceId', { type: 'string' }, 'K-20260524-001')],
-        responses: { 200: ok('Client config'), 400: error('Device identity mismatch'), 401: error('Invalid or unregistered deviceId'), 403: error('Invalid device credentials') },
+        summary: 'Get public base client config',
+        description: 'Public config endpoint for every client before activation/login. No token, deviceId, or device credentials are required. Returns only the base theme config used by mobile, kiosk, and barrier gate frontends.',
+        security: publicRoute,
+        responses: {
+          200: ok('Client theme config', {
+            type: 'object',
+            properties: {
+              theme: {
+                type: 'object',
+                properties: {
+                  systemName: { type: 'string', nullable: true, example: 'Smart Carpark' },
+                  themeColor: { type: 'string', nullable: true, example: '#FFD54F' },
+                  logoUrl: { type: 'string', nullable: true, example: '/uploads/logo-1779640171113-ef251ff8b38970bb.png' },
+                  themeMode: { type: 'string', example: 'theme1' },
+                  customThemeColor: { type: 'string', nullable: true, example: '#000000' },
+                  updatedAt: { type: 'string', nullable: true, example: '2026-05-24T16:42:59.056Z' },
+                },
+              },
+            },
+          }),
+        },
       },
     },
     '/api/v1/devices': {
