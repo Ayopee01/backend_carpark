@@ -3,7 +3,7 @@ const express = require('express');
 const {
   createPricingConfigItem,
   deletePricingConfigItem,
-  getPricingConfigWithMeta,
+  getPricingRulesConfigWithMeta,
   updatePricingConfig,
   updatePricingConfigItem,
 } = require('../data/repositories/servicePricing.repo');
@@ -17,8 +17,8 @@ router.use(authorize('pricing'));
 // Route query all pricing config.
 router.get('/config', async (req, res, next) => {
   try {
-    const configWithMeta = await getPricingConfigWithMeta();
-    res.json(configWithMeta);
+    const config = await getPricingRulesConfigWithMeta();
+    res.json(config);
   } catch (err) {
     next(err);
   }
@@ -27,8 +27,8 @@ router.get('/config', async (req, res, next) => {
 // Route update pricing config as one config object.
 router.put('/config', async (req, res, next) => {
   try {
-    const config = await updatePricingConfig(req.body || {});
-    res.json({ message: 'Pricing config updated', config });
+    await updatePricingConfig(req.body || {});
+    res.json({ success: true, message: 'Pricing config updated' });
   } catch (err) {
     next(err);
   }

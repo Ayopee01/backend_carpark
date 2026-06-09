@@ -122,6 +122,13 @@ const openapi = {
           requiredPermission: { type: 'string' },
         },
       },
+      SuccessMessageResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string', example: 'Pricing config updated' },
+        },
+      },
       User: {
         type: 'object',
         properties: {
@@ -342,6 +349,16 @@ const openapi = {
           periodStart: { type: 'number', example: 1 },
           periodEnd: { type: 'number', nullable: true },
           status: { type: 'string', example: 'active' },
+        },
+      },
+      PricingConfigResponse: {
+        type: 'object',
+        properties: {
+          pricingRules: {
+            type: 'array',
+            items: ref('PricingRule'),
+          },
+          configUpdatedAt: { type: 'string', nullable: true, example: '2026-05-22T10:23:16.425Z' },
         },
       },
       PaymentMethodUpdateRequest: {
@@ -690,16 +707,16 @@ const openapi = {
     '/api/v1/service-pricing/config': {
       get: {
         tags: ['Service Pricing'],
-        summary: 'Get pricing config with meta',
-        description: 'Requires permission: pricing.',
-        responses: { 200: ok('Pricing config'), ...bearer403 },
+        summary: 'Get pricing rules config',
+        description: 'Requires permission: pricing. Returns only pricing rules plus configUpdatedAt.',
+        responses: { 200: ok('Pricing config', ref('PricingConfigResponse')), ...bearer403 },
       },
       put: {
         tags: ['Service Pricing'],
         summary: 'Replace/update pricing config object',
         description: 'Requires permission: pricing.',
         requestBody: body({ type: 'object', additionalProperties: true }, { pricingRules: [] }),
-        responses: { 200: ok('Pricing config updated'), ...configWriteResponses },
+        responses: { 200: ok('Pricing config updated', ref('SuccessMessageResponse')), ...configWriteResponses },
       },
       post: {
         tags: ['Service Pricing'],

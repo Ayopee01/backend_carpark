@@ -43,6 +43,14 @@ async function getPricingConfigWithMeta() {
   return getConfigWithMeta(CONFIG_KEY, defaults.pricingConfig);
 }
 
+async function getPricingRulesConfigWithMeta() {
+  const config = await getPricingConfigWithMeta();
+  return {
+    pricingRules: Array.isArray(config.pricingRules) ? config.pricingRules : [],
+    configUpdatedAt: config.configUpdatedAt,
+  };
+}
+
 async function updatePricingConfig(body = {}) {
   const cleanBody = stripConfigMeta(body);
   const current = await getPricingConfig();
@@ -102,6 +110,7 @@ module.exports = {
   deletePricingConfigItem,
   getPricingConfig,
   getPricingConfigWithMeta,
+  getPricingRulesConfigWithMeta,
   updatePricingConfig,
   updatePricingConfigItem,
 };
