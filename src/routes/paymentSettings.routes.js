@@ -21,7 +21,7 @@ router.patch('/methods/:id', async (req, res, next) => {
   try {
     const method = await paymentRepo.updateMethod(req.params.id, req.body);
     if (!method) return res.status(404).json({ message: 'Method not found' });
-    res.json({ message: 'Payment method updated', method });
+    res.json({ success: true, message: 'Payment method updated' });
   } catch (err) {
     next(err);
   }
@@ -43,7 +43,7 @@ router.patch('/channels/:id', async (req, res, next) => {
     const { allowedMethods } = req.body;
     const channel = await paymentRepo.updateChannelMapping(req.params.id, allowedMethods);
     if (!channel) return res.status(404).json({ message: 'Channel not found or invalid methods' });
-    res.json({ message: 'Channel mapping updated', channel });
+    res.json({ success: true, message: 'Channel mapping updated' });
   } catch (err) {
     next(err);
   }

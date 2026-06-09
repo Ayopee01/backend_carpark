@@ -42,8 +42,8 @@ router.post('/config', async (req, res, next) => {
       return res.status(400).json({ message: 'price is required' });
     }
 
-    const config = await createPricingConfigItem(payload);
-    res.status(201).json({ message: 'Pricing config item created', config });
+    await createPricingConfigItem(payload);
+    res.status(201).json({ success: true, message: 'Pricing config item created' });
   } catch (err) {
     next(err);
   }
@@ -55,7 +55,7 @@ router.patch('/config/:id', async (req, res, next) => {
     const config = await updatePricingConfigItem(req.params.id, req.body || {});
     if (!config) return res.status(404).json({ message: 'Pricing config item not found' });
 
-    res.json({ message: 'Pricing config item updated', config });
+    res.json({ success: true, message: 'Pricing config item updated' });
   } catch (err) {
     next(err);
   }
@@ -69,9 +69,7 @@ router.delete('/config/:id', async (req, res, next) => {
 
     res.json({
       success: true,
-      status: 'delete_success',
-      message: 'Pricing config item deleted successfully',
-      config,
+      message: 'Pricing config item deleted',
     });
   } catch (err) {
     next(err);

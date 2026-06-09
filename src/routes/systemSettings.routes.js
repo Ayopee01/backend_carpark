@@ -47,8 +47,8 @@ router.put('/receipt/printer', async (req, res, next) => {
 // Route update receipt settings
 router.put('/receipt', async (req, res, next) => {
   try {
-    const receipt = await updateReceiptSettings(req.body || {});
-    res.json({ message: 'Receipt settings updated', receipt });
+    await updateReceiptSettings(req.body || {});
+    res.json({ success: true, message: 'Receipt settings updated' });
   } catch (err) {
     next(err);
   }
@@ -57,8 +57,8 @@ router.put('/receipt', async (req, res, next) => {
 // Route update system settings
 router.put('/', async (req, res, next) => {
   try {
-    const settings = await updateSystemSettings(req.body || {});
-    res.json({ message: 'System settings updated', settings });
+    await updateSystemSettings(req.body || {});
+    res.json({ success: true, message: 'System settings updated' });
   } catch (err) {
     next(err);
   }

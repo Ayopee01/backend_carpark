@@ -126,7 +126,7 @@ const openapi = {
         type: 'object',
         properties: {
           success: { type: 'boolean', example: true },
-          message: { type: 'string', example: 'Pricing config updated' },
+          message: { type: 'string', example: 'Operation completed successfully' },
         },
       },
       User: {
@@ -723,7 +723,7 @@ const openapi = {
         summary: 'Create one pricing config item',
         description: 'Requires permission: pricing. price is required.',
         requestBody: body(ref('PricingRule'), { name: 'Car first hour', feeType: 'base_hour', vehicleType: 'car', price: 20 }),
-        responses: { 201: ok('Pricing item created'), ...configWriteResponses },
+        responses: { 201: ok('Pricing item created', ref('SuccessMessageResponse')), ...configWriteResponses },
       },
     },
     '/api/v1/service-pricing/config/{id}': {
@@ -733,14 +733,14 @@ const openapi = {
         description: 'Requires permission: pricing.',
         parameters: [idParam('id', 'pr_123')],
         requestBody: body(ref('PricingRule'), { price: 25, status: 'active' }),
-        responses: { 200: ok('Pricing item updated'), 404: error('Pricing config item not found'), ...configWriteResponses },
+        responses: { 200: ok('Pricing item updated', ref('SuccessMessageResponse')), 404: error('Pricing config item not found'), ...configWriteResponses },
       },
       delete: {
         tags: ['Service Pricing'],
         summary: 'Delete one pricing config item',
         description: 'Requires permission: pricing.',
         parameters: [idParam('id', 'pr_123')],
-        responses: { 200: ok('Pricing item deleted'), 404: error('Pricing config item not found'), ...configWriteResponses },
+        responses: { 200: ok('Pricing item deleted', ref('SuccessMessageResponse')), 404: error('Pricing config item not found'), ...configWriteResponses },
       },
     },
 
@@ -759,7 +759,7 @@ const openapi = {
         description: 'Requires permission: pricing. This setting is managed by authorized admin users.',
         parameters: [idParam('id', 'cash')],
         requestBody: body(ref('PaymentMethodUpdateRequest'), { isActive: true }),
-        responses: { 200: ok('Payment method updated'), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Method not found') },
+        responses: { 200: ok('Payment method updated', ref('SuccessMessageResponse')), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Method not found') },
       },
     },
     '/api/v1/payment-settings/channels': {
@@ -777,7 +777,7 @@ const openapi = {
         description: 'Requires permission: pricing. This setting is managed by authorized admin users.',
         parameters: [idParam('id', 'ch_kiosk')],
         requestBody: body(ref('ChannelMappingUpdateRequest'), { allowedMethods: ['qr', 'wallet'] }),
-        responses: { 200: ok('Channel mapping updated'), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Channel not found or invalid methods') },
+        responses: { 200: ok('Channel mapping updated', ref('SuccessMessageResponse')), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Channel not found or invalid methods') },
       },
     },
 
@@ -980,7 +980,7 @@ const openapi = {
         summary: 'Update system settings',
         description: 'Requires permission: settings.',
         requestBody: body({ type: 'object', additionalProperties: true }, { general: { systemName: 'Smart Carpark' } }),
-        responses: { 200: ok('System settings updated'), ...configWriteResponses },
+        responses: { 200: ok('System settings updated', ref('SuccessMessageResponse')), ...configWriteResponses },
       },
     },
     '/api/v1/system-settings/receipt': {
@@ -995,7 +995,7 @@ const openapi = {
         summary: 'Update receipt settings',
         description: 'Requires permission: settings.',
         requestBody: body({ type: 'object', additionalProperties: true }, { entryBill: { enabled: true } }),
-        responses: { 200: ok('Receipt settings updated'), ...configWriteResponses },
+        responses: { 200: ok('Receipt settings updated', ref('SuccessMessageResponse')), ...configWriteResponses },
       },
     },
     '/api/v1/system-settings/receipt/printer': {
