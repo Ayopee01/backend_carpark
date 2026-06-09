@@ -3,6 +3,7 @@ const { createId } = require('../store');
 const { prisma } = require('../../db/prisma');
 const { normalizePagination, buildMeta } = require('../../utils/pagination');
 const { calculateFee } = require('../../utils/pricing');
+const appEvents = require('../../utils/events');
 const { getConfig } = require('./config.repo');
 const { validatePaymentSelection } = require('./paymentSettings.repo');
 const defaults = require('../defaults');
@@ -13,6 +14,15 @@ function createHttpError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
+}
+
+function emitDashboardUpdated(reason, transaction) {
+  appEvents.emit('dashboard_updated', {
+    reason,
+    transactionId: transaction?.id || null,
+    plateNo: transaction?.plateNo || null,
+    at: new Date().toISOString(),
+  });
 }
 
 // Function แปลงค่าให้เป็น number ถ้าแปลงไม่ได้ให้คืนค่า null
@@ -362,6 +372,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
   });
   if (!saved) return null;
 
+  emitDashboardUpdated('payment_processed', saved);
   return toTransactionApi(saved, context);
 }
 
@@ -388,6 +399,7 @@ async function updateTransaction(id, updates) {
   });
 
   const context = await getTransactionContext();
+  emitDashboardUpdated('transaction_updated', saved);
   return toTransactionApi(saved, context);
 }
 
@@ -397,6 +409,7 @@ async function deleteTransaction(id) {
   const transaction = await getTransactionByIdOrPlateNo(id);
   if (!transaction) return false;
   await prisma.transaction.delete({ where: { id: transaction.id } });
+  emitDashboardUpdated('transaction_deleted', transaction);
   return true;
 }
 
@@ -423,6 +436,7 @@ async function createTransaction({ plateNo, vehicleType = 'car', serviceType = '
   });
 
   const context = await getTransactionContext();
+  emitDashboardUpdated('transaction_created', saved);
   return toTransactionApi(saved, context);
 }
 
@@ -489,7 +503,7 @@ async function createCameraTransaction({
     });
 
     if (existing) {
-      return prisma.transaction.update({
+      const updated = await prisma.transaction.update({
         where: { id: existing.id },
         data: {
           exitAt: capturedTime,
@@ -506,6 +520,8 @@ async function createCameraTransaction({
           },
         },
       });
+      emitDashboardUpdated('camera_transaction_updated', updated);
+      return updated;
     }
   }
 
@@ -534,6 +550,7 @@ async function createCameraTransaction({
     },
   });
 
+  emitDashboardUpdated('camera_transaction_created', saved);
   return saved;
 }
 

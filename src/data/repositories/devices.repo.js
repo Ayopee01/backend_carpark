@@ -338,7 +338,7 @@ async function verifyRegisteredDeviceToken(deviceId, token, allowedTypes = []) {
   return { ok: true, device: toSafeDevice(device) };
 }
 
-// Function อัปเดต heartbeat ของ registered device เพื่อบอกว่ายังออนไลน์และใช้งานอยู่
+// Function update heartbeat ของ registered device เพื่อบอกว่ายังออนไลน์และใช้งานอยู่
 async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) {
   let current = null;
   let updatedDevice = null;

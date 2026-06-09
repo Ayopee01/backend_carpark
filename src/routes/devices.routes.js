@@ -16,8 +16,8 @@ const {
 } = require('../data/repositories/kiosks.repo');
 const {
   deleteBarrierGate,
-  editBarrierGate,
   generateBarrierGateActivationCode,
+  updateBarrierGate,
 } = require('../data/repositories/barrierGates.repo');
 
 const router = express.Router();
@@ -102,7 +102,7 @@ async function syncRuntimeDevice(device, body = {}, action = 'update') {
       await deleteBarrierGate(deviceId);
       return;
     }
-    await editBarrierGate(deviceId, {
+    await updateBarrierGate(deviceId, {
       name: body.deviceName || body.name || device.deviceName,
       location: body.location || device.location,
       status: toRuntimeStatus(body.status || device.status),

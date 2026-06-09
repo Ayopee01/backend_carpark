@@ -1,13 +1,10 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
-const {
-  getPaymentAmount,
-  getTransactionPayments,
-  getTransactionRevenue,
-} = require('../utils/payments');
+const { listChannels } = require('../data/repositories/paymentSettings.repo');
+const { getPaymentAmount, getTransactionPayments, getTransactionRevenue } = require('../utils/payments');
 
 // Constant รายการช่องทางรับชำระเงินที่ใช้สรุปหน้า dashboard
-const CHANNELS = [
+const FALLBACK_CHANNELS = [
   {
     code: 'cashier',
     label: 'แคชเชียร์',

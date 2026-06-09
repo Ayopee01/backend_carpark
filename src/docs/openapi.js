@@ -525,6 +525,17 @@ const openapi = {
         responses: { 200: ok('Dashboard summary'), ...bearer403 },
       },
     },
+    '/api/v1/dashboard/events': {
+      get: {
+        tags: ['Dashboard'],
+        summary: 'Dashboard Server-Sent Events stream',
+        description: 'Requires permission: dashboard. Sends an initial dashboard_snapshot, periodic dashboard_summary events, ping keepalives, and dashboard_updated events after transaction changes.',
+        responses: {
+          200: { description: 'SSE stream' },
+          ...bearer403,
+        },
+      },
+    },
     '/api/v1/overview/summary': {
       get: {
         tags: ['Overview'],

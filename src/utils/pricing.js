@@ -20,13 +20,18 @@ function calculateModernFee(totalHours, diffMs, rules) {
   let totalAmount = 0;
 
   if (baseRule && totalHours > 0) {
-    const baseHours = Number(baseRule.baseHours || baseRule.hourEnd || 1);
-    totalAmount += Number(baseRule.price || 0);
+    const configuredBaseHours = Number(baseRule.baseHours || baseRule.hourEnd || 1);
+    const hoursBeforeNextRule = nextRule ? Math.max(0, Number(nextRule.hourStart || 2) - 1) : 0;
+    const baseHours = Math.max(configuredBaseHours, hoursBeforeNextRule, 1);
+    const chargedHours = Math.min(totalHours, baseHours);
+    const amount = chargedHours * Number(baseRule.price || 0);
+    totalAmount += amount;
     appliedRules.push({
       ruleId: baseRule.id,
       feeType: baseRule.feeType,
-      hours: Math.min(totalHours, baseHours),
-      price: Number(baseRule.price || 0),
+      hours: chargedHours,
+      pricePerHour: Number(baseRule.price || 0),
+      amount,
     });
   }
 

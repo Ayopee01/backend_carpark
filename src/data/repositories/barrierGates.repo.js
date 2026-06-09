@@ -2,13 +2,11 @@
 const crypto = require('crypto');
 const { getConfig, getConfigWithMeta, setConfig, updateConfig } = require('./config.repo');
 const {
-  activateRegisteredDevice,
   getDevicesConfig,
   getPendingActivationDeviceByCode,
-  updateRegisteredDeviceHeartbeat,
 } = require('./devices.repo');
 
-// ค่าคงที่สำหรับเก็บ Config ของ Barrier Gate และกำหนดเงื่อนไขเวลา Offline / Activation Code
+// Config ของ Barrier Gate
 const CONFIG_KEY = 'barrier_gates';
 const OFFLINE_AFTER_MINUTES = 5;
 const ACTIVATION_TTL_MS = 10 * 60 * 1000;
@@ -31,7 +29,7 @@ function createActivationCode() {
   return code;
 }
 
-// Function ดึง Config ของ Barrier Gate และรับประกันว่า barrierGates จะเป็น Array เสมอ
+// Function ดึง config ของ Barrier Gates โดย format ให้เป็น array เสมอ
 async function getBarrierGatesConfig() {
   const config = await getConfig(CONFIG_KEY, { barrierGates: [] });
   return {
@@ -40,7 +38,7 @@ async function getBarrierGatesConfig() {
   };
 }
 
-// Function ดึง Config ของ Barrier Gate สำหรับ admin update
+// Function ดึง config ของ Barrier Gates พร้อม metadata
 async function getBarrierGatesConfigWithMeta() {
   const config = await getConfigWithMeta(CONFIG_KEY, { barrierGates: [] });
   return {
@@ -49,12 +47,16 @@ async function getBarrierGatesConfigWithMeta() {
   };
 }
 
-// Function บันทึกรายการ Barrier Gate ทั้งหมดกลับเข้า Config
+// Function บันทึกรายการ Barrier Gate ลง Config
 async function saveBarrierGates(barrierGates) {
   return setConfig(CONFIG_KEY, { barrierGates });
 }
 
-// Function คำนวณสถานะใช้งานจริงของ Barrier Gate จากค่า status และเวลา lastSeen
+function findBarrierGateIndex(barrierGates, deviceId) {
+  return barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
+}
+
+// Function คำนวณ runtime status ของ Barrier Gate จาก status และ lastSeen
 function getBarrierGateRuntimeStatus(barrierGate) {
   if (!barrierGate) return null;
   if (barrierGate.status === 'maintenance') return 'maintenance';
@@ -66,7 +68,7 @@ function getBarrierGateRuntimeStatus(barrierGate) {
   return diffMinutes > OFFLINE_AFTER_MINUTES ? 'offline' : 'online';
 }
 
-// Function เพิ่มสถานะ Runtime ล่าสุดเข้าไปในข้อมูล Barrier Gate ก่อนส่งออก
+// Function เพิ่ม runtime status ให้กับข้อมูล Barrier Gate
 function withRuntimeStatus(barrierGate) {
   if (!barrierGate) return null;
   return {
@@ -75,14 +77,18 @@ function withRuntimeStatus(barrierGate) {
   };
 }
 
-// Function ค้นหา Barrier Gate จาก deviceId และคืนค่าพร้อมสถานะ Runtime
+// Function ค้นหา Barrier Gate ตาม deviceId และเพิ่ม runtime status
 async function searchBarrierGate(deviceId) {
   if (!deviceId) return null;
   const { barrierGates } = await getBarrierGatesConfig();
   return withRuntimeStatus(barrierGates.find((barrierGate) => barrierGate.deviceId === deviceId) || null);
 }
 
-// Function สร้าง Activation Code สำหรับลงทะเบียน Barrier Gate ใหม่ พร้อมกำหนดวันหมดอายุ
+async function getBarrierGate(deviceId) {
+  return searchBarrierGate(deviceId);
+}
+
+// Function สร้าง Activation Code และ deviceId สำหรับ Barrier Gate
 async function generateBarrierGateActivationCode(details = {}) {
   cleanupExpiredActivationCodes();
   const [{ barrierGates }, devicesConfig] = await Promise.all([
@@ -107,9 +113,9 @@ async function generateBarrierGateActivationCode(details = {}) {
 }
 
 // Function เปิดใช้งาน Barrier Gate ด้วย Activation Code และบันทึกเป็น Registered Device
-async function activateBarrierGate(code) {
+async function resolveBarrierGateActivationCode(code) {
   const normalizedCode = code === undefined || code === null ? '' : String(code).trim();
-  if (!normalizedCode) return { success: false, message: 'Invalid or expired code' };
+  if (!normalizedCode) return null;
 
   cleanupExpiredActivationCodes();
   let data = activationCodes.get(normalizedCode);
@@ -126,42 +132,54 @@ async function activateBarrierGate(code) {
     }
   }
 
-  if (!data) return { success: false, message: 'Invalid or expired code' };
+  if (!data) return null;
   if (data.expiresAt && data.expiresAt < new Date()) {
     activationCodes.delete(normalizedCode);
-    return { success: false, message: 'Code expired' };
+    return null;
   }
 
-  const registered = await activateRegisteredDevice(data.deviceId, {
-    name: data.name,
-    location: data.location,
-  });
-  if (!registered?.deviceToken) {
-    return { success: false, message: 'Registered device is missing or expired' };
-  }
+  return { ...data, code: normalizedCode };
+}
 
-  const barrierGate = await updateBarrierGateStatus(data.deviceId, {
-    name: data.name,
-    location: data.location,
-  });
-
-  activationCodes.delete(normalizedCode);
-  return {
-    success: true,
-    message: 'Barrier Gate activation successful',
-    deviceToken: registered?.deviceToken,
-    deviceId: registered.device.deviceId,
-    deviceType: registered.device.deviceType,
-    deviceName: registered.device.deviceName,
-    location: registered.device.location,
-    status: registered.device.status,
-  };
+function deleteBarrierGateActivationCode(code) {
+  if (!code) return;
+  activationCodes.delete(String(code).trim());
 }
 
 // Function แก้ไขข้อมูล Barrier Gate ตาม deviceId เช่น name, location, ip
-async function editBarrierGate(deviceId, details = {}) {
+async function createBarrierGate(data = {}) {
+  const deviceId = data.deviceId;
+  if (!deviceId) return { success: false, message: 'deviceId is required' };
+
   const { barrierGates } = await getBarrierGatesConfig();
-  const index = barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
+  const index = findBarrierGateIndex(barrierGates, deviceId);
+  if (index !== -1) return { success: false, message: 'Barrier Gate already exists' };
+
+  const now = new Date().toISOString();
+  const barrierGate = {
+    deviceId,
+    deviceType: 'barrier_gate',
+    name: data.name || data.deviceName || `Barrier Gate ${deviceId}`,
+    location: data.location || 'Unknown',
+    ip: data.ip || '0.0.0.0',
+    status: data.status || 'online',
+    firstSeen: data.firstSeen || now,
+    lastSeen: data.lastSeen || now,
+  };
+
+  const saved = await saveBarrierGates([...barrierGates, barrierGate]);
+  return {
+    success: true,
+    barrierGate: {
+      ...withRuntimeStatus(barrierGate),
+      configUpdatedAt: saved.configUpdatedAt,
+    },
+  };
+}
+
+async function updateBarrierGate(deviceId, details = {}) {
+  const { barrierGates } = await getBarrierGatesConfig();
+  const index = findBarrierGateIndex(barrierGates, deviceId);
   if (index === -1) return { success: false, message: 'Barrier Gate not found' };
 
   barrierGates[index] = {
@@ -180,10 +198,12 @@ async function editBarrierGate(deviceId, details = {}) {
   };
 }
 
+const editBarrierGate = updateBarrierGate;
+
 // Function ลบ Barrier Gate ออกจาก Config ตาม deviceId
 async function deleteBarrierGate(deviceId) {
   const { barrierGates } = await getBarrierGatesConfig();
-  const index = barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
+  const index = findBarrierGateIndex(barrierGates, deviceId);
   if (index === -1) return { success: false, message: 'Barrier Gate not found' };
 
   const [deleted] = barrierGates.splice(index, 1);
@@ -199,13 +219,13 @@ async function deleteBarrierGate(deviceId) {
 }
 
 // Function อัปเดต Heartbeat/สถานะของ Barrier Gate หรือสร้างข้อมูลใหม่เมื่อยังไม่เคยมี deviceId นี้
-async function updateBarrierGateStatus(deviceId, details = {}) {
+async function upsertBarrierGateHeartbeatRecord(deviceId, details = {}) {
   const now = new Date().toISOString();
   let barrierGate;
 
   await updateConfig(CONFIG_KEY, (config = {}) => {
     const barrierGates = Array.isArray(config.barrierGates) ? [...config.barrierGates] : [];
-    const index = barrierGates.findIndex((item) => item.deviceId === deviceId);
+    const index = findBarrierGateIndex(barrierGates, deviceId);
 
     if (index === -1) {
       barrierGate = {
@@ -236,13 +256,10 @@ async function updateBarrierGateStatus(deviceId, details = {}) {
     return { ...config, barrierGates };
   }, { barrierGates: [] });
 
-  await updateRegisteredDeviceHeartbeat(deviceId, {
-    name: barrierGate.name,
-    location: barrierGate.location,
-    ip: barrierGate.ip,
-  });
   return barrierGate;
 }
+
+const updateBarrierGateStatus = upsertBarrierGateHeartbeatRecord;
 
 // Function แสดงรายการ Barrier Gate ทั้งหมด พร้อมคำนวณสถานะ Runtime ล่าสุดให้แต่ละตัว
 async function listAllBarrierGates() {
@@ -260,13 +277,18 @@ async function listAllBarrierGatesWithMeta() {
 }
 
 module.exports = {
-  activateBarrierGate,
+  createBarrierGate,
+  deleteBarrierGateActivationCode,
   deleteBarrierGate,
   editBarrierGate,
   generateBarrierGateActivationCode,
+  getBarrierGate,
   getBarrierGateRuntimeStatus,
   listAllBarrierGates,
   listAllBarrierGatesWithMeta,
+  resolveBarrierGateActivationCode,
   searchBarrierGate,
+  updateBarrierGate,
   updateBarrierGateStatus,
+  upsertBarrierGateHeartbeatRecord,
 };

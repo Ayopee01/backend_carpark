@@ -42,6 +42,42 @@ function toAdminPaymentResponse(transaction) {
   };
 }
 
+function toTransactionListItem(transaction) {
+  const latestPayment = Array.isArray(transaction.payments) && transaction.payments.length
+    ? transaction.payments[transaction.payments.length - 1]
+    : null;
+
+  return {
+    id: transaction.id,
+    billNo: transaction.billNo,
+    plateNo: transaction.plateNo,
+    vehicleType: transaction.vehicleType,
+    status: transaction.status,
+    entryAt: transaction.entryAt,
+    exitAt: transaction.exitAt,
+    exitTimeLimit: transaction.exitTimeLimit,
+    isOverstay: transaction.isOverstay,
+    amount: {
+      net: transaction.netAmount,
+      paid: transaction.totalPaid,
+      remaining: transaction.remainingAmount,
+    },
+    duration: {
+      display: transaction.serviceDisplay,
+      hours: transaction.durationHour,
+      totalMinutes: transaction.totalMinutes,
+    },
+    latestPayment: latestPayment ? {
+      paymentId: latestPayment.id,
+      method: latestPayment.method,
+      channel: latestPayment.channel,
+      paidAmount: latestPayment.paidAmount,
+      paidAt: latestPayment.paidAt,
+    } : null,
+    updatedAt: transaction.updatedAt,
+  };
+}
+
 // Apply permission check from members.permissions.
 router.use(authorize('transactions'));
 
@@ -62,14 +98,11 @@ router.get('/', async (req, res, next) => {
     });
 
     res.json({
-      title: 'ตรวจสอบและชำระเงิน',
-      subtitle: 'แอดมินบริการ',
+      data: result.data.map(toTransactionListItem),
       meta: {
-        totalFound: result.meta.total,
-        realtime: true
+        ...result.meta,
+        realtime: true,
       },
-
-      ...result
     });
   } catch (err) {
     next(err);

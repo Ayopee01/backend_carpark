@@ -7,7 +7,7 @@ const {
 const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceAuth');
 const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const { activateKiosk } = require('../data/repositories/kiosks.repo');
-const { activateBarrierGate } = require('../data/repositories/barrierGates.repo');
+const { activateBarrierGate } = require('../services/barrierGates.service');
 
 const router = express.Router();
 
