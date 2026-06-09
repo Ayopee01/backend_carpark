@@ -107,7 +107,9 @@ async function getDashboardSummary(currentUserId = 'u1') {
     }
   ];
 
-  const channelBreakdown = CHANNELS.map((channel) => {
+  const channels = await listChannels() || FALLBACK_CHANNELS;
+  
+  const channelBreakdown = channels.map((channel) => {
     const filteredPayments = paidPayments.filter((payment) => {
       return payment.channel === channel.code;
     });
