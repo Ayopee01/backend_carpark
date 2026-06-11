@@ -30,6 +30,27 @@ test('uses base_hour as the starting amount for the base window', () => {
   ]);
 });
 
+test('uses base_hour as the hourly fallback when no next_hour rule exists', () => {
+  const result = calculateFee(
+    '2026-05-25T03:30:00.000Z',
+    '2026-06-11T09:11:02.151Z',
+    [
+      { id: 'pr_car_base_hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 30, status: 'active' },
+    ],
+    { vehicleType: 'car', serviceType: 'parking' }
+  );
+
+  assert.equal(result.totalHours, 414);
+  assert.equal(result.totalAmount, 12420);
+  assert.deepEqual(result.appliedRules.map((rule) => ({
+    feeType: rule.feeType,
+    hours: rule.hours,
+    amount: rule.amount,
+  })), [
+    { feeType: 'base_hour', hours: 414, amount: 12420 },
+  ]);
+});
+
 test('adds next_hour price from the configured start hour', () => {
   const result = calculateFee(
     '2026-05-01T08:00:00+07:00',
