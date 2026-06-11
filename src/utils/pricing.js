@@ -1,52 +1,82 @@
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-// Function ตรวจสอบว่า rule เปิดใช้งานและตรงกับประเภทรถหรือไม่
 function isActiveVehicleRule(rule, vehicleType) {
   return rule.status === 'active' && (!rule.vehicleType || rule.vehicleType === vehicleType);
 }
 
-// Function คัดเฉพาะ pricing rules ที่ active และใช้กับประเภทรถที่ส่งเข้ามา
 function getActiveRules(pricingRules = [], vehicleType = 'car') {
   return pricingRules.filter((rule) => isActiveVehicleRule(rule, vehicleType));
 }
 
-// Function คำนวณค่าจอดตาม rule รูปแบบใหม่ เช่น ชั่วโมงแรก ชั่วโมงถัดไป และค้างคืน
+function toFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function getRulePrice(rule) {
+  return toFiniteNumber(rule?.price, 0);
+}
+
+function getBaseHours(rule) {
+  return Math.max(1, toFiniteNumber(rule?.baseHours ?? rule?.hourEnd, 1));
+}
+
+function getHourEnd(rule) {
+  if (rule.hourEnd === null || rule.hourEnd === undefined || rule.hourEnd === 999) return null;
+  return toFiniteNumber(rule.hourEnd, null);
+}
+
+function getPeriodEnd(rule) {
+  if (rule.periodEnd === null || rule.periodEnd === undefined || rule.periodEnd === 999) return null;
+  return toFiniteNumber(rule.periodEnd, null);
+}
+
 function calculateModernFee(totalHours, diffMs, rules) {
   const baseRule = rules.find((rule) => rule.feeType === 'base_hour');
-  const nextRule = rules.find((rule) => rule.feeType === 'next_hour');
+  const nextRules = rules
+    .filter((rule) => rule.feeType === 'next_hour')
+    .sort((a, b) => toFiniteNumber(a.hourStart, 0) - toFiniteNumber(b.hourStart, 0));
   const overnightRules = rules.filter((rule) => String(rule.feeType || '').startsWith('overnight_'));
   const appliedRules = [];
   let totalAmount = 0;
+  const baseHours = baseRule ? getBaseHours(baseRule) : 0;
 
   if (baseRule && totalHours > 0) {
-    const configuredBaseHours = Number(baseRule.baseHours || baseRule.hourEnd || 1);
-    const hoursBeforeNextRule = nextRule ? Math.max(0, Number(nextRule.hourStart || 2) - 1) : 0;
-    const baseHours = Math.max(configuredBaseHours, hoursBeforeNextRule, 1);
     const chargedHours = Math.min(totalHours, baseHours);
-    const amount = chargedHours * Number(baseRule.price || 0);
+    const amount = getRulePrice(baseRule);
     totalAmount += amount;
     appliedRules.push({
       ruleId: baseRule.id,
       feeType: baseRule.feeType,
       hours: chargedHours,
-      pricePerHour: Number(baseRule.price || 0),
+      price: getRulePrice(baseRule),
       amount,
     });
   }
 
-  if (nextRule && totalHours >= Number(nextRule.hourStart || 2)) {
-    const chargeableHours = totalHours - Number(nextRule.hourStart || 2) + 1;
-    const amount = chargeableHours * Number(nextRule.price || 0);
+  nextRules.forEach((rule) => {
+    const startHour = Math.max(1, toFiniteNumber(rule.hourStart, baseHours + 1 || 2));
+    const endHour = getHourEnd(rule);
+    if (totalHours < startHour) return;
+
+    const lastChargedHour = endHour === null ? totalHours : Math.min(totalHours, endHour);
+    const chargeableHours = Math.max(0, lastChargedHour - startHour + 1);
+    if (chargeableHours <= 0) return;
+
+    const pricePerHour = getRulePrice(rule);
+    const amount = chargeableHours * pricePerHour;
     totalAmount += amount;
     appliedRules.push({
-      ruleId: nextRule.id,
-      feeType: nextRule.feeType,
+      ruleId: rule.id,
+      feeType: rule.feeType,
       hours: chargeableHours,
-      pricePerHour: Number(nextRule.price || 0),
+      hourStart: startHour,
+      hourEnd: endHour,
+      pricePerHour,
       amount,
     });
-  }
+  });
 
   let remainingDays = Math.max(0, Math.ceil(diffMs / DAY_MS) - 1);
   const periodOrder = [
@@ -60,18 +90,23 @@ function calculateModernFee(totalHours, diffMs, rules) {
     const rule = overnightRules.find((item) => (item.periodUnit || String(item.feeType).replace('overnight_', '')) === unit);
     if (!rule || remainingDays <= 0) return;
 
-    const units = Math.floor(remainingDays / days);
-    if (units <= 0) return;
+    const availableUnits = Math.floor(remainingDays / days);
+    const periodStart = Math.max(1, toFiniteNumber(rule.periodStart, 1));
+    const periodEnd = getPeriodEnd(rule);
+    const chargeableUnits = periodEnd === null
+      ? availableUnits
+      : Math.min(availableUnits, periodEnd);
+    if (chargeableUnits < periodStart) return;
 
-    const amount = units * Number(rule.price || 0);
+    const amount = chargeableUnits * getRulePrice(rule);
     totalAmount += amount;
-    remainingDays -= units * days;
+    remainingDays -= chargeableUnits * days;
     appliedRules.push({
       ruleId: rule.id,
       feeType: rule.feeType,
       periodUnit: unit,
-      units,
-      pricePerUnit: Number(rule.price || 0),
+      units: chargeableUnits,
+      pricePerUnit: getRulePrice(rule),
       amount,
     });
   });
@@ -79,7 +114,6 @@ function calculateModernFee(totalHours, diffMs, rules) {
   return { totalAmount, appliedRules };
 }
 
-// Function คำนวณค่าจอดตาม rule เดิมแบบช่วงชั่วโมง พร้อมเก็บชั่วโมงที่ยังไม่มี rule
 function calculateLegacyFee(totalHours, relevantRules) {
   let totalAmount = 0;
   const appliedRules = [];
@@ -108,7 +142,6 @@ function calculateLegacyFee(totalHours, relevantRules) {
   return { totalAmount, appliedRules, missingHours };
 }
 
-// Function calculate parking fee from current service-pricing config rules.
 function calculateFee(entryAt, exitAt, pricingRules = [], { vehicleType = 'car', serviceType = 'parking' } = {}) {
   const start = new Date(entryAt);
   const end = exitAt ? new Date(exitAt) : new Date();
@@ -153,5 +186,4 @@ function calculateFee(entryAt, exitAt, pricingRules = [], { vehicleType = 'car',
   };
 }
 
-// Export Functions
 module.exports = { calculateFee };

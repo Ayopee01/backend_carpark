@@ -13,9 +13,31 @@ function normalizeNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function normalizeNullableNumber(value, fallback = null) {
+  if (value === null || value === undefined) return fallback;
+  return normalizeNumber(value, fallback);
+}
+
+function defaultHourStart(feeType) {
+  return feeType === 'next_hour' ? 2 : 1;
+}
+
+function defaultHourEnd(feeType, baseHours) {
+  if (feeType === 'next_hour') return null;
+  return baseHours;
+}
+
+function defaultPeriodUnit(feeType) {
+  return String(feeType || '').startsWith('overnight_')
+    ? String(feeType).replace('overnight_', '')
+    : null;
+}
+
 function normalizePricingItem(payload = {}, current = {}) {
   const feeType = payload.feeType || current.feeType || 'base_hour';
   const vehicleType = payload.vehicleType || current.vehicleType || 'car';
+  const baseHours = normalizeNumber(payload.baseHours ?? current.baseHours, 1);
+  const fallbackHourEnd = defaultHourEnd(feeType, baseHours);
 
   return {
     ...current,
@@ -25,12 +47,14 @@ function normalizePricingItem(payload = {}, current = {}) {
     feeType: ALLOWED_FEE_TYPES.includes(feeType) ? feeType : 'base_hour',
     vehicleType: ALLOWED_VEHICLE_TYPES.includes(vehicleType) ? vehicleType : 'car',
     price: normalizeNumber(payload.price ?? current.price, 0),
-    baseHours: normalizeNumber(payload.baseHours ?? current.baseHours, 1),
-    hourStart: normalizeNumber(payload.hourStart ?? current.hourStart, 1),
-    hourEnd: payload.hourEnd === null ? null : normalizeNumber(payload.hourEnd ?? current.hourEnd, 1),
-    periodUnit: payload.periodUnit || current.periodUnit || null,
+    baseHours,
+    hourStart: normalizeNumber(payload.hourStart ?? current.hourStart, defaultHourStart(feeType)),
+    hourEnd: payload.hourEnd === null
+      ? null
+      : normalizeNullableNumber(payload.hourEnd ?? current.hourEnd, fallbackHourEnd),
+    periodUnit: payload.periodUnit || current.periodUnit || defaultPeriodUnit(feeType),
     periodStart: normalizeNumber(payload.periodStart ?? current.periodStart, 1),
-    periodEnd: payload.periodEnd === null ? null : normalizeNumber(payload.periodEnd ?? current.periodEnd, 1),
+    periodEnd: payload.periodEnd === null ? null : normalizeNullableNumber(payload.periodEnd ?? current.periodEnd, null),
     status: payload.status || current.status || 'active',
   };
 }
