@@ -238,7 +238,6 @@ const openapi = {
           gateId: { type: 'string', example: 'GATE-A' },
           direction: { type: 'string', enum: ['IN', 'OUT'], example: 'IN' },
           capturedAt: { type: 'string', format: 'date-time', example: '2026-05-25T10:30:00+07:00' },
-          confidence: { type: 'number', example: 0.92 },
           imageUrl: { type: 'string', example: 'https://example.com/plate.jpg' },
         },
       },
@@ -584,9 +583,9 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Create or update transaction from camera/LPR body',
-        description: 'Admin/camera integration flow. Requires Bearer token and transactions permission. IN events create pending transactions. OUT events update the latest open transaction for the plate when possible. Duplicate camera events within 10 seconds are ignored.',
+        description: 'Admin/camera integration flow. Requires Bearer token and transactions permission. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events update the latest open transaction for the plate when possible. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
         requestBody: body(ref('CameraTransactionRequest')),
-        responses: { 200: ok('Duplicate or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
+        responses: { 200: ok('Duplicate, active transaction, or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
       },
     },
     '/api/v1/transactions/{id}': {

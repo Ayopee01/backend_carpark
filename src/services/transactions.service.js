@@ -1,12 +1,13 @@
 const {
   createCameraTransaction,
   findDuplicateCameraTransaction,
+  findOpenTransactionByPlateNo,
 } = require('../data/repositories/transactions.repo');
 
 const DUPLICATE_WINDOW_MS = 10 * 1000;
 
 // Function สร้าง response มาตรฐานสำหรับ gate/camera integration
-function toGateResponse(transaction, action, message, success) {
+function toGateResponse(transaction, action, message, success, direction = transaction.receipt?.camera?.direction) {
   return {
     success,
     action,
@@ -14,7 +15,7 @@ function toGateResponse(transaction, action, message, success) {
     data: {
       transactionId: transaction.id,
       plateNo: transaction.plateNo,
-      direction: transaction.receipt?.camera?.direction,
+      direction,
       status: transaction.status,
     },
   };
@@ -33,6 +34,22 @@ async function createTransactionFromCamera(dto) {
         true
       ),
     };
+  }
+
+  if (dto.direction === 'IN') {
+    const activeTransaction = await findOpenTransactionByPlateNo(dto.plateNo);
+    if (activeTransaction) {
+      return {
+        statusCode: 200,
+        body: toGateResponse(
+          activeTransaction,
+          'IGNORE_ACTIVE_TRANSACTION',
+          'ทะเบียนนี้มีรายการจอดที่ยังไม่เสร็จสิ้นอยู่แล้ว',
+          true,
+          dto.direction
+        ),
+      };
+    }
   }
 
   const transaction = await createCameraTransaction({ ...dto, status: 'pending' });

@@ -32,10 +32,6 @@ function validateCameraTransactionPayload(payload = {}) {
     errors.push({ field: 'capturedAt', message: 'capturedAt must be a valid date time' });
   }
 
-  if (payload.confidence !== undefined && payload.confidence !== null && !Number.isFinite(Number(payload.confidence))) {
-    errors.push({ field: 'confidence', message: 'confidence must be a number' });
-  }
-
   if (payload.imageUrl !== undefined && payload.imageUrl !== null && typeof payload.imageUrl !== 'string') {
     errors.push({ field: 'imageUrl', message: 'imageUrl must be a string' });
   }

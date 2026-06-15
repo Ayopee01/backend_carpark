@@ -476,6 +476,20 @@ async function findDuplicateCameraTransaction({ plateNo, cameraId, direction, ca
   }) || null;
 }
 
+// Find the latest transaction that has not reached a terminal status for a plate.
+async function findOpenTransactionByPlateNo(plateNo) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) return null;
+
+  return prisma.transaction.findFirst({
+    where: {
+      plateNo: normalizedPlateNo,
+      status: { notIn: ['completed', 'cancelled'] },
+    },
+    orderBy: { entryAt: 'desc' },
+  });
+}
+
 // Function create transaction from LPR/camera body payload.
 async function createCameraTransaction({
   plateNo,
@@ -484,7 +498,6 @@ async function createCameraTransaction({
   gateId,
   direction,
   capturedAt,
-  confidence,
   imageUrl,
   status,
 }) {
@@ -494,13 +507,7 @@ async function createCameraTransaction({
   const capturedTime = capturedAt instanceof Date ? capturedAt : new Date(capturedAt || Date.now());
 
   if (direction === 'OUT') {
-    const existing = await prisma.transaction.findFirst({
-      where: {
-        plateNo: normalizedPlateNo,
-        status: { notIn: ['completed', 'cancelled'] },
-      },
-      orderBy: { entryAt: 'desc' },
-    });
+    const existing = await findOpenTransactionByPlateNo(normalizedPlateNo);
 
     if (existing) {
       const updated = await prisma.transaction.update({
@@ -514,7 +521,6 @@ async function createCameraTransaction({
               gateId,
               direction,
               capturedAt: capturedTime.toISOString(),
-              ...(confidence !== undefined ? { confidence } : {}),
               ...(imageUrl ? { imageUrl } : {}),
             },
           },
@@ -522,6 +528,13 @@ async function createCameraTransaction({
       });
       emitDashboardUpdated('camera_transaction_updated', updated);
       return updated;
+    }
+  }
+
+  if (direction === 'IN') {
+    const existing = await findOpenTransactionByPlateNo(normalizedPlateNo);
+    if (existing) {
+      throw createHttpError(409, 'An active transaction already exists for this plate');
     }
   }
 
@@ -543,7 +556,6 @@ async function createCameraTransaction({
           gateId,
           direction,
           capturedAt: capturedTime.toISOString(),
-          ...(confidence !== undefined ? { confidence } : {}),
           ...(imageUrl ? { imageUrl } : {}),
         },
       },
@@ -567,6 +579,7 @@ module.exports = {
   createTransaction,
   createCameraTransaction,
   findDuplicateCameraTransaction,
+  findOpenTransactionByPlateNo,
   normalizePlateNo,
   normalizeVehicleType,
   toTransactionApi

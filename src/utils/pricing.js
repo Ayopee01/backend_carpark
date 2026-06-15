@@ -32,6 +32,11 @@ function getPeriodEnd(rule) {
   return toFiniteNumber(rule.periodEnd, null);
 }
 
+function isFlatOvernightRule(rule) {
+  const mode = String(rule.chargeMode || rule.calculationMode || rule.mode || '').toLowerCase();
+  return ['daily_flat', 'flat_day', 'flat', 'replace'].includes(mode);
+}
+
 function calculateModernFee(totalHours, diffMs, rules) {
   const baseRule = rules.find((rule) => rule.feeType === 'base_hour');
   const nextRules = rules
@@ -40,6 +45,7 @@ function calculateModernFee(totalHours, diffMs, rules) {
   const overnightRules = rules.filter((rule) => String(rule.feeType || '').startsWith('overnight_'));
   const appliedRules = [];
   let totalAmount = 0;
+  let overnightFlatAmount = null;
   const baseHours = baseRule ? getBaseHours(baseRule) : 0;
 
   if (baseRule && totalHours > 0) {
@@ -106,19 +112,27 @@ function calculateModernFee(totalHours, diffMs, rules) {
     if (chargeableUnits < periodStart) return;
 
     const amount = chargeableUnits * getRulePrice(rule);
-    totalAmount += amount;
+    if (isFlatOvernightRule(rule)) {
+      overnightFlatAmount = (overnightFlatAmount || 0) + amount;
+    } else {
+      totalAmount += amount;
+    }
     remainingDays -= chargeableUnits * days;
     appliedRules.push({
       ruleId: rule.id,
       feeType: rule.feeType,
       periodUnit: unit,
       units: chargeableUnits,
+      chargeMode: isFlatOvernightRule(rule) ? 'daily_flat' : 'additive',
       pricePerUnit: getRulePrice(rule),
       amount,
     });
   });
 
-  return { totalAmount, appliedRules };
+  return {
+    totalAmount: overnightFlatAmount === null ? totalAmount : overnightFlatAmount,
+    appliedRules,
+  };
 }
 
 function calculateLegacyFee(totalHours, relevantRules) {

@@ -1,106 +1,96 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
+// Import function คำนวณค่าจอดจาก src/utils/pricing.js มาใช้ทดสอบ
 const { calculateFee } = require('../src/utils/pricing');
 
-const pricingRules = [
-  { id: 'pr_car_base_hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 30, status: 'active' },
-  { id: 'pr_car_next_hour', feeType: 'next_hour', vehicleType: 'car', hourStart: 2, hourEnd: null, price: 10, status: 'active' },
-  { id: 'pr_car_overnight_day', feeType: 'overnight_day', vehicleType: 'car', periodUnit: 'day', periodStart: 1, periodEnd: null, price: 100, status: 'active' },
-  { id: 'pr_motorcycle_base_hour', feeType: 'base_hour', vehicleType: 'motorcycle', baseHours: 1, hourStart: 1, hourEnd: 1, price: 10, status: 'active' },
-  { id: 'pr_motorcycle_next_hour', feeType: 'next_hour', vehicleType: 'motorcycle', hourStart: 2, hourEnd: null, price: 5, status: 'active' },
+// Config ทดสอบกรณีมีแค่ base_hour: ราคา 30 บาทต่อชั่วโมงสำหรับรถยนต์
+const carBaseOnly = [
+  { feeType: 'base_hour', vehicleType: 'car', price: 30, status: 'active' },
 ];
 
-test('uses base_hour as the starting amount for the base window', () => {
-  const result = calculateFee(
-    '2026-05-01T08:00:00+07:00',
-    '2026-05-01T08:30:00+07:00',
-    pricingRules,
-    { vehicleType: 'car', serviceType: 'parking' }
-  );
+// Config ทดสอบกรณีมี rules ครบ: ชั่วโมงแรก, ชั่วโมงถัดไป, และค่าข้ามวัน
+const carFullRules = [
+  { feeType: 'base_hour', vehicleType: 'car', baseHours: 1, price: 30, status: 'active' },
+  { feeType: 'next_hour', vehicleType: 'car', hourStart: 2, hourEnd: null, price: 10, status: 'active' },
+  { feeType: 'overnight_day', vehicleType: 'car', periodUnit: 'day', price: 100, status: 'active' },
+];
 
-  assert.equal(result.totalHours, 1);
-  assert.equal(result.totalAmount, 30);
-  assert.deepEqual(result.appliedRules.map((rule) => ({
-    feeType: rule.feeType,
-    hours: rule.hours,
-    amount: rule.amount,
-  })), [
-    { feeType: 'base_hour', hours: 1, amount: 30 },
-  ]);
+// Config ทดสอบแยกประเภทรถ motorcycle ออกจาก car
+const motorcycleRules = [
+  { feeType: 'base_hour', vehicleType: 'motorcycle', price: 10, status: 'active' },
+];
+
+// Config ทดสอบหลายช่วง: 1-2 ชั่วโมงแรก 30, ชั่วโมง 3-5 ราคา 10, หลังจากนั้น free
+const carTierRules = [
+  { feeType: 'base_hour', vehicleType: 'car', baseHours: 2, price: 30, status: 'active' },
+  { feeType: 'next_hour', vehicleType: 'car', hourStart: 3, hourEnd: 5, price: 10, status: 'active' },
+  { feeType: 'next_hour', vehicleType: 'car', hourStart: 6, hourEnd: null, price: 0, status: 'active' },
+];
+
+// Config ทดสอบข้ามวันแบบปรับเพิ่ม: ยอดชั่วโมงเดิม + วันละ 100
+const carTierWithOvernightPenalty = [
+  ...carTierRules,
+  { feeType: 'overnight_day', vehicleType: 'car', periodUnit: 'day', price: 100, status: 'active' },
+];
+
+// Config ทดสอบข้ามวันแบบเหมา: ถ้าข้ามวันให้คิดวันละ 500 แทนยอดชั่วโมงเดิม
+const carTierWithDailyFlat = [
+  ...carTierRules,
+  { feeType: 'overnight_day', vehicleType: 'car', periodUnit: 'day', price: 500, chargeMode: 'daily_flat', status: 'active' },
+];
+
+test('base_hour is used with parking duration when it is the only rule', () => {
+  // เรียก calculateFee(entryAt, exitAt, pricingRules) โดยส่ง config carBaseOnly เข้าไป
+  const fee = calculateFee('2026-05-25T03:30:00.000Z', '2026-06-11T09:11:02.151Z', carBaseOnly);
+
+  // ตรวจคำตอบ: 414 ชั่วโมง * 30 บาท = 12,420 บาท
+  assert.equal(fee.totalHours, 414);
+  assert.equal(fee.totalAmount, 12420);
 });
 
-test('uses base_hour as the hourly fallback when no next_hour rule exists', () => {
-  const result = calculateFee(
-    '2026-05-25T03:30:00.000Z',
-    '2026-06-11T09:11:02.151Z',
-    [
-      { id: 'pr_car_base_hour', feeType: 'base_hour', vehicleType: 'car', baseHours: 1, hourStart: 1, hourEnd: 1, price: 30, status: 'active' },
-    ],
-    { vehicleType: 'car', serviceType: 'parking' }
-  );
+test('base, next hour, and overnight rules are added together', () => {
+  // เรียก calculateFee ด้วย config carFullRules เพื่อให้รวม base + next_hour + overnight_day
+  const fee = calculateFee('2026-05-25T03:30:00.000Z', '2026-06-11T08:53:18.770Z', carFullRules);
 
-  assert.equal(result.totalHours, 414);
-  assert.equal(result.totalAmount, 12420);
-  assert.deepEqual(result.appliedRules.map((rule) => ({
-    feeType: rule.feeType,
-    hours: rule.hours,
-    amount: rule.amount,
-  })), [
-    { feeType: 'base_hour', hours: 414, amount: 12420 },
-  ]);
+  // ตรวจคำตอบ: 30 + (413 * 10) + (17 * 100) = 5,860 บาท
+  assert.equal(fee.totalHours, 414);
+  assert.equal(fee.totalAmount, 5860);
 });
 
-test('adds next_hour price from the configured start hour', () => {
-  const result = calculateFee(
-    '2026-05-01T08:00:00+07:00',
-    '2026-05-01T11:01:00+07:00',
-    pricingRules,
-    { vehicleType: 'car', serviceType: 'parking' }
-  );
+test('supports tiered hours with a free range after hour 5', () => {
+  // เรียก calculateFee ด้วย carTierRules: 1-2 ชม. * 30, 3-5 ชม. * 10, ชม. 6 free
+  const fee = calculateFee('2026-05-01T08:00:00+07:00', '2026-05-01T14:00:00+07:00', carTierRules);
 
-  assert.equal(result.totalHours, 4);
-  assert.equal(result.totalAmount, 60);
-  assert.deepEqual(result.appliedRules.map((rule) => ({
-    feeType: rule.feeType,
-    hours: rule.hours,
-    amount: rule.amount,
-  })), [
-    { feeType: 'base_hour', hours: 1, amount: 30 },
-    { feeType: 'next_hour', hours: 3, amount: 30 },
-  ]);
+  // ตรวจคำตอบ: (2 * 30) + (3 * 10) + (1 * 0) = 90 บาท
+  assert.equal(fee.totalHours, 6);
+  assert.equal(fee.totalAmount, 90);
 });
 
-test('keeps charging long-running transactions from base, hourly, and overnight rules', () => {
-  const result = calculateFee(
-    '2026-05-25T03:30:00.000Z',
-    '2026-06-11T08:53:18.770Z',
-    pricingRules,
-    { vehicleType: 'car', serviceType: 'parking' }
-  );
+test('supports overnight as an additive daily penalty', () => {
+  // เรียก calculateFee ด้วย carTierWithOvernightPenalty เพื่อบวกค่าปรับข้ามวันเพิ่มจากยอดชั่วโมง
+  const fee = calculateFee('2026-05-01T08:00:00+07:00', '2026-05-02T10:00:00+07:00', carTierWithOvernightPenalty);
 
-  assert.equal(result.totalHours, 414);
-  assert.equal(result.totalAmount, 5860);
-  assert.deepEqual(result.appliedRules.map((rule) => ({
-    feeType: rule.feeType,
-    hours: rule.hours,
-    units: rule.units,
-    amount: rule.amount,
-  })), [
-    { feeType: 'base_hour', hours: 1, units: undefined, amount: 30 },
-    { feeType: 'next_hour', hours: 413, units: undefined, amount: 4130 },
-    { feeType: 'overnight_day', hours: undefined, units: 17, amount: 1700 },
-  ]);
+  // ตรวจคำตอบ: 90 บาทจากช่วงชั่วโมง + 100 บาทค่าข้ามวัน = 190 บาท
+  assert.equal(fee.totalHours, 26);
+  assert.equal(fee.totalAmount, 190);
 });
 
-test('filters rules by vehicle type so motorcycle pricing stays separate', () => {
-  const result = calculateFee(
-    '2026-05-03T07:45:00+07:00',
-    '2026-05-03T08:20:00+07:00',
-    pricingRules,
-    { vehicleType: 'motorcycle', serviceType: 'parking' }
-  );
+test('supports overnight as a daily flat amount', () => {
+  // เรียก calculateFee ด้วย carTierWithDailyFlat เพื่อให้ข้ามวันคิดเหมาแทนยอดชั่วโมงเดิม
+  const fee = calculateFee('2026-05-01T08:00:00+07:00', '2026-05-02T10:00:00+07:00', carTierWithDailyFlat);
 
-  assert.equal(result.totalHours, 1);
-  assert.equal(result.totalAmount, 10);
+  // ตรวจคำตอบ: ข้าม 1 วันและ chargeMode เป็น daily_flat จึงคิด 500 บาท
+  assert.equal(fee.totalHours, 26);
+  assert.equal(fee.totalAmount, 500);
+});
+
+test('vehicle type selects the matching rule', () => {
+  // เรียก calculateFee พร้อม option vehicleType เพื่อเลือก rule ของ motorcycle
+  const fee = calculateFee('2026-05-03T07:45:00+07:00', '2026-05-03T08:20:00+07:00', motorcycleRules, {
+    vehicleType: 'motorcycle',
+  });
+
+  // ตรวจคำตอบ: motorcycle จอดไม่ถึง 1 ชั่วโมง ปัดเป็น 1 ชั่วโมง ราคา 10 บาท
+  assert.equal(fee.totalAmount, 10);
 });

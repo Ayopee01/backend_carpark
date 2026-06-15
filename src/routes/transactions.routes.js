@@ -110,7 +110,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // Route create transaction from camera/LPR body payload.
-// Request body receives plateNo, cameraId, gateId, direction, capturedAt, confidence, imageUrl.
+// Request body receives plateNo, cameraId, gateId, direction, capturedAt, imageUrl.
 router.post('/', async (req, res, next) => {
   try {
     const validation = validateCameraTransactionPayload(req.body);
