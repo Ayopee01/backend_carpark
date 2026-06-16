@@ -33,7 +33,7 @@ function getTransactionPayments(transaction) {
     }));
   }
 
-  if (transaction.payment && (transaction.status === 'completed' || transaction.status === 'paid')) {
+  if (transaction.payment && (transaction.status === 'completed' || transaction.status === 'paid' || transaction.status === 'paid_waiting_exit')) {
     return [
       {
         ...transaction.payment,
@@ -49,7 +49,7 @@ function getTransactionPayments(transaction) {
 
 // Function ตรวจสอบ paid status
 function isPaidTransaction(transaction) {
-  return transaction.status === 'completed' || transaction.status === 'paid';
+  return transaction.status === 'completed' || transaction.status === 'paid' || transaction.status === 'paid_waiting_exit';
 }
 
 // Function ตรวจสอบ pending status

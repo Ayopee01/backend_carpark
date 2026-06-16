@@ -222,7 +222,7 @@ const openapi = {
           vehicleType: { type: 'string', enum: ['car', 'motorcycle'], example: 'car' },
           entryAt: { type: 'string', format: 'date-time' },
           exitAt: { type: 'string', format: 'date-time', nullable: true },
-          status: { type: 'string', enum: ['pending', 'partially_paid', 'completed', 'cancelled'] },
+          status: { type: 'string', enum: ['pending', 'partially_paid', 'paid_waiting_exit', 'completed', 'cancelled'] },
           netAmount: { type: 'number', example: 40 },
           totalPaid: { type: 'number', example: 0 },
           remainingAmount: { type: 'number', example: 40 },
@@ -247,7 +247,7 @@ const openapi = {
         properties: {
           plateNo: { type: 'string', example: '3งจ9012' },
           vehicleType: { type: 'string', enum: ['car', 'motorcycle'] },
-          status: { type: 'string', enum: ['pending', 'partially_paid', 'completed', 'cancelled'] },
+          status: { type: 'string', enum: ['pending', 'partially_paid', 'paid_waiting_exit', 'completed', 'cancelled'] },
           exitAt: { type: 'string', format: 'date-time' },
           note: { type: 'string' },
         },
@@ -287,7 +287,7 @@ const openapi = {
                   billNo: { type: 'string', example: 'PK20260525-033000-3333' },
                   plateNo: { type: 'string', example: '3งจ9019' },
                   vehicleType: { type: 'string', example: 'car' },
-                  status: { type: 'string', example: 'completed' },
+                  status: { type: 'string', example: 'paid_waiting_exit' },
                 },
               },
               payment: {

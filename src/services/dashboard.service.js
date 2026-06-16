@@ -57,7 +57,7 @@ async function getDashboardSummary(currentUserId = 'u1') {
   });
 
   const paidToday = dailyTransactions.filter((transaction) => {
-    return transaction.status === 'completed' || transaction.status === 'paid';
+    return transaction.status === 'completed' || transaction.status === 'paid' || transaction.status === 'paid_waiting_exit';
   });
 
   const unpaidToday = dailyTransactions.filter((transaction) => {

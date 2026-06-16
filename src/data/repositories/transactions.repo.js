@@ -92,7 +92,7 @@ function toTransactionApi(row, context = {}) {
     isOverstay = true;
     cutoffAt = now.toISOString();
   } else if (!cutoffAt) {
-    if (row.status === 'completed' && payments.length > 0) {
+    if (['completed', 'paid_waiting_exit'].includes(row.status) && payments.length > 0) {
       const latestPayment = [...payments].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))[0];
       cutoffAt = latestPayment.paidAt;
     } else {
@@ -362,7 +362,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
       updates.status = 'completed';
     } else {
       updates.exitTimeLimit = new Date(expiryAt);
-      updates.status = totalPaid >= currentNetAmount ? 'completed' : 'partially_paid';
+      updates.status = totalPaid >= currentNetAmount ? 'paid_waiting_exit' : 'partially_paid';
     }
 
     return tx.transaction.update({
@@ -514,6 +514,7 @@ async function createCameraTransaction({
         where: { id: existing.id },
         data: {
           exitAt: capturedTime,
+          status: 'completed',
           receipt: {
             ...(existing.receipt || {}),
             camera: {

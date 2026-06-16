@@ -91,7 +91,7 @@ Seeded payment setting channels are:
 Payment update behavior:
 
 - Non-gate payments set `exitTimeLimit` to the payment expiry window and mark the
-  transaction `completed` or `partially_paid` based on total paid.
+  transaction `paid_waiting_exit` or `partially_paid` based on total paid.
 - Gate payments set `exitTimeLimit`, `exitAt`, and `status: completed`
   immediately.
 
@@ -111,6 +111,9 @@ Core transaction repository behavior:
 - Payable lookups avoid terminal statuses when requested.
 - API transaction responses calculate current pricing through `calculateFee()`.
 - `qrData` points the frontend to mobile payment using the transaction id.
+- `paid_waiting_exit` means the fee is fully paid and the vehicle must leave
+  before `exitTimeLimit`; `completed` means the vehicle has exited and the
+  transaction is finished.
 
 ## Admin Config Endpoint Convention
 
@@ -212,4 +215,3 @@ run tests when behavior changed or risk is non-trivial.
   route files.
 - Keep route handlers focused on request parsing and response shaping.
 - Keep comments succinct; add them only where they reduce future confusion.
-
