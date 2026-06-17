@@ -161,6 +161,79 @@ test('reports completed when a paid transaction already has exitAt', () => {
   assert.equal(transaction.isOverstay, false);
 });
 
+test('blocks OUT when the paid exit window has expired', async () => {
+  const transaction = {
+    id: 't_expired',
+    plateNo: 'ABC1234',
+    status: 'paid_waiting_exit',
+    exitTimeLimit: '2026-05-01T10:15:00.000Z',
+    receipt: { camera: { direction: 'IN' } },
+  };
+  let createCalled = false;
+  const fixture = loadServiceWithRepository({
+    findDuplicateCameraTransaction: async () => null,
+    findOpenTransactionByPlateNo: async () => transaction,
+    createCameraTransaction: async () => {
+      createCalled = true;
+      return transaction;
+    },
+  });
+
+  try {
+    const result = await fixture.service.createTransactionFromCamera({
+      plateNo: 'ABC1234',
+      cameraId: 'CAM-OUT-01',
+      gateId: 'GATE-A',
+      direction: 'OUT',
+      capturedAt: '2026-05-01T10:16:00.000Z',
+    });
+
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.body.success, false);
+    assert.equal(result.body.action, 'PAYMENT_REQUIRED');
+    assert.equal(result.body.data.status, 'paid_waiting_exit');
+    assert.equal(createCalled, false);
+  } finally {
+    fixture.restore();
+  }
+});
+
+test('allows OUT when the transaction is paid and still inside the exit window', async () => {
+  const transaction = {
+    id: 't_paid',
+    plateNo: 'ABC1234',
+    status: 'paid_waiting_exit',
+    exitTimeLimit: '2026-05-01T10:15:00.000Z',
+    receipt: { camera: { direction: 'IN' } },
+  };
+  let createCalled = false;
+  const fixture = loadServiceWithRepository({
+    findDuplicateCameraTransaction: async () => null,
+    findOpenTransactionByPlateNo: async () => transaction,
+    createCameraTransaction: async () => {
+      createCalled = true;
+      return { ...transaction, status: 'completed', receipt: { camera: { direction: 'OUT' } } };
+    },
+  });
+
+  try {
+    const result = await fixture.service.createTransactionFromCamera({
+      plateNo: 'ABC1234',
+      cameraId: 'CAM-OUT-01',
+      gateId: 'GATE-A',
+      direction: 'OUT',
+      capturedAt: '2026-05-01T10:10:00.000Z',
+    });
+
+    assert.equal(result.statusCode, 201);
+    assert.equal(result.body.success, true);
+    assert.equal(result.body.data.status, 'completed');
+    assert.equal(createCalled, true);
+  } finally {
+    fixture.restore();
+  }
+});
+
 test('marks an open transaction completed when an OUT camera event closes it', async () => {
   const originalFindFirst = prisma.transaction.findFirst;
   const originalUpdate = prisma.transaction.update;

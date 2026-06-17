@@ -114,6 +114,9 @@ Core transaction repository behavior:
 - `paid_waiting_exit` means the fee is fully paid and the vehicle must leave
   before `exitTimeLimit`; `completed` means the vehicle has exited and the
   transaction is finished.
+- `direction: "OUT"` must not close a transaction after `exitTimeLimit` has
+  expired. The gate/camera flow should return a payment-required response so the
+  driver pays the newly calculated amount before exiting.
 
 ## Admin Config Endpoint Convention
 

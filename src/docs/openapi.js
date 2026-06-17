@@ -583,7 +583,7 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Create or update transaction from camera/LPR body',
-        description: 'Admin/camera integration flow. Requires Bearer token and transactions permission. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events update the latest open transaction for the plate when possible. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
+        description: 'Admin/camera integration flow. Requires Bearer token and transactions permission. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
         requestBody: body(ref('CameraTransactionRequest')),
         responses: { 200: ok('Duplicate, active transaction, or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
       },

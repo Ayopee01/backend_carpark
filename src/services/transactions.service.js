@@ -7,7 +7,7 @@ const {
 const DUPLICATE_WINDOW_MS = 10 * 1000;
 
 // Function สร้าง response มาตรฐานสำหรับ gate/camera integration
-function toGateResponse(transaction, action, message, success, direction = transaction.receipt?.camera?.direction) {
+function toGateResponse(transaction, action, message, success, direction = transaction.receipt?.camera?.direction, extra = {}) {
   return {
     success,
     action,
@@ -17,8 +17,42 @@ function toGateResponse(transaction, action, message, success, direction = trans
       plateNo: transaction.plateNo,
       direction,
       status: transaction.status,
+      ...extra,
     },
   };
+}
+
+function getCapturedTime(dto) {
+  const capturedTime = dto.capturedAt ? new Date(dto.capturedAt) : new Date();
+  return Number.isNaN(capturedTime.getTime()) ? new Date() : capturedTime;
+}
+
+function getExitTimeLimit(transaction) {
+  if (!transaction?.exitTimeLimit) return null;
+  const exitTimeLimit = new Date(transaction.exitTimeLimit);
+  return Number.isNaN(exitTimeLimit.getTime()) ? null : exitTimeLimit;
+}
+
+function validateExitEligibility(transaction, capturedTime) {
+  if (!transaction) {
+    return { ok: false, action: 'TRANSACTION_NOT_FOUND', message: 'ไม่พบรายการจอดที่ยังเปิดอยู่' };
+  }
+
+  if (transaction.status !== 'paid_waiting_exit') {
+    return { ok: false, action: 'PAYMENT_REQUIRED', message: 'รายการนี้ยังชำระเงินไม่ครบ กรุณาชำระเงินก่อนออก' };
+  }
+
+  const exitTimeLimit = getExitTimeLimit(transaction);
+  if (!exitTimeLimit || capturedTime > exitTimeLimit) {
+    return {
+      ok: false,
+      action: 'PAYMENT_REQUIRED',
+      message: 'หมดเวลาออกหลังชำระเงินแล้ว กรุณาชำระเงินใหม่ก่อนออก',
+      exitTimeLimit: exitTimeLimit ? exitTimeLimit.toISOString() : null,
+    };
+  }
+
+  return { ok: true, exitTimeLimit: exitTimeLimit.toISOString() };
 }
 
 // Function รับ DTO จากกล้อง LPR แล้วสร้าง transaction หรือข้าม event ซ้ำในช่วงเวลาสั้น ๆ
@@ -47,6 +81,29 @@ async function createTransactionFromCamera(dto) {
           'ทะเบียนนี้มีรายการจอดที่ยังไม่เสร็จสิ้นอยู่แล้ว',
           true,
           dto.direction
+        ),
+      };
+    }
+  }
+
+  if (dto.direction === 'OUT') {
+    const activeTransaction = await findOpenTransactionByPlateNo(dto.plateNo);
+    const capturedTime = getCapturedTime(dto);
+    const eligibility = validateExitEligibility(activeTransaction, capturedTime);
+
+    if (!eligibility.ok) {
+      return {
+        statusCode: 200,
+        body: toGateResponse(
+          activeTransaction || { id: null, plateNo: dto.plateNo, status: 'not_found', receipt: { camera: { direction: dto.direction } } },
+          eligibility.action,
+          eligibility.message,
+          false,
+          dto.direction,
+          {
+            exitTimeLimit: eligibility.exitTimeLimit || null,
+            capturedAt: capturedTime.toISOString(),
+          }
         ),
       };
     }
