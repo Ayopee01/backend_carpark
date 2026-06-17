@@ -129,6 +129,38 @@ test('keeps a fully paid transaction waiting for exit until the exit window expi
   assert.equal(transaction.isOverstay, false);
 });
 
+test('reports completed when a paid transaction already has exitAt', () => {
+  // Setup: stored status is stale, but exitAt means the car already left.
+  const transaction = repository.toTransactionApi({
+    id: 't_exited',
+    billNo: 'PK202605010001',
+    plateNo: 'ABC1234',
+    vehicleType: 'car',
+    serviceType: 'parking',
+    entryAt: new Date('2026-05-01T08:00:00.000Z'),
+    exitAt: new Date('2026-05-01T10:00:00.000Z'),
+    exitTimeLimit: new Date('2026-05-01T10:15:00.000Z'),
+    amount: 40,
+    totalPaid: 40,
+    status: 'partially_paid',
+    payments: [{ id: 'pay_1', paidAmount: 40, paidAt: '2026-05-01T10:00:00.000Z' }],
+    createdAt: new Date('2026-05-01T08:00:00.000Z'),
+    updatedAt: new Date('2026-05-01T10:00:00.000Z'),
+  }, {
+    pricingConfig: {
+      pricingRules: [
+        { feeType: 'base_hour', vehicleType: 'car', price: 20, status: 'active' },
+      ],
+    },
+    systemSettings: { general: { frontendUrl: '' } },
+  });
+
+  // Call/assert: API status follows the completed exit flow, not the stale stored status.
+  assert.equal(transaction.status, 'completed');
+  assert.equal(transaction.remainingAmount, 0);
+  assert.equal(transaction.isOverstay, false);
+});
+
 test('marks an open transaction completed when an OUT camera event closes it', async () => {
   const originalFindFirst = prisma.transaction.findFirst;
   const originalUpdate = prisma.transaction.update;

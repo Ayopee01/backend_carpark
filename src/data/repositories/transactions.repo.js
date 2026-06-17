@@ -9,6 +9,7 @@ const { validatePaymentSelection } = require('./paymentSettings.repo');
 const defaults = require('../defaults');
 
 const DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES = 30;
+const TERMINAL_TRANSACTION_STATUSES = new Set(['completed', 'cancelled']);
 
 function createHttpError(statusCode, message) {
   const err = new Error(message);
@@ -109,8 +110,14 @@ function toTransactionApi(row, context = {}) {
   const totalPaid = Number(row.totalPaid ?? 0);
   const remainingAmount = Math.max(0, netAmount - totalPaid);
   let finalStatus = row.status;
-  if (remainingAmount > 0) {
+  if (row.status === 'cancelled') {
+    finalStatus = 'cancelled';
+  } else if (row.exitAt) {
+    finalStatus = 'completed';
+  } else if (remainingAmount > 0) {
     finalStatus = totalPaid > 0 ? 'partially_paid' : 'pending';
+  } else if (totalPaid > 0 || payments.length > 0) {
+    finalStatus = 'paid_waiting_exit';
   }
 
   const entryDate = new Date(entryAt);
@@ -244,6 +251,13 @@ async function getTransactionById(id, client = prisma) {
   return client.transaction.findUnique({ where: { id } });
 }
 
+function isPayableTransaction(row) {
+  if (!row) return false;
+  if (TERMINAL_TRANSACTION_STATUSES.has(row.status)) return false;
+  if (row.exitAt) return false;
+  return true;
+}
+
 // Function ค้นหา transaction ล่าสุดจากทะเบียนรถ โดยเลือกเฉพาะรายการที่ยังจ่ายได้ถ้ากำหนด payableOnly
 async function getLatestTransactionByPlateNo(plateNo, { payableOnly = false } = {}, client = prisma) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
@@ -252,7 +266,10 @@ async function getLatestTransactionByPlateNo(plateNo, { payableOnly = false } = 
   const rows = await client.transaction.findMany({
     where: {
       plateNo: { contains: normalizedPlateNo, mode: 'insensitive' },
-      ...(payableOnly ? { status: { notIn: ['completed', 'cancelled'] } } : {})
+      ...(payableOnly ? {
+        status: { notIn: [...TERMINAL_TRANSACTION_STATUSES] },
+        exitAt: null
+      } : {})
     },
     orderBy: { entryAt: 'desc' },
     take: 1
@@ -266,7 +283,7 @@ async function getTransactionByIdOrPlateNo(value, options = {}, client = prisma)
   if (!value) return null;
 
   const byId = await getTransactionById(value, client);
-  if (byId) return byId;
+  if (byId) return options.payableOnly && !isPayableTransaction(byId) ? null : byId;
 
   return getLatestTransactionByPlateNo(value, options, client);
 }
