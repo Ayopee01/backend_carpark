@@ -3,6 +3,7 @@ const {
   findDuplicateCameraTransaction,
   findOpenTransactionByPlateNo,
 } = require('../data/repositories/transactions.repo');
+const appEvents = require('../utils/events');
 
 const DUPLICATE_WINDOW_MS = 10 * 1000;
 
@@ -55,11 +56,33 @@ function validateExitEligibility(transaction, capturedTime) {
   return { ok: true, exitTimeLimit: exitTimeLimit.toISOString() };
 }
 
+function emitLprDetected(dto, result) {
+  const data = result.body?.data || {};
+  appEvents.emit('lpr_detected', {
+    type: 'lpr_detected',
+    success: Boolean(result.body?.success),
+    action: result.body?.action || null,
+    message: result.body?.message || null,
+    transactionId: data.transactionId || null,
+    plateNo: data.plateNo || dto.plateNo,
+    vehicleType: dto.vehicleType,
+    cameraId: dto.cameraId,
+    gateId: dto.gateId,
+    direction: data.direction || dto.direction,
+    status: data.status || null,
+    exitTimeLimit: data.exitTimeLimit || null,
+    capturedAt: data.capturedAt || getCapturedTime(dto).toISOString(),
+    emittedAt: new Date().toISOString(),
+  });
+
+  return result;
+}
+
 // Function รับ DTO จากกล้อง LPR แล้วสร้าง transaction หรือข้าม event ซ้ำในช่วงเวลาสั้น ๆ
 async function createTransactionFromCamera(dto) {
   const duplicate = await findDuplicateCameraTransaction(dto, DUPLICATE_WINDOW_MS);
   if (duplicate) {
-    return {
+    return emitLprDetected(dto, {
       statusCode: 200,
       body: toGateResponse(
         duplicate,
@@ -67,13 +90,13 @@ async function createTransactionFromCamera(dto) {
         'รายการนี้ถูกส่งเข้ามาซ้ำในช่วงเวลาสั้น ๆ',
         true
       ),
-    };
+    });
   }
 
   if (dto.direction === 'IN') {
     const activeTransaction = await findOpenTransactionByPlateNo(dto.plateNo);
     if (activeTransaction) {
-      return {
+      return emitLprDetected(dto, {
         statusCode: 200,
         body: toGateResponse(
           activeTransaction,
@@ -82,7 +105,7 @@ async function createTransactionFromCamera(dto) {
           true,
           dto.direction
         ),
-      };
+      });
     }
   }
 
@@ -92,7 +115,7 @@ async function createTransactionFromCamera(dto) {
     const eligibility = validateExitEligibility(activeTransaction, capturedTime);
 
     if (!eligibility.ok) {
-      return {
+      return emitLprDetected(dto, {
         statusCode: 200,
         body: toGateResponse(
           activeTransaction || { id: null, plateNo: dto.plateNo, status: 'not_found', receipt: { camera: { direction: dto.direction } } },
@@ -105,16 +128,16 @@ async function createTransactionFromCamera(dto) {
             capturedAt: capturedTime.toISOString(),
           }
         ),
-      };
+      });
     }
   }
 
   const transaction = await createCameraTransaction({ ...dto, status: 'pending' });
 
-  return {
+  return emitLprDetected(dto, {
     statusCode: 201,
     body: toGateResponse(transaction, 'OPEN_GATE', 'บันทึกรายการจากกล้องสำเร็จ', true),
-  };
+  });
 }
 
 module.exports = {

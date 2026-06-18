@@ -62,6 +62,9 @@ Device credential behavior:
   `requireDeviceAuth(['kiosk', 'barrier_gate'])`.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
   and requires device credentials when `deviceId` is present.
+- LPR processing emits `lpr_detected` to this SSE stream for both accepted and
+  rejected `IN/OUT` results. Barrier screens can filter by `gateId` and
+  `direction`.
 - Transaction lookup/payment client endpoints currently identify kiosk/gate by
   `deviceId`; do not silently change this contract without checking the frontend
   impact.

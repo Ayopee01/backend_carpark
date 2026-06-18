@@ -5,6 +5,7 @@ const repositoryPath = require.resolve('../src/data/repositories/transactions.re
 const servicePath = require.resolve('../src/services/transactions.service');
 const repository = require(repositoryPath);
 const { prisma } = require('../src/db/prisma');
+const appEvents = require('../src/utils/events');
 
 function loadServiceWithRepository(stubs) {
   const originals = {};
@@ -215,6 +216,11 @@ test('allows OUT when the transaction is paid and still inside the exit window',
       return { ...transaction, status: 'completed', receipt: { camera: { direction: 'OUT' } } };
     },
   });
+  let lprEvent = null;
+  const onLprDetected = (event) => {
+    lprEvent = event;
+  };
+  appEvents.once('lpr_detected', onLprDetected);
 
   try {
     const result = await fixture.service.createTransactionFromCamera({
@@ -229,7 +235,13 @@ test('allows OUT when the transaction is paid and still inside the exit window',
     assert.equal(result.body.success, true);
     assert.equal(result.body.data.status, 'completed');
     assert.equal(createCalled, true);
+    assert.equal(lprEvent.type, 'lpr_detected');
+    assert.equal(lprEvent.gateId, 'GATE-A');
+    assert.equal(lprEvent.direction, 'OUT');
+    assert.equal(lprEvent.action, 'OPEN_GATE');
+    assert.equal(lprEvent.transactionId, transaction.id);
   } finally {
+    appEvents.off('lpr_detected', onLprDetected);
     fixture.restore();
   }
 });

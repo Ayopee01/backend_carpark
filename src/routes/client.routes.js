@@ -204,8 +204,9 @@ router.post('/payment', async (req, res, next) => {
 // Shared SSE stream for kiosk, barrier gate, and public/mobile clients.
 router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req, res, next) => {
   try {
-    const { deviceId } = req.query;
+    const { deviceId, gateId, direction } = req.query;
     let clientType = 'public';
+    const normalizedDirection = direction ? String(direction).trim().toUpperCase() : null;
 
     if (deviceId) {
       if (!req.device) return res.status(401).json({ message: 'Unauthorized device' });
@@ -225,14 +226,21 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
     const onThemeUpdated = (newTheme) => {
       res.write(`data: ${JSON.stringify({ type: 'theme_updated', theme: newTheme })}\n\n`);
     };
+    const onLprDetected = (event) => {
+      if (gateId && event.gateId !== gateId) return;
+      if (normalizedDirection && event.direction !== normalizedDirection) return;
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
     const keepAlive = setInterval(() => {
       res.write(`data: ${JSON.stringify({ type: 'ping', at: new Date().toISOString() })}\n\n`);
     }, 25 * 1000);
 
     appEvents.on('theme_updated', onThemeUpdated);
+    appEvents.on('lpr_detected', onLprDetected);
     req.on('close', () => {
       clearInterval(keepAlive);
       appEvents.off('theme_updated', onThemeUpdated);
+      appEvents.off('lpr_detected', onLprDetected);
     });
   } catch (err) {
     next(err);

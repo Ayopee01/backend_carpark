@@ -861,9 +861,13 @@ const openapi = {
       get: {
         tags: ['Client Events'],
         summary: 'Shared client SSE event stream',
-        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. Current events include connected, ping, and theme_updated.',
+        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. LPR results are emitted as lpr_detected after POST /api/v1/transactions is processed. Use gateId and direction to subscribe a barrier-gate screen to only its relevant camera events. Current events include connected, ping, theme_updated, and lpr_detected.',
         security: [...deviceAuth, {}],
-        parameters: [query('deviceId', { type: 'string' }, 'K-20260524-001')],
+        parameters: [
+          query('deviceId', { type: 'string' }, 'BG-20260618-001'),
+          query('gateId', { type: 'string' }, 'GATE-IN-A'),
+          query('direction', { type: 'string', enum: ['IN', 'OUT'] }, 'IN'),
+        ],
         responses: { 200: { description: 'SSE stream' }, 400: error('Device identity mismatch'), 401: error('Unauthorized device'), 403: error('Device under maintenance or invalid device credentials') },
       },
     },
