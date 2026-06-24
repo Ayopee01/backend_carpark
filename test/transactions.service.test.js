@@ -162,6 +162,71 @@ test('reports completed when a paid transaction already has exitAt', () => {
   assert.equal(transaction.isOverstay, false);
 });
 
+test('groups plate lookup candidates by full plate using the latest transaction', async () => {
+  const originalFindMany = prisma.transaction.findMany;
+  let query = null;
+  prisma.transaction.findMany = async (args) => {
+    query = args;
+    return [
+      {
+        id: 't_latest_1',
+        billNo: 'PK202605010003',
+        plateNo: 'ABC1234',
+        vehicleType: 'car',
+        entryAt: new Date('2026-05-01T12:00:00.000Z'),
+        status: 'pending',
+        totalPaid: 0,
+      },
+      {
+        id: 't_latest_2',
+        billNo: 'PK202605010002',
+        plateNo: 'XYZ1234',
+        vehicleType: 'car',
+        entryAt: new Date('2026-05-01T11:00:00.000Z'),
+        status: 'pending',
+        totalPaid: 0,
+      },
+      {
+        id: 't_old_1',
+        billNo: 'PK202605010001',
+        plateNo: 'ABC1234',
+        vehicleType: 'car',
+        entryAt: new Date('2026-05-01T10:00:00.000Z'),
+        status: 'completed',
+        totalPaid: 40,
+      },
+    ];
+  };
+
+  try {
+    const candidates = await repository.findPlateTransactionCandidates('1234');
+
+    assert.equal(query.where.plateNo.contains, '1234');
+    assert.deepEqual(candidates.map((item) => item.plateNo), ['ABC1234', 'XYZ1234']);
+    assert.equal(candidates[0].id, 't_latest_1');
+  } finally {
+    prisma.transaction.findMany = originalFindMany;
+  }
+});
+
+test('client plate lookup candidates exclude terminal and exited transactions', async () => {
+  const originalFindMany = prisma.transaction.findMany;
+  let query = null;
+  prisma.transaction.findMany = async (args) => {
+    query = args;
+    return [];
+  };
+
+  try {
+    await repository.findPlateTransactionCandidates('1234', { payableOnly: true });
+
+    assert.deepEqual(query.where.status.notIn, ['completed', 'cancelled']);
+    assert.equal(query.where.exitAt, null);
+  } finally {
+    prisma.transaction.findMany = originalFindMany;
+  }
+});
+
 test('blocks OUT when the paid exit window has expired', async () => {
   const transaction = {
     id: 't_expired',

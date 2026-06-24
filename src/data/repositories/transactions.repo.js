@@ -279,6 +279,98 @@ async function getLatestTransactionByPlateNo(plateNo, { payableOnly = false } = 
 }
 
 // Function ค้นหา transaction ด้วย id ก่อน ถ้าไม่พบจึงลองค้นหาด้วยทะเบียนรถ
+function buildPayableLookupFilter(payableOnly) {
+  return payableOnly ? {
+    status: { notIn: [...TERMINAL_TRANSACTION_STATUSES] },
+    exitAt: null
+  } : {};
+}
+
+function toPlateCandidate(row) {
+  return {
+    plateNo: row.plateNo,
+    billNo: row.billNo,
+    vehicleType: row.vehicleType,
+    status: row.status,
+    entryAt: toIsoOrNull(row.entryAt),
+    exitAt: toIsoOrNull(row.exitAt),
+    exitTimeLimit: toIsoOrNull(row.exitTimeLimit),
+  };
+}
+
+async function findPlateTransactionCandidates(plateNo, { payableOnly = false, limit = 10 } = {}, client = prisma) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) return [];
+
+  const rows = await client.transaction.findMany({
+    where: {
+      plateNo: { contains: normalizedPlateNo, mode: 'insensitive' },
+      ...buildPayableLookupFilter(payableOnly),
+    },
+    orderBy: { entryAt: 'desc' },
+    take: Math.max(limit * 5, limit),
+  });
+
+  const byPlateNo = new Map();
+  for (const row of rows) {
+    const key = normalizePlateNo(row.plateNo)?.toLowerCase();
+    if (key && !byPlateNo.has(key)) byPlateNo.set(key, row);
+    if (byPlateNo.size >= limit) break;
+  }
+
+  return [...byPlateNo.values()];
+}
+
+async function getLatestExactTransactionByPlateNo(plateNo, { payableOnly = false } = {}, client = prisma) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) return null;
+
+  return client.transaction.findFirst({
+    where: {
+      plateNo: { equals: normalizedPlateNo, mode: 'insensitive' },
+      ...buildPayableLookupFilter(payableOnly),
+    },
+    orderBy: { entryAt: 'desc' },
+  });
+}
+
+async function lookupTransactionApiByPlateNo(plateNo, { payableOnly = false, minSearchLength = 4, maxCandidates = 10 } = {}) {
+  const normalizedPlateNo = normalizePlateNo(plateNo);
+  if (!normalizedPlateNo) {
+    return { matchType: 'invalid', message: 'plateNo is required' };
+  }
+  if (normalizedPlateNo.length < minSearchLength) {
+    return { matchType: 'invalid', message: `plateNo must be at least ${minSearchLength} characters` };
+  }
+
+  const exact = await getLatestExactTransactionByPlateNo(normalizedPlateNo, { payableOnly });
+  if (exact) {
+    const context = await getTransactionContext();
+    return {
+      matchType: 'single',
+      transaction: toTransactionApi(exact, context),
+    };
+  }
+
+  const candidates = await findPlateTransactionCandidates(normalizedPlateNo, { payableOnly, limit: maxCandidates });
+  if (!candidates.length) return { matchType: 'not_found' };
+
+  if (candidates.length === 1) {
+    const context = await getTransactionContext();
+    return {
+      matchType: 'single',
+      transaction: toTransactionApi(candidates[0], context),
+    };
+  }
+
+  return {
+    matchType: 'multiple',
+    requiresSelection: true,
+    query: normalizedPlateNo,
+    candidates: candidates.map(toPlateCandidate),
+  };
+}
+
 async function getTransactionByIdOrPlateNo(value, options = {}, client = prisma) {
   if (!value) return null;
 
@@ -591,11 +683,13 @@ module.exports = {
   getTransactionById,
   getTransactionApiById,
   getTransactionApiByIdOrPlateNo,
+  lookupTransactionApiByPlateNo,
   updateTransaction,
   deleteTransaction,
   processPayment,
   createTransaction,
   createCameraTransaction,
+  findPlateTransactionCandidates,
   findDuplicateCameraTransaction,
   findOpenTransactionByPlateNo,
   normalizePlateNo,

@@ -111,6 +111,14 @@ Core transaction repository behavior:
 
 - Plate numbers are normalized by trimming spaces and hyphens.
 - `getTransactionByIdOrPlateNo()` tries id first, then latest matching plate.
+- Plate lookup by partial input requires at least 4 normalized characters. If
+  more than one full plate matches, return a `matchType: "multiple"` candidate
+  list of full `plateNo` values so the frontend can ask the user to choose and
+  search again by full plate.
+- `GET /api/v1/client/transaction?plateNo=` is user-facing and must exclude
+  `completed`, `cancelled`, and already-exited transactions from lookup
+  candidates. Admin transaction lookup may still include historical completed
+  transactions.
 - Payable lookups avoid terminal statuses when requested.
 - API transaction responses calculate current pricing through `calculateFee()`.
 - `qrData` points the frontend to mobile payment using the transaction id.

@@ -2,6 +2,7 @@ const express = require('express');
 const appEvents = require('../utils/events');
 const {
   getTransactionApiByIdOrPlateNo,
+  lookupTransactionApiByPlateNo,
   processPayment,
 } = require('../data/repositories/transactions.repo');
 const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceAuth');
@@ -160,7 +161,18 @@ router.get('/transaction', async (req, res, next) => {
     if (!normalizedPlateNo) return res.status(400).json({ message: 'plateNo is required' });
 
     const source = await resolveClientSource(deviceId, req);
-    const transaction = await getTransactionApiByIdOrPlateNo(normalizedPlateNo);
+    const lookup = await lookupTransactionApiByPlateNo(normalizedPlateNo, { payableOnly: true });
+    if (lookup.matchType === 'invalid') return res.status(400).json({ message: lookup.message });
+    if (lookup.matchType === 'not_found') return res.status(404).json({ message: 'Transaction not found' });
+    if (lookup.matchType === 'multiple') {
+      return res.json({
+        ...lookup,
+        clientType: source.clientType,
+        device: source.device,
+      });
+    }
+
+    const transaction = lookup.transaction;
     if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
     if (transaction.status === 'completed' || transaction.status === 'cancelled') {
       return res.status(403).json({ message: 'This transaction is already processed' });

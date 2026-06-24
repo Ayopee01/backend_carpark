@@ -228,6 +228,30 @@ const openapi = {
           remainingAmount: { type: 'number', example: 40 },
         },
       },
+      PlateLookupCandidate: {
+        type: 'object',
+        properties: {
+          plateNo: { type: 'string', example: '3ABC1234' },
+          billNo: { type: 'string', example: 'PK20260524-120000' },
+          vehicleType: { type: 'string', enum: ['car', 'motorcycle'], example: 'car' },
+          status: { type: 'string', enum: ['pending', 'partially_paid', 'paid_waiting_exit', 'completed', 'cancelled'] },
+          entryAt: { type: 'string', format: 'date-time' },
+          exitAt: { type: 'string', format: 'date-time', nullable: true },
+          exitTimeLimit: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      PlateLookupMultipleResponse: {
+        type: 'object',
+        properties: {
+          matchType: { type: 'string', example: 'multiple' },
+          requiresSelection: { type: 'boolean', example: true },
+          query: { type: 'string', example: '1234' },
+          candidates: {
+            type: 'array',
+            items: ref('PlateLookupCandidate'),
+          },
+        },
+      },
       CameraTransactionRequest: {
         type: 'object',
         required: ['plateNo', 'cameraId', 'gateId', 'direction'],
@@ -591,10 +615,17 @@ const openapi = {
     '/api/v1/transactions/{id}': {
       get: {
         tags: ['Transactions'],
-        summary: 'Get transaction by id or plateNo',
-        description: 'Admin flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. Example: /api/v1/transactions/3งจ9012.',
-        parameters: [idParam('id', '3งจ9012')],
-        responses: { 200: ok('Transaction', ref('Transaction')), 404: error('Not found'), ...bearer403 },
+        summary: 'Lookup transaction by plateNo',
+        description: 'Admin flow. Requires Bearer token and transactions permission. The path value is a full or partial plateNo with at least 4 normalized characters. If more than one full plate matches, the response is a candidate list so the frontend can let the admin choose a full plate and call this endpoint again. Admin lookup includes completed and cancelled transactions.',
+        parameters: [idParam('id', '1234')],
+        responses: {
+          200: ok('Transaction or plate candidates', {
+            oneOf: [ref('Transaction'), ref('PlateLookupMultipleResponse')],
+          }),
+          400: error('plateNo is required or too short'),
+          404: error('Not found'),
+          ...bearer403,
+        },
       },
       patch: {
         tags: ['Transactions'],
@@ -884,14 +915,22 @@ const openapi = {
     '/api/v1/client/transaction': {
       get: {
         tags: ['Client Events'],
-        summary: 'Get one payable transaction by plateNo',
-        description: 'Public lookup for kiosk, barrier gate, and mobile users. Frontend sends the plate number from input as query param plateNo. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user. If deviceId is supplied, it must be an activated registered device.',
+        summary: 'Lookup one payable transaction by plateNo',
+        description: 'Public lookup for kiosk, barrier gate, and mobile users. Frontend sends at least 4 normalized plate characters as query param plateNo. If more than one full plate matches, the response is a candidate list containing full plateNo values for the user to choose and search again. Client lookup excludes completed, cancelled, and already-exited transactions from candidates. deviceId is optional. If deviceId is omitted, the source is treated as mobile_user. If deviceId is supplied, it must be an activated registered device.',
         security: publicRoute,
         parameters: [
-          query('plateNo', { type: 'string' }, '3งจ9012', true),
+          query('plateNo', { type: 'string', minLength: 4 }, '9012', true),
           query('deviceId', { type: 'string' }, 'K-20260521-008'),
         ],
-        responses: { 200: ok('Transaction', ref('Transaction')), 400: error('plateNo is required'), 401: error('Invalid or unregistered deviceId'), 403: error('Already processed or device under maintenance'), 404: error('Transaction not found') },
+        responses: {
+          200: ok('Transaction or plate candidates', {
+            oneOf: [ref('Transaction'), ref('PlateLookupMultipleResponse')],
+          }),
+          400: error('plateNo is required or too short'),
+          401: error('Invalid or unregistered deviceId'),
+          403: error('Already processed or device under maintenance'),
+          404: error('Transaction not found'),
+        },
       },
     },
     '/api/v1/client/payment': {

@@ -1,5 +1,5 @@
 const express = require('express');
-const { listTransactions, getTransactionApiByIdOrPlateNo, processPayment, updateTransaction, deleteTransaction } = require('../data/repositories/transactions.repo');
+const { listTransactions, lookupTransactionApiByPlateNo, processPayment, updateTransaction, deleteTransaction } = require('../data/repositories/transactions.repo');
 const { authorize } = require('../middleware/permission');
 const { createTransactionFromCamera } = require('../services/transactions.service');
 const { validateCameraTransactionPayload } = require('../validators/transactions.validator');
@@ -135,7 +135,11 @@ router.post('/', async (req, res, next) => {
 // Route get one transaction by transaction id or plateNo.
 router.get('/:id', async (req, res, next) => {
   try {
-    const transaction = await getTransactionApiByIdOrPlateNo(req.params.id);
+    const lookup = await lookupTransactionApiByPlateNo(req.params.id);
+    if (lookup.matchType === 'invalid') return res.status(400).json({ message: lookup.message });
+    if (lookup.matchType === 'multiple') return res.json(lookup);
+
+    const transaction = lookup.transaction;
     if (!transaction) return res.status(404).json({ message: 'Not found' });
     res.json(transaction);
   } catch (err) {
