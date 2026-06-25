@@ -77,6 +77,10 @@ test('validates Omise QR document paths before proxying images', () => {
     omiseService.normalizeDocumentPath('https://api.omise.co/sources/src_test_123/documents/docu_test_123'),
     '/sources/src_test_123/documents/docu_test_123'
   );
+  assert.equal(
+    omiseService.normalizeDocumentPath('/charges/chrg_test_123/documents/docu_test_123/download'),
+    '/charges/chrg_test_123/documents/docu_test_123/download'
+  );
   assert.throws(
     () => omiseService.normalizeDocumentPath('https://example.com/sources/src_test_123/documents/docu_test_123'),
     /Invalid Omise document URL/
@@ -100,6 +104,24 @@ test('extracts the PromptPay QR document path from an Omise charge', () => {
 
   assert.equal(
     getChargeQrDocumentPath(charge),
-    '/charges/chrg_test_123/documents/docu_test_123'
+    '/charges/chrg_test_123/documents/docu_test_123/download'
+  );
+});
+
+test('prefers Omise QR download_uri when it is available', () => {
+  const charge = {
+    source: {
+      scannable_code: {
+        image: {
+          location: '/charges/chrg_test_123/documents/docu_test_123',
+          download_uri: '/charges/chrg_test_123/documents/docu_test_123/download',
+        },
+      },
+    },
+  };
+
+  assert.equal(
+    getChargeQrDocumentPath(charge),
+    '/charges/chrg_test_123/documents/docu_test_123/download'
   );
 });

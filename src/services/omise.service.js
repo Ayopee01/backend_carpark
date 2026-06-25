@@ -67,7 +67,7 @@ function normalizeDocumentPath(documentPath) {
     path = `${url.pathname}${url.search || ''}`;
   }
 
-  if (!/^\/(charges|sources)\/[^/]+\/documents\/[^/?#]+(\?.*)?$/.test(path)) {
+  if (!/^\/(charges|sources)\/[^/]+\/documents\/[^/?#]+(\/download)?(\?.*)?$/.test(path)) {
     throw Object.assign(new Error('Invalid Omise document path'), { statusCode: 400 });
   }
 
@@ -114,10 +114,37 @@ function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
           return reject(Object.assign(new Error(message), { statusCode: 502, provider: 'omise' }));
         }
 
-        return resolve({
-          contentType: res.headers['content-type'] || 'image/png',
-          body,
-        });
+        const contentType = res.headers['content-type'] || 'image/png';
+        if (!contentType.toLowerCase().startsWith('image/')) {
+          let downloadUri = null;
+          try {
+            const parsed = JSON.parse(body.toString('utf8'));
+            downloadUri = parsed.download_uri || parsed.downloadUri || null;
+          } catch (err) {
+            // Keep the response generic below when Omise did not return JSON.
+          }
+
+          if (downloadUri) {
+            if (redirectCount >= 3) {
+              return reject(Object.assign(new Error('Too many Omise document redirects'), {
+                statusCode: 502,
+                provider: 'omise',
+              }));
+            }
+            const nextUrl = new URL(downloadUri, url);
+            return resolve(requestBinary(nextUrl, {
+              authenticated: nextUrl.hostname === 'api.omise.co',
+              redirectCount: redirectCount + 1,
+            }));
+          }
+
+          return reject(Object.assign(new Error('Omise document response is not an image'), {
+            statusCode: 502,
+            provider: 'omise',
+          }));
+        }
+
+        return resolve({ contentType, body });
       });
     });
 

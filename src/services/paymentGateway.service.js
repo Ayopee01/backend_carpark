@@ -44,11 +44,43 @@ function toChargeResponse({ charge, gatewayCharge, transaction }) {
   };
 }
 
+function withDownloadPath(documentPath) {
+  const value = String(documentPath || '').trim();
+  if (!value || /\/download(\?.*)?$/.test(value)) return value;
+
+  const queryIndex = value.indexOf('?');
+  if (queryIndex === -1) return `${value}/download`;
+  return `${value.slice(0, queryIndex)}/download${value.slice(queryIndex)}`;
+}
+
+function getChargeQrDocumentPaths(charge) {
+  const image = charge?.source?.scannable_code?.image;
+  const paths = [
+    image?.download_uri,
+    withDownloadPath(image?.location),
+    image?.location,
+    image?.uri,
+  ].filter(Boolean);
+
+  return [...new Set(paths)];
+}
+
 function getChargeQrDocumentPath(charge) {
-  return charge?.source?.scannable_code?.image?.location
-    || charge?.source?.scannable_code?.image?.download_uri
-    || charge?.source?.scannable_code?.image?.uri
-    || null;
+  return getChargeQrDocumentPaths(charge)[0] || null;
+}
+
+async function downloadFirstQrDocument(paths) {
+  let lastError = null;
+  for (const path of paths) {
+    try {
+      return await omiseService.downloadDocument(path);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw createHttpError(502, 'Omise QR document not found');
 }
 
 async function getPayableTransactionForPlate(plateNo) {
@@ -127,15 +159,15 @@ async function getOmiseQrImage({ chargeId, documentPath } = {}) {
   }
 
   let charge = gatewayCharge.raw;
-  let qrDocumentPath = getChargeQrDocumentPath(charge);
-  if (!qrDocumentPath) {
+  let qrDocumentPaths = getChargeQrDocumentPaths(charge);
+  if (qrDocumentPaths.length === 0) {
     charge = await omiseService.retrieveCharge(chargeId);
-    qrDocumentPath = getChargeQrDocumentPath(charge);
+    qrDocumentPaths = getChargeQrDocumentPaths(charge);
     await paymentGatewayRepo.updateGatewayCharge(chargeId, { raw: charge });
   }
-  if (!qrDocumentPath) throw createHttpError(502, 'Omise QR document not found');
+  if (qrDocumentPaths.length === 0) throw createHttpError(502, 'Omise QR document not found');
 
-  return omiseService.downloadDocument(qrDocumentPath);
+  return downloadFirstQrDocument(qrDocumentPaths);
 }
 
 async function processOmiseWebhookEvent(event) {
@@ -221,4 +253,5 @@ module.exports = {
   processOmiseWebhookEvent,
   normalizeGatewayMethod,
   getChargeQrDocumentPath,
+  getChargeQrDocumentPaths,
 };
