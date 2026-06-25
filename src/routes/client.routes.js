@@ -9,7 +9,7 @@ const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceA
 const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const { activateKiosk } = require('../data/repositories/kiosks.repo');
 const { activateBarrierGate } = require('../services/barrierGates.service');
-const { createOmiseChargeForClient } = require('../services/paymentGateway.service');
+const { createOmiseChargeForClient, getOmiseQrImage } = require('../services/paymentGateway.service');
 
 const router = express.Router();
 
@@ -255,6 +255,25 @@ router.post('/payment/omise/charge', async (req, res, next) => {
         provider: err.provider,
         code: err.code || null,
         location: err.location || null,
+      });
+    }
+    next(err);
+  }
+});
+
+router.get('/payment/omise/qr', async (req, res, next) => {
+  try {
+    const { chargeId, documentPath } = req.query || {};
+    const image = await getOmiseQrImage({ chargeId, documentPath });
+
+    res.setHeader('Content-Type', image.contentType || 'image/png');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(image.body);
+  } catch (err) {
+    if (err.provider === 'omise') {
+      return res.status(err.statusCode || 502).json({
+        message: err.message || 'Unable to load Omise QR image',
+        provider: err.provider,
       });
     }
     next(err);

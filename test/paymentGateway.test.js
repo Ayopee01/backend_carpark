@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 const omiseService = require('../src/services/omise.service');
-const { normalizeGatewayMethod } = require('../src/services/paymentGateway.service');
+const { getChargeQrDocumentPath, normalizeGatewayMethod } = require('../src/services/paymentGateway.service');
 
 test('converts baht amounts to Omise minor currency units', () => {
   assert.equal(omiseService.toMinorAmount(40), 4000);
@@ -66,4 +66,40 @@ test('wraps Omise API errors with an HTTP status and provider details', () => {
   assert.equal(error.provider, 'omise');
   assert.equal(error.code, 'invalid_source');
   assert.equal(error.message, 'source is invalid');
+});
+
+test('validates Omise QR document paths before proxying images', () => {
+  assert.equal(
+    omiseService.normalizeDocumentPath('/charges/chrg_test_123/documents/docu_test_123'),
+    '/charges/chrg_test_123/documents/docu_test_123'
+  );
+  assert.equal(
+    omiseService.normalizeDocumentPath('https://api.omise.co/sources/src_test_123/documents/docu_test_123'),
+    '/sources/src_test_123/documents/docu_test_123'
+  );
+  assert.throws(
+    () => omiseService.normalizeDocumentPath('https://example.com/sources/src_test_123/documents/docu_test_123'),
+    /Invalid Omise document URL/
+  );
+  assert.throws(
+    () => omiseService.normalizeDocumentPath('/customers/cust_test_123'),
+    /Invalid Omise document path/
+  );
+});
+
+test('extracts the PromptPay QR document path from an Omise charge', () => {
+  const charge = {
+    source: {
+      scannable_code: {
+        image: {
+          location: '/charges/chrg_test_123/documents/docu_test_123',
+        },
+      },
+    },
+  };
+
+  assert.equal(
+    getChargeQrDocumentPath(charge),
+    '/charges/chrg_test_123/documents/docu_test_123'
+  );
 });

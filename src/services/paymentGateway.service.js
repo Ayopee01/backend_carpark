@@ -44,6 +44,13 @@ function toChargeResponse({ charge, gatewayCharge, transaction }) {
   };
 }
 
+function getChargeQrDocumentPath(charge) {
+  return charge?.source?.scannable_code?.image?.location
+    || charge?.source?.scannable_code?.image?.download_uri
+    || charge?.source?.scannable_code?.image?.uri
+    || null;
+}
+
 async function getPayableTransactionForPlate(plateNo) {
   const lookup = await lookupTransactionApiByPlateNo(plateNo, { payableOnly: true });
   if (lookup.matchType === 'invalid') throw createHttpError(400, lookup.message);
@@ -104,6 +111,31 @@ async function createOmiseChargeForClient({
   });
 
   return toChargeResponse({ charge, gatewayCharge, transaction });
+}
+
+async function getOmiseQrImage({ chargeId, documentPath } = {}) {
+  if (documentPath) {
+    return omiseService.downloadDocument(documentPath);
+  }
+
+  if (!chargeId) throw createHttpError(400, 'chargeId or documentPath is required');
+  const gatewayCharge = await paymentGatewayRepo.getGatewayChargeByChargeId(chargeId);
+  if (!gatewayCharge) throw createHttpError(404, 'Gateway charge not found');
+  if (gatewayCharge.provider !== 'omise') throw createHttpError(400, 'Gateway charge is not an Omise charge');
+  if (gatewayCharge.method !== 'promptpay') {
+    throw createHttpError(400, 'QR image is only available for PromptPay charges');
+  }
+
+  let charge = gatewayCharge.raw;
+  let qrDocumentPath = getChargeQrDocumentPath(charge);
+  if (!qrDocumentPath) {
+    charge = await omiseService.retrieveCharge(chargeId);
+    qrDocumentPath = getChargeQrDocumentPath(charge);
+    await paymentGatewayRepo.updateGatewayCharge(chargeId, { raw: charge });
+  }
+  if (!qrDocumentPath) throw createHttpError(502, 'Omise QR document not found');
+
+  return omiseService.downloadDocument(qrDocumentPath);
 }
 
 async function processOmiseWebhookEvent(event) {
@@ -185,6 +217,8 @@ async function processOmiseWebhookEvent(event) {
 
 module.exports = {
   createOmiseChargeForClient,
+  getOmiseQrImage,
   processOmiseWebhookEvent,
   normalizeGatewayMethod,
+  getChargeQrDocumentPath,
 };

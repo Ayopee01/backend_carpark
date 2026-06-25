@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const https = require('https');
 const omiseFactory = require('omise');
 
 let omiseClient = null;
@@ -49,6 +50,90 @@ function toOmiseHttpError(err) {
   if (err?.location) wrapped.location = err.location;
   if (err?.object) wrapped.providerObject = err.object;
   return wrapped;
+}
+
+function normalizeDocumentPath(documentPath) {
+  const value = String(documentPath || '').trim();
+  if (!value) {
+    throw Object.assign(new Error('documentPath is required'), { statusCode: 400 });
+  }
+
+  let path = value;
+  if (/^https?:\/\//i.test(value)) {
+    const url = new URL(value);
+    if (url.hostname !== 'api.omise.co') {
+      throw Object.assign(new Error('Invalid Omise document URL'), { statusCode: 400 });
+    }
+    path = `${url.pathname}${url.search || ''}`;
+  }
+
+  if (!/^\/(charges|sources)\/[^/]+\/documents\/[^/?#]+(\?.*)?$/.test(path)) {
+    throw Object.assign(new Error('Invalid Omise document path'), { statusCode: 400 });
+  }
+
+  return path;
+}
+
+function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
+  return new Promise((resolve, reject) => {
+    const headers = { Accept: 'image/*' };
+    if (authenticated) {
+      const secretKey = process.env.OMISE_SECRET_KEY;
+      if (!secretKey) {
+        return reject(Object.assign(new Error('OMISE_SECRET_KEY is not configured'), { statusCode: 500 }));
+      }
+      headers.Authorization = `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`;
+    }
+
+    const req = https.request(url, { method: 'GET', headers }, (res) => {
+      const location = res.headers.location;
+      if (location && res.statusCode >= 300 && res.statusCode < 400) {
+        res.resume();
+        if (redirectCount >= 3) {
+          return reject(Object.assign(new Error('Too many Omise document redirects'), { statusCode: 502 }));
+        }
+        const nextUrl = new URL(location, url);
+        return resolve(requestBinary(nextUrl, {
+          authenticated: nextUrl.hostname === 'api.omise.co',
+          redirectCount: redirectCount + 1,
+        }));
+      }
+
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks);
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          let message = `Unable to load Omise QR image (${res.statusCode})`;
+          try {
+            const parsed = JSON.parse(body.toString('utf8'));
+            message = parsed.message || message;
+          } catch (err) {
+            if (body.length) message = body.toString('utf8');
+          }
+          return reject(Object.assign(new Error(message), { statusCode: 502, provider: 'omise' }));
+        }
+
+        return resolve({
+          contentType: res.headers['content-type'] || 'image/png',
+          body,
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      reject(Object.assign(new Error(err.message || 'Unable to load Omise QR image'), {
+        statusCode: 502,
+        provider: 'omise',
+      }));
+    });
+    req.end();
+  });
+}
+
+async function downloadDocument(documentPath) {
+  const path = normalizeDocumentPath(documentPath);
+  return requestBinary(new URL(path, 'https://api.omise.co'), { authenticated: true });
 }
 
 async function createCharge({ amount, source, token, description, metadata, returnUri }) {
@@ -137,4 +222,6 @@ module.exports = {
   extractChargeIdFromEvent,
   toMinorAmount,
   toOmiseHttpError,
+  normalizeDocumentPath,
+  downloadDocument,
 };

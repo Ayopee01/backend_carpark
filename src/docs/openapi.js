@@ -1010,6 +1010,30 @@ const openapi = {
         },
       },
     },
+    '/api/v1/client/payment/omise/qr': {
+      get: {
+        tags: ['Payment Gateway'],
+        summary: 'Proxy Omise PromptPay QR image',
+        description: 'Public Kiosk/mobile helper endpoint for displaying PromptPay QR images. Prefer chargeId so the backend can validate the saved Omise gateway charge, then use OMISE_SECRET_KEY to download the QR document from Omise. documentPath is supported as a fallback and must be an Omise /charges/.../documents/... or /sources/.../documents/... path.',
+        security: publicRoute,
+        parameters: [
+          query('chargeId', { type: 'string' }, 'chrg_test_123'),
+          query('documentPath', { type: 'string' }, '/charges/chrg_test_123/documents/docu_test_123'),
+        ],
+        responses: {
+          200: {
+            description: 'QR image binary',
+            content: {
+              'image/png': { schema: { type: 'string', format: 'binary' } },
+              'image/jpeg': { schema: { type: 'string', format: 'binary' } },
+            },
+          },
+          400: error('Invalid chargeId or documentPath'),
+          404: error('Gateway charge not found'),
+          502: error('Unable to load Omise QR image'),
+        },
+      },
+    },
     '/api/v1/client/{plateNo}/payment': {
       post: {
         tags: ['Client Events'],
