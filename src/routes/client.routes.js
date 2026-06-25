@@ -76,7 +76,7 @@ async function handleClientPayment(req, res, next, pathPlateNo) {
   try {
     const { transactionId, plateNo: bodyPlateNo, method, amount, deviceId: bodyDeviceId } = req.body || {};
     const plateNo = pathPlateNo || bodyPlateNo;
-    const deviceId = req.query?.deviceId || bodyDeviceId;
+    const deviceId = req.query?.deviceId || bodyDeviceId || req.get('x-device-id');
     if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
 
     const source = await resolveClientSource(deviceId, req);
@@ -213,7 +213,7 @@ router.post('/payment/omise/charge', async (req, res, next) => {
       deviceId: bodyDeviceId,
       returnUri,
     } = req.body || {};
-    const deviceId = req.query?.deviceId || bodyDeviceId;
+    const deviceId = req.query?.deviceId || bodyDeviceId || req.get('x-device-id');
     if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
     if (!source && !token) return res.status(400).json({ message: 'source or token is required' });
 
@@ -247,6 +247,14 @@ router.post('/payment/omise/charge', async (req, res, next) => {
         matchType: 'multiple',
         requiresSelection: true,
         candidates: err.candidates,
+      });
+    }
+    if (err.provider === 'omise') {
+      return res.status(err.statusCode || 502).json({
+        message: err.message,
+        provider: err.provider,
+        code: err.code || null,
+        location: err.location || null,
       });
     }
     next(err);

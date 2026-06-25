@@ -39,6 +39,18 @@ function getChargePaidAt(charge) {
   return charge?.paid_at || charge?.paidAt || (charge?.paid ? new Date().toISOString() : null);
 }
 
+function toOmiseHttpError(err) {
+  const message = err?.message || err?.toString?.() || 'Omise request failed';
+  const statusCode = err?.object === 'error' || err?.code ? 400 : 502;
+  const wrapped = new Error(message);
+  wrapped.statusCode = statusCode;
+  wrapped.provider = 'omise';
+  if (err?.code) wrapped.code = err.code;
+  if (err?.location) wrapped.location = err.location;
+  if (err?.object) wrapped.providerObject = err.object;
+  return wrapped;
+}
+
 async function createCharge({ amount, source, token, description, metadata, returnUri }) {
   if (!source && !token) {
     throw Object.assign(new Error('source or token is required'), { statusCode: 400 });
@@ -54,14 +66,22 @@ async function createCharge({ amount, source, token, description, metadata, retu
     ...(returnUri ? { return_uri: returnUri } : {}),
   };
 
-  return getOmiseClient().charges.create(payload);
+  try {
+    return await getOmiseClient().charges.create(payload);
+  } catch (err) {
+    throw toOmiseHttpError(err);
+  }
 }
 
 async function retrieveCharge(chargeId) {
   if (!chargeId) {
     throw Object.assign(new Error('chargeId is required'), { statusCode: 400 });
   }
-  return getOmiseClient().charges.retrieve(chargeId);
+  try {
+    return await getOmiseClient().charges.retrieve(chargeId);
+  } catch (err) {
+    throw toOmiseHttpError(err);
+  }
 }
 
 function parseSignatureHeader(signatureHeader) {
@@ -116,4 +136,5 @@ module.exports = {
   verifyWebhookSignature,
   extractChargeIdFromEvent,
   toMinorAmount,
+  toOmiseHttpError,
 };

@@ -53,3 +53,17 @@ test('verifies Omise webhook signatures with configured secret', () => {
     }
   }
 });
+
+test('wraps Omise API errors with an HTTP status and provider details', () => {
+  const error = omiseService.toOmiseHttpError({
+    object: 'error',
+    code: 'invalid_source',
+    message: 'source is invalid',
+    location: '/charges',
+  });
+
+  assert.equal(error.statusCode, 400);
+  assert.equal(error.provider, 'omise');
+  assert.equal(error.code, 'invalid_source');
+  assert.equal(error.message, 'source is invalid');
+});
