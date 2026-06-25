@@ -81,6 +81,10 @@ test('validates Omise QR document paths before proxying images', () => {
     omiseService.normalizeDocumentPath('/charges/chrg_test_123/documents/docu_test_123/download'),
     '/charges/chrg_test_123/documents/docu_test_123/download'
   );
+  assert.equal(
+    omiseService.normalizeDocumentPath('/charges/chrg_test_123/documents/docu_test_123/downloads/63A9093A19F64CA2'),
+    '/charges/chrg_test_123/documents/docu_test_123/downloads/63A9093A19F64CA2'
+  );
   assert.throws(
     () => omiseService.normalizeDocumentPath('https://example.com/sources/src_test_123/documents/docu_test_123'),
     /Invalid Omise document URL/

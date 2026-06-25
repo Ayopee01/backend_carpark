@@ -1026,6 +1026,7 @@ const openapi = {
             content: {
               'image/png': { schema: { type: 'string', format: 'binary' } },
               'image/jpeg': { schema: { type: 'string', format: 'binary' } },
+              'image/svg+xml': { schema: { type: 'string', format: 'binary' } },
             },
           },
           400: error('Invalid chargeId or documentPath'),

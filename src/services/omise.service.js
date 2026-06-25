@@ -67,7 +67,7 @@ function normalizeDocumentPath(documentPath) {
     path = `${url.pathname}${url.search || ''}`;
   }
 
-  if (!/^\/(charges|sources)\/[^/]+\/documents\/[^/?#]+(\/download)?(\?.*)?$/.test(path)) {
+  if (!/^\/(charges|sources)\/[^/]+\/documents\/[^/?#]+(\/download|\/downloads\/[^/?#]+)?(\?.*)?$/.test(path)) {
     throw Object.assign(new Error('Invalid Omise document path'), { statusCode: 400 });
   }
 
@@ -76,6 +76,7 @@ function normalizeDocumentPath(documentPath) {
 
 function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
   return new Promise((resolve, reject) => {
+    const requestUrl = url instanceof URL ? url : new URL(url);
     const headers = { Accept: 'image/*' };
     if (authenticated) {
       const secretKey = process.env.OMISE_SECRET_KEY;
@@ -85,14 +86,23 @@ function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
       headers.Authorization = `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`;
     }
 
-    const req = https.request(url, { method: 'GET', headers }, (res) => {
+    const requestOptions = {
+      protocol: requestUrl.protocol,
+      hostname: requestUrl.hostname,
+      port: requestUrl.port || undefined,
+      path: `${requestUrl.pathname}${requestUrl.search || ''}`,
+      method: 'GET',
+      headers,
+    };
+
+    const req = https.request(requestOptions, (res) => {
       const location = res.headers.location;
       if (location && res.statusCode >= 300 && res.statusCode < 400) {
         res.resume();
         if (redirectCount >= 3) {
           return reject(Object.assign(new Error('Too many Omise document redirects'), { statusCode: 502 }));
         }
-        const nextUrl = new URL(location, url);
+        const nextUrl = new URL(location, requestUrl);
         return resolve(requestBinary(nextUrl, {
           authenticated: nextUrl.hostname === 'api.omise.co',
           redirectCount: redirectCount + 1,
@@ -131,7 +141,7 @@ function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
                 provider: 'omise',
               }));
             }
-            const nextUrl = new URL(downloadUri, url);
+            const nextUrl = new URL(downloadUri, requestUrl);
             return resolve(requestBinary(nextUrl, {
               authenticated: nextUrl.hostname === 'api.omise.co',
               redirectCount: redirectCount + 1,
