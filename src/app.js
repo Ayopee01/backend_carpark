@@ -14,6 +14,7 @@ const transactionRoutes = require('./routes/transactions.routes');
 const memberRoutes = require('./routes/members.routes');
 const servicePricingRoutes = require('./routes/servicePricing.routes');
 const paymentSettingsRouter = require('./routes/paymentSettings.routes');
+const paymentGatewayRoutes = require('./routes/paymentGateway.routes');
 const clientRoutes = require('./routes/client.routes');
 const deviceClientRoutes = require('./routes/deviceClient.routes');
 const devicesRoutes = require('./routes/devices.routes');
@@ -49,7 +50,12 @@ const app = express();
 
 // Middleware พื้นฐานสำหรับ request body, cors, log และ static uploads
 app.use(cors(getCorsOptions()));
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use(express.json({
+  limit: process.env.JSON_BODY_LIMIT || '1mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf?.length ? buf.toString('utf8') : '';
+  },
+}));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use('/uploads', express.static('uploads'));
 
@@ -75,6 +81,7 @@ app.get('/docs/openapi.json', (req, res) => {
 // Route สำหรับ kiosk ที่ต้องเข้าถึงได้ก่อน auth middleware
 app.use('/api/v1/client', clientRoutes);
 app.use('/api/v1/devices', deviceClientRoutes);
+app.use('/api/v1/payment-gateway', paymentGatewayRoutes);
 app.use(authMiddleware);
 app.use('/api/v1/auth', authRoutes);
 

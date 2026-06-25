@@ -30,9 +30,11 @@
     "express": "^4.21.2",
     "morgan": "^1.10.0",
     "multer": "^2.1.1",
+    "omise": "^1.1.0",
     "prisma": "^6.19.3",
     "swagger-ui-express": "^4.6.3",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

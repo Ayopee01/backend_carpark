@@ -78,6 +78,7 @@ const openapi = {
     { name: 'Members', description: 'Member and permission management. Requires settings permission.' },
     { name: 'Service Pricing', description: 'Pricing configuration. Requires pricing permission.' },
     { name: 'Payment Settings', description: 'Payment methods and channel mapping. Requires pricing permission.' },
+    { name: 'Payment Gateway', description: 'Omise charge creation, webhook callback, and realtime payment updates.' },
     { name: 'Devices', description: 'Unified admin management for kiosk, barrier gate, and other devices. Requires devices permission.' },
     { name: 'Client Events', description: 'Shared public/device endpoints for kiosk, barrier gate, and mobile clients.' },
     { name: 'Theme', description: 'Theme and logo configuration. Requires theme permission.' },
@@ -295,6 +296,50 @@ const openapi = {
         properties: {
           method: { type: 'string', enum: ['cash', 'qr', 'bank1', 'wallet', 'other'], example: 'qr', description: 'If omitted, backend uses qr for mobile/kiosk and wallet for barrier gate.' },
           amount: { type: 'number', example: 40 },
+        },
+      },
+      OmiseChargeRequest: {
+        type: 'object',
+        required: ['plateNo'],
+        properties: {
+          plateNo: { type: 'string', example: '3งจ9012' },
+          source: { type: 'string', example: 'src_test_123', description: 'Omise source id created by the frontend with Omise.js.' },
+          token: { type: 'string', example: 'tokn_test_123', description: 'Omise card token created by the frontend with Omise.js.' },
+          sourceType: { type: 'string', example: 'promptpay' },
+          method: { type: 'string', example: 'promptpay', description: 'Payment method id from payment-settings. Required unless sourceType is supplied; token-based card payments can omit this and use card.' },
+          deviceId: { type: 'string', example: 'K-20260524-001' },
+          returnUri: { type: 'string', example: 'https://carpark-uat.biza.me/payment/result' },
+        },
+      },
+      OmiseChargeResponse: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', example: 'Omise charge created' },
+          clientType: { type: 'string', example: 'mobile' },
+          charge: {
+            type: 'object',
+            properties: {
+              provider: { type: 'string', example: 'omise' },
+              chargeId: { type: 'string', example: 'chrg_test_123' },
+              status: { type: 'string', example: 'pending' },
+              amount: { type: 'integer', example: 4000, description: 'Minor currency unit; 4000 means 40.00 THB.' },
+              currency: { type: 'string', example: 'thb' },
+              plateNo: { type: 'string', example: '3งจ9012' },
+              method: { type: 'string', example: 'promptpay' },
+              channel: { type: 'string', example: 'mobile' },
+              authorizeUri: { type: 'string', nullable: true },
+              qr: { type: 'object', nullable: true, additionalProperties: true },
+            },
+          },
+        },
+      },
+      OmiseWebhookResponse: {
+        type: 'object',
+        properties: {
+          received: { type: 'boolean', example: true },
+          action: { type: 'string', example: 'processed' },
+          chargeId: { type: 'string', example: 'chrg_test_123' },
+          status: { type: 'string', example: 'successful' },
         },
       },
       AdminPaymentResponse: {
@@ -943,6 +988,28 @@ const openapi = {
         responses: { 200: ok('Payment received'), 400: error('transactionId or plateNo is required, invalid payment method/channel, or payment failed'), 401: error('Invalid or unregistered deviceId'), 403: error('Device under maintenance') },
       },
     },
+    '/api/v1/client/payment/omise/charge': {
+      post: {
+        tags: ['Payment Gateway'],
+        summary: 'Create Omise charge for client payment',
+        description: 'Public client payment gateway endpoint. The frontend creates an Omise source or card token with Omise.js and sends only source/token to this backend. Backend calculates the current remaining amount, creates an Omise charge with OMISE_SECRET_KEY, stores a pending gateway charge, and waits for Omise webhook before calling processPayment(). Payment success keeps the transaction paid_waiting_exit until a later OUT event completes the exit flow. Realtime updates are sent over WebSocket at /api/v1/client/payment/ws?plateNo={plateNo} or ?chargeId={chargeId}.',
+        security: publicRoute,
+        requestBody: body(ref('OmiseChargeRequest'), {
+          plateNo: '3งจ9012',
+          source: 'src_test_123',
+          sourceType: 'promptpay',
+          method: 'promptpay',
+        }),
+        responses: {
+          201: ok('Omise charge created', ref('OmiseChargeResponse')),
+          400: error('plateNo, source/token, or amount is invalid'),
+          401: error('Invalid or unregistered deviceId'),
+          403: error('Device under maintenance'),
+          404: error('Transaction not found'),
+          409: error('Multiple plate matches require user selection'),
+        },
+      },
+    },
     '/api/v1/client/{plateNo}/payment': {
       post: {
         tags: ['Client Events'],
@@ -952,6 +1019,28 @@ const openapi = {
         parameters: [idParam('plateNo', '3งจ9019'), query('deviceId', { type: 'string' }, 'K-20260521-008')],
         requestBody: body(ref('ClientPlatePaymentRequest'), { method: 'qr', amount: 40 }, false),
         responses: { 200: ok('Payment received'), 400: error('plateNo is required, invalid payment method/channel, or payment failed'), 401: error('Invalid or unregistered deviceId'), 403: error('Device under maintenance') },
+      },
+    },
+    '/api/v1/payment-gateway/omise/config': {
+      get: {
+        tags: ['Payment Gateway'],
+        summary: 'Get public Omise client config',
+        description: 'Optional public endpoint for frontend Omise.js configuration. Returns only OMISE_PUBLIC_KEY when the backend is configured to expose it; the secret key is never returned.',
+        security: publicRoute,
+        responses: { 200: ok('Omise public config') },
+      },
+    },
+    '/api/v1/payment-gateway/omise/webhook': {
+      post: {
+        tags: ['Payment Gateway'],
+        summary: 'Receive Omise webhook',
+        description: 'Public callback used by Omise. Backend verifies the Omise webhook signature when OMISE_WEBHOOK_SECRET is configured, retrieves the charge from Omise, and only calls processPayment() after a successful charge. Duplicate webhook deliveries are idempotent.',
+        security: publicRoute,
+        responses: {
+          200: ok('Webhook received', ref('OmiseWebhookResponse')),
+          400: error('Invalid webhook payload'),
+          401: error('Invalid Omise webhook signature'),
+        },
       },
     },
     '/api/v1/client/check-in': {

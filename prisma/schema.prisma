@@ -75,6 +75,29 @@ model Transaction {
   @@map("transactions")
 }
 
+model PaymentGatewayCharge {
+  id            String   @id
+  provider      String   @default("omise")
+  chargeId      String   @unique @map("charge_id")
+  transactionId String   @map("transaction_id")
+  plateNo       String   @map("plate_no")
+  amount        Int
+  currency      String
+  method        String
+  channel       String
+  status        String   @default("pending")
+  paidAt        DateTime? @map("paid_at") @db.Timestamptz(6)
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz(6)
+  raw           Json?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([transactionId], map: "payment_gateway_charges_transaction_id_idx")
+  @@index([plateNo], map: "payment_gateway_charges_plate_no_idx")
+  @@index([status], map: "payment_gateway_charges_status_idx")
+  @@map("payment_gateway_charges")
+}
+
 model AppConfig {
   key       String   @id
   data      Json     @default("{}")

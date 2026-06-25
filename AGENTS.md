@@ -98,6 +98,25 @@ Payment update behavior:
 - Gate payments set `exitTimeLimit`, `exitAt`, and `status: completed`
   immediately.
 
+Payment gateway behavior:
+
+- Omise secret and webhook secret stay backend-only in `.env`; frontend should
+  only use the public key through its own env or the optional public config
+  endpoint.
+- Frontend creates Omise `source` or `token` with Omise.js and sends only that
+  value plus full `plateNo` to the backend. Do not accept card number or CVV in
+  this API.
+- Gateway payment `method` must be a configured payment-settings method id.
+  Require `method` or Omise `sourceType` for source-based payments; token-based
+  card payments may omit `method` and use `card`. Do not silently map card
+  payments to `bank1` or default source payments to `promptpay`.
+- Creating an Omise charge stores a pending `payment_gateway_charges` row but
+  does not mark the transaction paid yet.
+- Omise webhook is the source of truth for successful gateway payment. Webhook
+  success calls `processPayment()` once, emits `payment_updated`, and leaves
+  non-gate flows in `paid_waiting_exit` until a later valid `OUT` event.
+- Webhook handling must remain idempotent because Omise can retry deliveries.
+
 ## Transaction Flow
 
 Camera/LPR transaction creation uses the admin transaction route:

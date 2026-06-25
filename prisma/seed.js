@@ -186,15 +186,18 @@ const appConfigs = [
       methods: [
         { id: 'cash', label: 'Cash', icon: 'cash', isActive: true },
         { id: 'qr', label: 'QR Payment', icon: 'qr', isActive: true },
+        { id: 'promptpay', label: 'PromptPay', icon: 'qr', isActive: true },
+        { id: 'card', label: 'Credit/Debit Card', icon: 'card', isActive: true },
+        { id: 'mobile_banking', label: 'Mobile Banking', icon: 'bank', isActive: true },
         { id: 'bank1', label: 'Bank Account 1', icon: 'bank', isActive: true },
         { id: 'wallet', label: 'Wallet', icon: 'wallet', isActive: true },
         { id: 'other', label: 'Other', icon: 'more', isActive: true }
       ],
       channels: [
-        { id: 'ch_cashier', name: 'Cashier', icon: 'user', allowedMethods: ['cash', 'qr', 'bank1', 'wallet', 'other'] },
-        { id: 'ch_kiosk', name: 'Kiosk', icon: 'vending', allowedMethods: ['qr', 'bank1', 'wallet'] },
-        { id: 'ch_mobile', name: 'Mobile', icon: 'qr', allowedMethods: ['qr', 'wallet'] },
-        { id: 'ch_gate', name: 'Exit Gate', icon: 'gate', allowedMethods: ['wallet'] }
+        { id: 'ch_cashier', name: 'Cashier', icon: 'user', allowedMethods: ['cash', 'qr', 'promptpay', 'card', 'mobile_banking', 'bank1', 'wallet', 'other'] },
+        { id: 'ch_kiosk', name: 'Kiosk', icon: 'vending', allowedMethods: ['qr', 'promptpay', 'card', 'mobile_banking', 'bank1', 'wallet'] },
+        { id: 'ch_mobile', name: 'Mobile', icon: 'qr', allowedMethods: ['qr', 'promptpay', 'card', 'mobile_banking', 'wallet'] },
+        { id: 'ch_gate', name: 'Exit Gate', icon: 'gate', allowedMethods: ['wallet', 'promptpay', 'card'] }
       ]
     }
   },

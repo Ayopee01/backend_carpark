@@ -9,6 +9,7 @@ const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceA
 const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const { activateKiosk } = require('../data/repositories/kiosks.repo');
 const { activateBarrierGate } = require('../services/barrierGates.service');
+const { createOmiseChargeForClient } = require('../services/paymentGateway.service');
 
 const router = express.Router();
 
@@ -197,6 +198,57 @@ router.get('/transaction/:id', async (req, res, next) => {
 
     return res.json(toClientTransactionResponse(transaction, source));
   } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/payment/omise/charge', async (req, res, next) => {
+  try {
+    const {
+      plateNo,
+      source,
+      token,
+      sourceType,
+      method,
+      deviceId: bodyDeviceId,
+      returnUri,
+    } = req.body || {};
+    const deviceId = req.query?.deviceId || bodyDeviceId;
+    if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
+    if (!source && !token) return res.status(400).json({ message: 'source or token is required' });
+
+    const sourceInfo = await resolveClientSource(deviceId, req);
+    const channel = sourceInfo.clientType === 'barrier_gate'
+      ? 'gate'
+      : sourceInfo.clientType === 'kiosk'
+        ? 'kiosk'
+        : 'mobile';
+    const result = await createOmiseChargeForClient({
+      plateNo,
+      source,
+      token,
+      sourceType,
+      method,
+      channel,
+      processedBy: deviceId ? `${sourceInfo.clientType}_${deviceId}` : 'mobile_user',
+      returnUri,
+    });
+
+    return res.status(201).json({
+      message: 'Omise charge created',
+      clientType: sourceInfo.clientType,
+      device: sourceInfo.device,
+      charge: result,
+    });
+  } catch (err) {
+    if (err.statusCode === 409 && err.candidates) {
+      return res.status(409).json({
+        message: err.message,
+        matchType: 'multiple',
+        requiresSelection: true,
+        candidates: err.candidates,
+      });
+    }
     next(err);
   }
 });
