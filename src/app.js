@@ -6,6 +6,7 @@ const swaggerUi = require('swagger-ui-express');
 
 const authMiddleware = require('./middleware/auth');
 const { authorize } = require('./middleware/permission');
+const { requireDeviceAuth } = require('./middleware/deviceAuth');
 
 const authRoutes = require('./routes/auth.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -82,6 +83,10 @@ app.get('/docs/openapi.json', (req, res) => {
 app.use('/api/v1/client', clientRoutes);
 app.use('/api/v1/devices', deviceClientRoutes);
 app.use('/api/v1/payment-gateway', paymentGatewayRoutes);
+app.post('/api/v1/transactions', (req, res, next) => {
+  if (!req.get('x-device-id') && !req.body?.deviceId) return next('route');
+  return next();
+}, requireDeviceAuth(['camera']), transactionRoutes.handleCameraTransactionRequest);
 app.use(authMiddleware);
 app.use('/api/v1/auth', authRoutes);
 

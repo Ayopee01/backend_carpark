@@ -39,6 +39,9 @@ async function activateBarrierGate(code) {
   const registered = await activateRegisteredDevice(data.deviceId, {
     name: data.name,
     location: data.location,
+    gateId: data.gateId,
+    direction: data.direction,
+    cameraIds: data.cameraIds,
   });
 
   // ถ้าไม่พบ deviceToken แสดงว่า device ไม่พร้อมใช้งานหรือข้อมูลหมดอายุ
@@ -50,6 +53,9 @@ async function activateBarrierGate(code) {
   await upsertBarrierGateHeartbeat(data.deviceId, {
     name: data.name,
     location: data.location,
+    gateId: data.gateId,
+    direction: data.direction,
+    cameraIds: data.cameraIds,
   });
 
   // ลบ Activation Code หลังใช้งานสำเร็จ เพื่อป้องกันการใช้ซ้ำ
@@ -64,6 +70,9 @@ async function activateBarrierGate(code) {
     deviceType: registered.device.deviceType,
     deviceName: registered.device.deviceName,
     location: registered.device.location,
+    gateId: registered.device.gateId || null,
+    direction: registered.device.direction || null,
+    cameraIds: registered.device.cameraIds || [],
     status: registered.device.status,
   };
 }

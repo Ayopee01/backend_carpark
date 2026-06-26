@@ -3,6 +3,7 @@ const { listTransactions, lookupTransactionApiByPlateNo, processPayment, updateT
 const { authorize } = require('../middleware/permission');
 const { createTransactionFromCamera } = require('../services/transactions.service');
 const { validateCameraTransactionPayload } = require('../validators/transactions.validator');
+const { validateCameraGateBinding } = require('../data/repositories/barrierGates.repo');
 
 const router = express.Router();
 
@@ -109,9 +110,9 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Route create transaction from camera/LPR body payload.
+// Route handler for camera/LPR body payload.
 // Request body receives plateNo, cameraId, gateId, direction, capturedAt, imageUrl.
-router.post('/', async (req, res, next) => {
+async function handleCameraTransactionRequest(req, res, next) {
   try {
     const validation = validateCameraTransactionPayload(req.body);
 
@@ -124,13 +125,33 @@ router.post('/', async (req, res, next) => {
       });
     }
 
+    if (req.device?.deviceType === 'camera' && validation.dto.cameraId !== req.device.deviceId) {
+      return res.status(400).json({
+        success: false,
+        action: 'CAMERA_ID_MISMATCH',
+        message: 'cameraId must match authenticated camera deviceId',
+      });
+    }
+
+    const binding = await validateCameraGateBinding(validation.dto);
+    if (!binding.ok) {
+      return res.status(binding.statusCode || 400).json({
+        success: false,
+        action: 'CAMERA_GATE_VALIDATION_ERROR',
+        message: binding.message,
+        reason: binding.reason,
+      });
+    }
+
     const result = await createTransactionFromCamera(validation.dto);
 
     res.status(result.statusCode).json(result.body);
   } catch (err) {
     next(err);
   }
-});
+}
+
+router.post('/', handleCameraTransactionRequest);
 
 // Route get one transaction by transaction id or plateNo.
 router.get('/:id', async (req, res, next) => {
@@ -217,4 +238,5 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.handleCameraTransactionRequest = handleCameraTransactionRequest;
 

@@ -448,10 +448,14 @@ const openapi = {
         required: ['deviceName', 'deviceType'],
         properties: {
           deviceName: { type: 'string', example: 'Test Kiosk 1' },
-          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate'], example: 'kiosk', description: 'Controls which frontend role/screen the activation code belongs to.' },
+          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate', 'camera'], example: 'kiosk', description: 'Controls which frontend role/screen or device role the activation code belongs to.' },
           deviceCode: { type: 'string', example: 'KIOSK-A' },
           name: { type: 'string', example: 'Test Kiosk 1' },
           location: { type: 'string', example: 'Main Lobby' },
+          gateId: { type: 'string', nullable: true, example: 'GATE-A' },
+          direction: { type: 'string', nullable: true, enum: ['IN', 'OUT'], example: 'OUT' },
+          cameraIds: { type: 'array', items: { type: 'string' }, example: ['CAM-OUT-A'] },
+          cameraRole: { type: 'string', nullable: true, example: 'lpr' },
           connectionType: { type: 'string', example: 'lan' },
           note: { type: 'string' },
         },
@@ -478,6 +482,10 @@ const openapi = {
           ipAddress: { type: 'string', nullable: true, example: '192.168.1.20' },
           ip: { type: 'string', nullable: true, example: '192.168.1.20', description: 'Alias for ipAddress.' },
           location: { type: 'string', nullable: true, example: 'Main Lobby' },
+          gateId: { type: 'string', nullable: true, example: 'GATE-A' },
+          direction: { type: 'string', nullable: true, enum: ['IN', 'OUT'], example: 'OUT' },
+          cameraIds: { type: 'array', items: { type: 'string' }, example: ['CAM-OUT-A'] },
+          cameraRole: { type: 'string', nullable: true, example: 'lpr' },
           status: { type: 'string', enum: ['pending_activation', 'active', 'offline', 'maintenance'], example: 'maintenance' },
           isOnline: { type: 'boolean', example: false },
           note: { type: 'string', example: 'Temporarily disabled for maintenance' },
@@ -492,6 +500,10 @@ const openapi = {
           connectionType: { type: 'string', example: 'lan' },
           location: { type: 'string', nullable: true, example: 'Zone A' },
           ipAddress: { type: 'string', nullable: true, example: '::ffff:172.23.0.2' },
+          gateId: { type: 'string', nullable: true, example: 'GATE-A' },
+          direction: { type: 'string', nullable: true, enum: ['IN', 'OUT'], example: 'OUT' },
+          cameraIds: { type: 'array', items: { type: 'string' }, example: ['CAM-OUT-A'] },
+          cameraRole: { type: 'string', nullable: true, example: 'lpr' },
           status: { type: 'string', example: 'offline' },
           isOnline: { type: 'boolean', example: false },
           note: { type: 'string', example: 'Waiting for activation' },
@@ -515,7 +527,7 @@ const openapi = {
         type: 'object',
         properties: {
           status: { type: 'string', example: 'error' },
-          message: { type: 'string', example: 'deviceType must be kiosk or barrier_gate' },
+          message: { type: 'string', example: 'deviceType must be kiosk, barrier_gate, or camera' },
         },
       },
       ActivationRequest: {
@@ -535,6 +547,10 @@ const openapi = {
           deviceType: { type: 'string', example: 'kiosk' },
           deviceName: { type: 'string', example: 'Test Kiosk 1' },
           location: { type: 'string', nullable: true, example: 'Main Lobby' },
+          gateId: { type: 'string', nullable: true, example: 'GATE-A' },
+          direction: { type: 'string', nullable: true, enum: ['IN', 'OUT'], example: 'OUT' },
+          cameraIds: { type: 'array', items: { type: 'string' }, example: ['CAM-OUT-A'] },
+          cameraRole: { type: 'string', nullable: true, example: 'lpr' },
           status: { type: 'string', example: 'active' },
         },
       },
@@ -652,7 +668,8 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Create or update transaction from camera/LPR body',
-        description: 'Admin/camera integration flow. Requires Bearer token and transactions permission. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
+        description: 'Admin/camera integration flow. Admins may use Bearer token with transactions permission; activated cameras may use x-device-id and x-device-token. cameraId must match the authenticated camera device when device credentials are used, and must be mapped to the submitted gateId/direction through a barrier gate config. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
+        security: [...deviceAuth, ...bearer],
         requestBody: body(ref('CameraTransactionRequest')),
         responses: { 200: ok('Duplicate, active transaction, or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
       },
@@ -836,6 +853,13 @@ const openapi = {
         requestBody: body(ref('PaymentMethodUpdateRequest'), { isActive: true }),
         responses: { 200: ok('Payment method updated', ref('SuccessMessageResponse')), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Method not found') },
       },
+      delete: {
+        tags: ['Payment Settings'],
+        summary: 'Delete payment method',
+        description: 'Requires permission: pricing. Deletes the method by id and removes that id from every channel allowedMethods list.',
+        parameters: [idParam('id', 'promptpay')],
+        responses: { 200: ok('Payment method deleted', ref('SuccessMessageResponse')), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Method not found') },
+      },
     },
     '/api/v1/payment-settings/channels': {
       get: {
@@ -853,6 +877,13 @@ const openapi = {
         parameters: [idParam('id', 'ch_kiosk')],
         requestBody: body(ref('ChannelMappingUpdateRequest'), { allowedMethods: ['qr', 'wallet'] }),
         responses: { 200: ok('Channel mapping updated', ref('SuccessMessageResponse')), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Channel not found or invalid methods') },
+      },
+      delete: {
+        tags: ['Payment Settings'],
+        summary: 'Delete payment channel',
+        description: 'Requires permission: pricing. Deletes the payment channel by id.',
+        parameters: [idParam('id', 'ch_kiosk')],
+        responses: { 200: ok('Payment channel deleted', ref('SuccessMessageResponse')), 401: error('Missing, invalid, expired, or revoked access token'), 403: error('Authenticated user does not have the required permission'), 404: error('Channel not found') },
       },
     },
 
@@ -905,8 +936,8 @@ const openapi = {
       post: {
         tags: ['Devices'],
         summary: 'Create activation code for frontend/device role',
-        description: 'Requires permission: devices. Creates an activation code that the frontend enters to activate a kiosk or barrier gate role. deviceType controls which role/screen the activated frontend should show.',
-        requestBody: body(ref('DeviceActivationCodeCreateRequest'), { deviceName: 'Test Kiosk 1', deviceType: 'kiosk' }),
+        description: 'Requires permission: devices. Creates an activation code for kiosk, barrier gate, or camera. Barrier gate configs may include gateId, direction, and cameraIds mapped to activated camera devices.',
+        requestBody: body(ref('DeviceActivationCodeCreateRequest'), { deviceName: 'Exit Barrier Gate 1', deviceType: 'barrier_gate', gateId: 'GATE-A', direction: 'OUT', cameraIds: ['CAM-OUT-A'] }),
         responses: {
           201: ok('Activation code created', ref('DeviceActivationCodeCreateResponse')),
           400: { description: 'Invalid request', content: json(ref('ActivationErrorResponse')) },
@@ -937,12 +968,13 @@ const openapi = {
       get: {
         tags: ['Client Events'],
         summary: 'Shared client SSE event stream',
-        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. LPR results are emitted as lpr_detected after POST /api/v1/transactions is processed. Use gateId and direction to subscribe a barrier-gate screen to only its relevant camera events. Current events include connected, ping, theme_updated, and lpr_detected.',
+        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. LPR results are emitted as lpr_detected after POST /api/v1/transactions is processed. Use gateId, direction, and optionally cameraId to subscribe a barrier-gate screen to only its mapped camera events. Current events include connected, ping, theme_updated, and lpr_detected.',
         security: [...deviceAuth, {}],
         parameters: [
           query('deviceId', { type: 'string' }, 'BG-20260618-001'),
           query('gateId', { type: 'string' }, 'GATE-IN-A'),
           query('direction', { type: 'string', enum: ['IN', 'OUT'] }, 'IN'),
+          query('cameraId', { type: 'string' }, 'CAM-OUT-A'),
         ],
         responses: { 200: { description: 'SSE stream' }, 400: error('Device identity mismatch'), 401: error('Unauthorized device'), 403: error('Device under maintenance or invalid device credentials') },
       },
@@ -950,8 +982,8 @@ const openapi = {
     '/api/v1/client/activate': {
       post: {
         tags: ['Client Events'],
-        summary: 'Activate kiosk or barrier gate with activation code',
-        description: 'Shared activation endpoint for frontend clients. The role is determined by the activation code created from POST /api/v1/devices, so the frontend only needs to send the code.',
+        summary: 'Activate kiosk, barrier gate, or camera with activation code',
+        description: 'Shared activation endpoint for frontend clients/devices. The role is determined by the activation code created from POST /api/v1/devices, so the client only needs to send the code.',
         security: publicRoute,
         requestBody: body(ref('ActivationRequest')),
         responses: { 200: ok('Activation successful', ref('ActivationResponse')), 400: error('Activation code is required, invalid, or expired') },

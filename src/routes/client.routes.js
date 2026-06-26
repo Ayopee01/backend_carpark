@@ -9,6 +9,7 @@ const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceA
 const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const { activateKiosk } = require('../data/repositories/kiosks.repo');
 const { activateBarrierGate } = require('../services/barrierGates.service');
+const { activateCamera } = require('../services/cameras.service');
 const { createOmiseChargeForClient, getOmiseQrImage } = require('../services/paymentGateway.service');
 
 const router = express.Router();
@@ -118,8 +119,12 @@ router.post('/activate', async (req, res, next) => {
     const kioskResult = await activateKiosk(code);
     if (kioskResult.success) return res.json(kioskResult);
 
-    const barrierGateResult = await activateBarrierGate(code);
+    const [barrierGateResult, cameraResult] = await Promise.all([
+      activateBarrierGate(code),
+      activateCamera(code),
+    ]);
     if (barrierGateResult.success) return res.json(barrierGateResult);
+    if (cameraResult.success) return res.json(cameraResult);
 
     return res.status(400).json({ message: 'Invalid or expired code' });
   } catch (err) {
@@ -128,7 +133,7 @@ router.post('/activate', async (req, res, next) => {
 });
 
 // Shared heartbeat/check-in endpoint for kiosk and barrier gate devices.
-router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate']), async (req, res, next) => {
+router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate', 'camera']), async (req, res, next) => {
   try {
     const { deviceId, name, location } = req.body || {};
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });
@@ -295,9 +300,10 @@ router.post('/payment', async (req, res, next) => {
 // Shared SSE stream for kiosk, barrier gate, and public/mobile clients.
 router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req, res, next) => {
   try {
-    const { deviceId, gateId, direction } = req.query;
+    const { deviceId, gateId, direction, cameraId } = req.query;
     let clientType = 'public';
     const normalizedDirection = direction ? String(direction).trim().toUpperCase() : null;
+    const normalizedCameraId = cameraId ? String(cameraId).trim() : null;
 
     if (deviceId) {
       if (!req.device) return res.status(401).json({ message: 'Unauthorized device' });
@@ -320,6 +326,7 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
     const onLprDetected = (event) => {
       if (gateId && event.gateId !== gateId) return;
       if (normalizedDirection && event.direction !== normalizedDirection) return;
+      if (normalizedCameraId && event.cameraId !== normalizedCameraId) return;
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
     const keepAlive = setInterval(() => {

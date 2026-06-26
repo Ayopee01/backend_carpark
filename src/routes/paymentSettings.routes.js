@@ -6,7 +6,7 @@ const { authorize } = require('../middleware/permission');
 // Payment settings access is driven by members.permissions.
 router.use(authorize('pricing'));
 
-// หมวดวิธีการชำระเงิน (Global Payment Methods)
+// Global payment methods.
 router.get('/methods', async (req, res, next) => {
   try {
     const methods = await paymentRepo.listMethodsWithMeta();
@@ -16,7 +16,6 @@ router.get('/methods', async (req, res, next) => {
   }
 });
 
-// Route update payment method ตาม id
 router.patch('/methods/:id', async (req, res, next) => {
   try {
     const method = await paymentRepo.updateMethod(req.params.id, req.body);
@@ -27,7 +26,17 @@ router.patch('/methods/:id', async (req, res, next) => {
   }
 });
 
-// หมวดช่องทางบริการ (Service Channels Mapping)
+router.delete('/methods/:id', async (req, res, next) => {
+  try {
+    const deleted = await paymentRepo.deleteMethod(req.params.id);
+    if (!deleted) return res.status(404).json({ message: 'Method not found' });
+    res.json({ success: true, message: 'Payment method deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Service channel mappings.
 router.get('/channels', async (req, res, next) => {
   try {
     const channels = await paymentRepo.listChannelsWithMeta();
@@ -37,7 +46,6 @@ router.get('/channels', async (req, res, next) => {
   }
 });
 
-// Route update mapping วิธีชำระเงินที่อนุญาตในแต่ละ service channel
 router.patch('/channels/:id', async (req, res, next) => {
   try {
     const { allowedMethods } = req.body;
@@ -49,6 +57,14 @@ router.patch('/channels/:id', async (req, res, next) => {
   }
 });
 
-// Export router
-module.exports = router;
+router.delete('/channels/:id', async (req, res, next) => {
+  try {
+    const deleted = await paymentRepo.deleteChannel(req.params.id);
+    if (!deleted) return res.status(404).json({ message: 'Channel not found' });
+    res.json({ success: true, message: 'Payment channel deleted' });
+  } catch (err) {
+    next(err);
+  }
+});
 
+module.exports = router;

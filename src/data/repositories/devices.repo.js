@@ -8,7 +8,7 @@ const { hashToken } = require('../../utils/auth');
 // Constant key สำหรับอ้างอิง devices config ใน table app_config
 const CONFIG_KEY = 'devices';
 const OFFLINE_AFTER_MINUTES = 5;
-const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate']);
+const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate', 'camera']);
 const appEvents = require('../../utils/events');
 
 // Function สร้าง device token แบบสุ่มเพื่อใช้ยืนยันตัวตนของ kiosk/barrier gate
@@ -57,6 +57,16 @@ function toSafeConfig(config) {
     ...config,
     devices: (Array.isArray(config.devices) ? config.devices : []).map(toSafeDevice),
   };
+}
+
+function normalizeDirection(direction) {
+  const value = String(direction || '').trim().toUpperCase();
+  return ['IN', 'OUT'].includes(value) ? value : null;
+}
+
+function normalizeCameraIds(cameraIds) {
+  if (!Array.isArray(cameraIds)) return [];
+  return [...new Set(cameraIds.map((cameraId) => String(cameraId || '').trim()).filter(Boolean))];
 }
 
 // Function เพิ่ม summary online/offline ให้ config devices
@@ -218,6 +228,10 @@ async function createPendingActivationDevice(payload = {}) {
     deviceType,
     connectionType,
     location,
+    gateId,
+    direction,
+    cameraIds,
+    cameraRole,
     note
   } = payload;
 
@@ -240,6 +254,10 @@ async function createPendingActivationDevice(payload = {}) {
     connectionType: connectionType || 'lan',
     ipAddress: null,
     location: location || null,
+    gateId: gateId ? String(gateId).trim() : null,
+    direction: normalizeDirection(direction),
+    cameraIds: normalizeCameraIds(cameraIds),
+    cameraRole: cameraRole ? String(cameraRole).trim() : null,
     status: 'pending_activation',
     isOnline: false,
     note: note || 'Waiting for activation'
@@ -273,6 +291,10 @@ async function activateRegisteredDevice(generatedDeviceId, details = {}) {
       activationExpiresAt: null,
       deviceName: details.name || current.deviceName,
       location: details.location || current.location || null,
+      gateId: details.gateId || current.gateId || null,
+      direction: normalizeDirection(details.direction) || current.direction || null,
+      cameraIds: details.cameraIds !== undefined ? normalizeCameraIds(details.cameraIds) : normalizeCameraIds(current.cameraIds),
+      cameraRole: details.cameraRole || current.cameraRole || null,
       ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
       status: 'active',
       isOnline: true,
@@ -353,6 +375,10 @@ async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) 
       ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
       location: details.location || current.location,
       deviceName: details.name || current.deviceName,
+      gateId: details.gateId !== undefined ? String(details.gateId || '').trim() || null : current.gateId || null,
+      direction: details.direction !== undefined ? normalizeDirection(details.direction) : current.direction || null,
+      cameraIds: details.cameraIds !== undefined ? normalizeCameraIds(details.cameraIds) : normalizeCameraIds(current.cameraIds),
+      cameraRole: details.cameraRole !== undefined ? String(details.cameraRole || '').trim() || null : current.cameraRole || null,
       status: current.status === 'maintenance' ? 'maintenance' : 'active',
       isOnline: current.status === 'maintenance' ? current.isOnline : true,
       lastSeen: new Date().toISOString(),
@@ -399,6 +425,10 @@ async function updateDevice(id, body = {}) {
     'connectionType',
     'ipAddress',
     'location',
+    'gateId',
+    'direction',
+    'cameraIds',
+    'cameraRole',
     'status',
     'isOnline',
     'note'
@@ -409,6 +439,8 @@ async function updateDevice(id, body = {}) {
   });
   if ('name' in body && !('deviceName' in patch)) patch.deviceName = body.name;
   if ('ip' in body && !('ipAddress' in patch)) patch.ipAddress = body.ip;
+  if ('direction' in patch) patch.direction = normalizeDirection(patch.direction);
+  if ('cameraIds' in patch) patch.cameraIds = normalizeCameraIds(patch.cameraIds);
   if ('status' in patch && !('isOnline' in patch)) patch.isOnline = patch.status === 'active';
 
   devices[index] = { ...devices[index], ...patch };

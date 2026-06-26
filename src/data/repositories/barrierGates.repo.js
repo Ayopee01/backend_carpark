@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { getConfig, getConfigWithMeta, setConfig, updateConfig } = require('./config.repo');
 const {
   getDevicesConfig,
+  getRegisteredDevice,
   getPendingActivationDeviceByCode,
 } = require('./devices.repo');
 
@@ -54,6 +55,16 @@ async function saveBarrierGates(barrierGates) {
 
 function findBarrierGateIndex(barrierGates, deviceId) {
   return barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
+}
+
+function normalizeDirection(direction) {
+  const value = String(direction || '').trim().toUpperCase();
+  return ['IN', 'OUT'].includes(value) ? value : null;
+}
+
+function normalizeCameraIds(cameraIds) {
+  if (!Array.isArray(cameraIds)) return [];
+  return [...new Set(cameraIds.map((cameraId) => String(cameraId || '').trim()).filter(Boolean))];
 }
 
 // Function คำนวณ runtime status ของ Barrier Gate จาก status และ lastSeen
@@ -127,6 +138,9 @@ async function resolveBarrierGateActivationCode(code) {
         deviceId: pending.id,
         name: pending.deviceName,
         location: pending.location,
+        gateId: pending.gateId,
+        direction: pending.direction,
+        cameraIds: normalizeCameraIds(pending.cameraIds),
         expiresAt: pending.activationExpiresAt ? new Date(pending.activationExpiresAt) : null,
       };
     }
@@ -162,6 +176,9 @@ async function createBarrierGate(data = {}) {
     name: data.name || data.deviceName || `Barrier Gate ${deviceId}`,
     location: data.location || 'Unknown',
     ip: data.ip || '0.0.0.0',
+    gateId: data.gateId ? String(data.gateId).trim() : null,
+    direction: normalizeDirection(data.direction),
+    cameraIds: normalizeCameraIds(data.cameraIds),
     status: data.status || 'online',
     firstSeen: data.firstSeen || now,
     lastSeen: data.lastSeen || now,
@@ -185,6 +202,8 @@ async function updateBarrierGate(deviceId, details = {}) {
   barrierGates[index] = {
     ...barrierGates[index],
     ...details,
+    direction: details.direction !== undefined ? normalizeDirection(details.direction) : barrierGates[index].direction || null,
+    cameraIds: details.cameraIds !== undefined ? normalizeCameraIds(details.cameraIds) : normalizeCameraIds(barrierGates[index].cameraIds),
     deviceId,
   };
   const saved = await saveBarrierGates(barrierGates);
@@ -234,6 +253,9 @@ async function upsertBarrierGateHeartbeatRecord(deviceId, details = {}) {
         name: details.name || `Barrier Gate ${deviceId}`,
         location: details.location || 'Unknown',
         ip: details.ip || '0.0.0.0',
+        gateId: details.gateId ? String(details.gateId).trim() : null,
+        direction: normalizeDirection(details.direction),
+        cameraIds: normalizeCameraIds(details.cameraIds),
         status: 'online',
         firstSeen: now,
         lastSeen: now,
@@ -249,6 +271,9 @@ async function upsertBarrierGateHeartbeatRecord(deviceId, details = {}) {
         ...(details.name ? { name: details.name } : {}),
         ...(details.location ? { location: details.location } : {}),
         ...(details.ip ? { ip: details.ip } : {}),
+        ...(details.gateId !== undefined ? { gateId: String(details.gateId || '').trim() || null } : {}),
+        ...(details.direction !== undefined ? { direction: normalizeDirection(details.direction) } : {}),
+        ...(details.cameraIds !== undefined ? { cameraIds: normalizeCameraIds(details.cameraIds) } : {}),
       };
       barrierGates[index] = barrierGate;
     }
@@ -276,12 +301,52 @@ async function listAllBarrierGatesWithMeta() {
   };
 }
 
+async function findBarrierGateByCamera(cameraId, { gateId = null, direction = null } = {}) {
+  const normalizedCameraId = String(cameraId || '').trim();
+  if (!normalizedCameraId) return null;
+
+  const { barrierGates } = await getBarrierGatesConfig();
+  const normalizedGateId = gateId ? String(gateId).trim() : null;
+  const normalizedDirection = normalizeDirection(direction);
+
+  return barrierGates.find((barrierGate) => {
+    const cameraIds = normalizeCameraIds(barrierGate.cameraIds);
+    if (!cameraIds.includes(normalizedCameraId)) return false;
+    if (normalizedGateId && barrierGate.gateId && barrierGate.gateId !== normalizedGateId) return false;
+    if (normalizedDirection && barrierGate.direction && barrierGate.direction !== normalizedDirection) return false;
+    return true;
+  }) || null;
+}
+
+async function validateCameraGateBinding({ cameraId, gateId, direction } = {}) {
+  const normalizedCameraId = String(cameraId || '').trim();
+  if (!normalizedCameraId) {
+    return { ok: false, statusCode: 400, reason: 'cameraId_required', message: 'cameraId is required' };
+  }
+
+  const camera = await getRegisteredDevice(normalizedCameraId);
+  if (!camera || camera.deviceType !== 'camera') {
+    return { ok: false, statusCode: 400, reason: 'camera_not_registered', message: 'cameraId is not an activated camera device' };
+  }
+  if (!['active', 'offline'].includes(camera.status)) {
+    return { ok: false, statusCode: 403, reason: 'camera_inactive', message: 'Camera device is not active' };
+  }
+
+  const barrierGate = await findBarrierGateByCamera(normalizedCameraId, { gateId, direction });
+  if (!barrierGate) {
+    return { ok: false, statusCode: 400, reason: 'camera_gate_mismatch', message: 'cameraId is not mapped to this gateId and direction' };
+  }
+
+  return { ok: true, camera, barrierGate };
+}
+
 module.exports = {
   createBarrierGate,
   deleteBarrierGateActivationCode,
   deleteBarrierGate,
   editBarrierGate,
   generateBarrierGateActivationCode,
+  findBarrierGateByCamera,
   getBarrierGate,
   getBarrierGateRuntimeStatus,
   listAllBarrierGates,
@@ -291,4 +356,5 @@ module.exports = {
   updateBarrierGate,
   updateBarrierGateStatus,
   upsertBarrierGateHeartbeatRecord,
+  validateCameraGateBinding,
 };

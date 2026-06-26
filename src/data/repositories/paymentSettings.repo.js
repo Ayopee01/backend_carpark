@@ -39,6 +39,28 @@ async function updateMethod(id, updates) {
   return { ...methods[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
+async function deleteMethod(id) {
+  const settings = await getPaymentSettings();
+  const methods = [...(settings.methods || [])];
+  const index = methods.findIndex((method) => method.id === id);
+  if (index === -1) return null;
+
+  const nextMethods = methods.filter((method) => method.id !== id);
+  const nextChannels = (settings.channels || []).map((channel) => ({
+    ...channel,
+    allowedMethods: Array.isArray(channel.allowedMethods)
+      ? channel.allowedMethods.filter((methodId) => methodId !== id)
+      : channel.allowedMethods,
+  }));
+
+  const saved = await setConfig(CONFIG_KEY, {
+    ...settings,
+    methods: nextMethods,
+    channels: nextChannels,
+  });
+  return { id, configUpdatedAt: saved.configUpdatedAt };
+}
+
 async function listChannels() {
   const settings = await getPaymentSettings();
   return settings.channels || [];
@@ -72,6 +94,20 @@ async function updateChannelMapping(id, allowedMethods) {
   return { ...channels[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
+async function deleteChannel(id) {
+  const settings = await getPaymentSettings();
+  const channels = [...(settings.channels || [])];
+  const index = channels.findIndex((channel) => channel.id === id);
+  if (index === -1) return null;
+
+  const nextChannels = channels.filter((channel) => channel.id !== id);
+  const saved = await setConfig(CONFIG_KEY, {
+    ...settings,
+    channels: nextChannels,
+  });
+  return { id, configUpdatedAt: saved.configUpdatedAt };
+}
+
 async function validatePaymentSelection(channel, method) {
   const settings = await getPaymentSettings();
   const methods = Array.isArray(settings.methods) ? settings.methods : [];
@@ -101,9 +137,11 @@ module.exports = {
   getPaymentSettingsWithMeta,
   listMethods,
   listMethodsWithMeta,
+  deleteMethod,
   updateMethod,
   listChannels,
   listChannelsWithMeta,
+  deleteChannel,
   updateChannelMapping,
   validatePaymentSelection,
 };

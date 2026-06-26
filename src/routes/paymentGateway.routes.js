@@ -1,14 +1,10 @@
 const express = require('express');
 const omiseService = require('../services/omise.service');
-const {
-  isPaymentSimulationEnabled,
-  processOmiseWebhookEvent,
-  simulateOmiseChargePaid,
-  verifyPaymentSimulationToken,
-} = require('../services/paymentGateway.service');
+const { isPaymentSimulationEnabled, processOmiseWebhookEvent, simulateOmiseChargePaid, verifyPaymentSimulationToken } = require('../services/paymentGateway.service');
 
 const router = express.Router();
 
+// GET ค่า Config Public Config ของ Omise ให้ Frontend ใช้สร้าง source ผ่าน Omise.js
 router.get('/omise/config', (req, res) => {
   const publicKey = process.env.OMISE_PUBLIC_KEY || null;
   res.json({
@@ -18,6 +14,7 @@ router.get('/omise/config', (req, res) => {
   });
 });
 
+// Endpoint รับ Webhook จาก Omise เมื่อสถานะการชำระเงินเปลี่ยน และอัปเดต payment ในระบบ
 router.post('/omise/webhook', async (req, res, next) => {
   try {
     const verified = omiseService.verifyWebhookSignature(req.rawBody, req.headers);
@@ -33,7 +30,7 @@ router.post('/omise/webhook', async (req, res, next) => {
   }
 });
 
-// Endpoint (API Testing)
+// Endpoint สำหรับทดสอบเท่านั้น ใช้จำลอง Omise charge เป็นจ่ายสำเร็จ
 router.post('/omise/simulate-paid', async (req, res, next) => {
   try {
     if (!isPaymentSimulationEnabled()) {

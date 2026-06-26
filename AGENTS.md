@@ -58,13 +58,20 @@ transaction id in `qrData`, currently `/payment?tx=<transactionId>`.
 Device credential behavior:
 
 - Activated kiosk/barrier devices receive a `deviceId` and `deviceToken`.
+- Camera devices are also activated devices. Cameras must use their own
+  `deviceId`/`deviceToken` when posting LPR transactions, and the request
+  `cameraId` must match the authenticated camera `deviceId`.
 - `POST /api/v1/client/check-in` requires device credentials via
-  `requireDeviceAuth(['kiosk', 'barrier_gate'])`.
+  `requireDeviceAuth(['kiosk', 'barrier_gate', 'camera'])`.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
   and requires device credentials when `deviceId` is present.
 - LPR processing emits `lpr_detected` to this SSE stream for both accepted and
   rejected `IN/OUT` results. Barrier screens can filter by `gateId` and
   `direction`.
+- Barrier Gate devices should be configured with `gateId`, `direction`, and
+  `cameraIds`. `POST /api/v1/transactions` validates that the submitted
+  `cameraId` belongs to an activated camera and is mapped to the submitted
+  `gateId`/`direction` before processing the LPR event.
 - Transaction lookup/payment client endpoints currently identify kiosk/gate by
   `deviceId`; do not silently change this contract without checking the frontend
   impact.

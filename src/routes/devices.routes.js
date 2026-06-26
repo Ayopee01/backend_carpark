@@ -24,12 +24,36 @@ const router = express.Router();
 
 let runtimeMonitorStarted = false;
 
+function createActivationCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function generateCameraActivationCode(details = {}) {
+  const config = await getDevicesConfigWithMeta();
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const deviceCount = (config.devices || []).filter((device) => device.deviceType === 'camera').length;
+  const count = (deviceCount + 1).toString().padStart(3, '0');
+  const deviceId = details.deviceCode || `CAM-${dateStr}-${count}`;
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  return {
+    code: createActivationCode(),
+    deviceId,
+    deviceType: 'camera',
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
 function toActivationPayload(body = {}, deviceType) {
   return {
     ...(body.deviceName ? { deviceName: body.deviceName } : {}),
     ...(body.name ? { name: body.name } : {}),
     ...(body.deviceCode ? { deviceCode: body.deviceCode } : {}),
     ...(body.location ? { location: body.location } : {}),
+    ...(body.gateId ? { gateId: body.gateId } : {}),
+    ...(body.direction ? { direction: body.direction } : {}),
+    ...(Array.isArray(body.cameraIds) ? { cameraIds: body.cameraIds } : {}),
+    ...(body.cameraRole ? { cameraRole: body.cameraRole } : {}),
     ...(body.connectionType ? { connectionType: body.connectionType } : {}),
     ...(body.note ? { note: body.note } : {}),
     deviceType,
@@ -105,6 +129,9 @@ async function syncRuntimeDevice(device, body = {}, action = 'update') {
     await updateBarrierGate(deviceId, {
       name: body.deviceName || body.name || device.deviceName,
       location: body.location || device.location,
+      gateId: body.gateId !== undefined ? body.gateId : device.gateId,
+      direction: body.direction !== undefined ? body.direction : device.direction,
+      cameraIds: Array.isArray(body.cameraIds) ? body.cameraIds : device.cameraIds,
       status: toRuntimeStatus(body.status || device.status),
     });
   }
@@ -196,21 +223,23 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Create activation code for kiosk/barrier gate frontend roles.
+// Create activation code for kiosk, barrier gate, or camera frontend/device roles.
 router.post('/', async (req, res, next) => {
   try {
     const { deviceName, name, deviceType } = req.body || {};
     if (!deviceName && !name) {
       return res.status(400).json({ status: 'error', message: 'deviceName is required' });
     }
-    if (!['kiosk', 'barrier_gate'].includes(deviceType)) {
-      return res.status(400).json({ status: 'error', message: 'deviceType must be kiosk or barrier_gate' });
+    if (!['kiosk', 'barrier_gate', 'camera'].includes(deviceType)) {
+      return res.status(400).json({ status: 'error', message: 'deviceType must be kiosk, barrier_gate, or camera' });
     }
 
     const payload = toActivationPayload(req.body || {}, deviceType);
     const result = deviceType === 'barrier_gate'
       ? await generateBarrierGateActivationCode(payload)
-      : await generateActivationCode(payload);
+      : deviceType === 'camera'
+        ? await generateCameraActivationCode(payload)
+        : await generateActivationCode(payload);
 
     const pending = await createPendingActivationDevice({
       ...payload,
