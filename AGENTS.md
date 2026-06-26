@@ -65,8 +65,12 @@ Device credential behavior:
   an active camera directly through
   `POST /api/v1/devices/cameras/provision`; the returned `deviceToken` is shown
   once and should be stored in the LPR middleware or Postman environment.
+- Printers also use direct admin provisioning through
+  `POST /api/v1/devices/printers/provision`; the returned `deviceToken` is
+  shown once and should be stored in the printer service or Postman
+  environment.
 - `POST /api/v1/client/check-in` requires device credentials via
-  `requireDeviceAuth(['kiosk', 'barrier_gate', 'camera'])`.
+  `requireDeviceAuth(['kiosk', 'barrier_gate', 'camera', 'printer'])`.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
   and requires device credentials when `deviceId` is present.
 - LPR processing emits `lpr_detected` to this SSE stream for both accepted and
@@ -76,6 +80,10 @@ Device credential behavior:
   `cameraIds`. `POST /api/v1/transactions` validates that the submitted
   `cameraId` belongs to an activated camera and is mapped to the submitted
   `gateId`/`direction` before processing the LPR event.
+- Kiosk and Barrier Gate devices may be configured with `printerIds` that point
+  to provisioned printer devices. Cameras stay mapped to Barrier Gates only;
+  printers are the shared peripheral type that can be selected by Kiosks or
+  Barrier Gates.
 - Transaction lookup/payment client endpoints currently identify kiosk/gate by
   `deviceId`; do not silently change this contract without checking the frontend
   impact.

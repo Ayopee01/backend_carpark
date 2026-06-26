@@ -127,8 +127,8 @@ router.post('/activate', async (req, res, next) => {
   }
 });
 
-// Shared heartbeat/check-in endpoint for kiosk and barrier gate devices.
-router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate', 'camera']), async (req, res, next) => {
+// Shared heartbeat/check-in endpoint for credentialed client devices.
+router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate', 'camera', 'printer']), async (req, res, next) => {
   try {
     const { deviceId, name, location } = req.body || {};
     if (!deviceId) return res.status(400).json({ message: 'deviceId is required' });

@@ -67,6 +67,11 @@ function normalizeCameraIds(cameraIds) {
   return [...new Set(cameraIds.map((cameraId) => String(cameraId || '').trim()).filter(Boolean))];
 }
 
+function normalizePrinterIds(printerIds) {
+  if (!Array.isArray(printerIds)) return [];
+  return [...new Set(printerIds.map((printerId) => String(printerId || '').trim()).filter(Boolean))];
+}
+
 // Function คำนวณ runtime status ของ Barrier Gate จาก status และ lastSeen
 function getBarrierGateRuntimeStatus(barrierGate) {
   if (!barrierGate) return null;
@@ -141,6 +146,7 @@ async function resolveBarrierGateActivationCode(code) {
         gateId: pending.gateId,
         direction: pending.direction,
         cameraIds: normalizeCameraIds(pending.cameraIds),
+        printerIds: normalizePrinterIds(pending.printerIds),
         expiresAt: pending.activationExpiresAt ? new Date(pending.activationExpiresAt) : null,
       };
     }
@@ -179,6 +185,7 @@ async function createBarrierGate(data = {}) {
     gateId: data.gateId ? String(data.gateId).trim() : null,
     direction: normalizeDirection(data.direction),
     cameraIds: normalizeCameraIds(data.cameraIds),
+    printerIds: normalizePrinterIds(data.printerIds),
     status: data.status || 'online',
     firstSeen: data.firstSeen || now,
     lastSeen: data.lastSeen || now,
@@ -204,6 +211,7 @@ async function updateBarrierGate(deviceId, details = {}) {
     ...details,
     direction: details.direction !== undefined ? normalizeDirection(details.direction) : barrierGates[index].direction || null,
     cameraIds: details.cameraIds !== undefined ? normalizeCameraIds(details.cameraIds) : normalizeCameraIds(barrierGates[index].cameraIds),
+    printerIds: details.printerIds !== undefined ? normalizePrinterIds(details.printerIds) : normalizePrinterIds(barrierGates[index].printerIds),
     deviceId,
   };
   const saved = await saveBarrierGates(barrierGates);
@@ -256,6 +264,7 @@ async function upsertBarrierGateHeartbeatRecord(deviceId, details = {}) {
         gateId: details.gateId ? String(details.gateId).trim() : null,
         direction: normalizeDirection(details.direction),
         cameraIds: normalizeCameraIds(details.cameraIds),
+        printerIds: normalizePrinterIds(details.printerIds),
         status: 'online',
         firstSeen: now,
         lastSeen: now,
@@ -274,6 +283,7 @@ async function upsertBarrierGateHeartbeatRecord(deviceId, details = {}) {
         ...(details.gateId !== undefined ? { gateId: String(details.gateId || '').trim() || null } : {}),
         ...(details.direction !== undefined ? { direction: normalizeDirection(details.direction) } : {}),
         ...(details.cameraIds !== undefined ? { cameraIds: normalizeCameraIds(details.cameraIds) } : {}),
+        ...(details.printerIds !== undefined ? { printerIds: normalizePrinterIds(details.printerIds) } : {}),
       };
       barrierGates[index] = barrierGate;
     }

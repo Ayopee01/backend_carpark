@@ -15,6 +15,11 @@ const ACTIVATION_TTL_MS = 10 * 60 * 1000;
 // Constant เก็บ activation code ชั่วคราวใน memory ระหว่างรอ kiosk activate
 const activationCodes = new Map();
 
+function normalizePrinterIds(printerIds) {
+  if (!Array.isArray(printerIds)) return [];
+  return [...new Set(printerIds.map((printerId) => String(printerId || '').trim()).filter(Boolean))];
+}
+
 // Function ลบ activation code ของ kiosk ที่หมดอายุออกจาก memory
 function cleanupExpiredActivationCodes() {
   const now = new Date();
@@ -122,6 +127,7 @@ async function activateKiosk(code) {
         deviceId: pending.id,
         name: pending.deviceName,
         location: pending.location,
+        printerIds: normalizePrinterIds(pending.printerIds),
         expiresAt: pending.activationExpiresAt ? new Date(pending.activationExpiresAt) : null,
       };
     }
@@ -136,6 +142,7 @@ async function activateKiosk(code) {
   const registered = await activateRegisteredDevice(data.deviceId, {
     name: data.name,
     location: data.location,
+    printerIds: data.printerIds,
   });
   if (!registered?.deviceToken) {
     return { success: false, message: 'Registered device is missing or expired' };
@@ -144,6 +151,7 @@ async function activateKiosk(code) {
   const kiosk = await updateKioskStatus(data.deviceId, {
     name: data.name,
     location: data.location,
+    printerIds: data.printerIds,
   });
 
   activationCodes.delete(normalizedCode);
@@ -168,6 +176,7 @@ async function editKiosk(deviceId, details = {}) {
   kiosks[index] = {
     ...kiosks[index],
     ...details,
+    ...(details.printerIds !== undefined ? { printerIds: normalizePrinterIds(details.printerIds) } : {}),
     deviceId,
   };
   const saved = await saveKiosks(kiosks);
@@ -201,6 +210,7 @@ async function updateKioskStatus(deviceId, details = {}) {
         name: details.name || `Kiosk ${deviceId}`,
         location: details.location || 'Unknown',
         ip: details.ip || '0.0.0.0',
+        printerIds: normalizePrinterIds(details.printerIds),
         status: 'online',
         firstSeen: now,
         lastSeen: now,
@@ -215,6 +225,7 @@ async function updateKioskStatus(deviceId, details = {}) {
         ...(details.name ? { name: details.name } : {}),
         ...(details.location ? { location: details.location } : {}),
         ...(details.ip ? { ip: details.ip } : {}),
+        ...(details.printerIds !== undefined ? { printerIds: normalizePrinterIds(details.printerIds) } : {}),
       };
       kiosks[index] = kiosk;
     }

@@ -5,6 +5,7 @@ const {
   deleteDevice,
   getDevicesConfigWithMeta,
   provisionCameraDevice,
+  provisionPrinterDevice,
   refreshDeviceRuntimeState,
   toSafeConfig,
   updateDevice,
@@ -34,7 +35,7 @@ function toActivationPayload(body = {}, deviceType) {
     ...(body.gateId ? { gateId: body.gateId } : {}),
     ...(body.direction ? { direction: body.direction } : {}),
     ...(Array.isArray(body.cameraIds) ? { cameraIds: body.cameraIds } : {}),
-    ...(body.cameraRole ? { cameraRole: body.cameraRole } : {}),
+    ...(Array.isArray(body.printerIds) ? { printerIds: body.printerIds } : {}),
     ...(body.connectionType ? { connectionType: body.connectionType } : {}),
     ...(body.note ? { note: body.note } : {}),
     deviceType,
@@ -84,6 +85,8 @@ function toDeviceMutationResponse(device) {
     direction: device.direction || null,
     cameraIds: Array.isArray(device.cameraIds) ? device.cameraIds : [],
     cameraRole: device.cameraRole || null,
+    printerIds: Array.isArray(device.printerIds) ? device.printerIds : [],
+    printerRole: device.printerRole || null,
     status: device.status,
     isOnline: Boolean(device.isOnline),
     note: device.note || '',
@@ -94,6 +97,15 @@ function toProvisionedCameraResponse(result) {
   return {
     success: true,
     message: 'Camera provisioned',
+    device: toDeviceMutationResponse(result.device),
+    deviceToken: result.deviceToken,
+  };
+}
+
+function toProvisionedPrinterResponse(result) {
+  return {
+    success: true,
+    message: 'Printer provisioned',
     device: toDeviceMutationResponse(result.device),
     deviceToken: result.deviceToken,
   };
@@ -111,6 +123,7 @@ async function syncRuntimeDevice(device, body = {}, action = 'update') {
     await editKiosk(deviceId, {
       name: body.deviceName || body.name || device.deviceName,
       location: body.location || device.location,
+      printerIds: Array.isArray(body.printerIds) ? body.printerIds : device.printerIds,
       status: toRuntimeStatus(body.status || device.status),
     });
   }
@@ -126,6 +139,7 @@ async function syncRuntimeDevice(device, body = {}, action = 'update') {
       gateId: body.gateId !== undefined ? body.gateId : device.gateId,
       direction: body.direction !== undefined ? body.direction : device.direction,
       cameraIds: Array.isArray(body.cameraIds) ? body.cameraIds : device.cameraIds,
+      printerIds: Array.isArray(body.printerIds) ? body.printerIds : device.printerIds,
       status: toRuntimeStatus(body.status || device.status),
     });
   }
@@ -263,6 +277,25 @@ router.post('/cameras/provision', async (req, res, next) => {
     }
 
     return res.status(201).json(toProvisionedCameraResponse(result));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Provision a printer directly for kiosk or barrier gate use.
+router.post('/printers/provision', async (req, res, next) => {
+  try {
+    const { deviceName, name } = req.body || {};
+    if (!deviceName && !name) {
+      return res.status(400).json({ status: 'error', message: 'deviceName is required' });
+    }
+
+    const result = await provisionPrinterDevice(req.body || {});
+    if (!result.ok && result.reason === 'duplicate') {
+      return res.status(409).json({ status: 'error', message: 'Device code already exists' });
+    }
+
+    return res.status(201).json(toProvisionedPrinterResponse(result));
   } catch (err) {
     next(err);
   }

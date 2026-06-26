@@ -110,3 +110,61 @@ test('rejects duplicate provisioned camera ids', async () => {
     fixture.restore();
   }
 });
+
+test('provisions an activated printer with a one-time device token', async () => {
+  const fixture = loadDevicesRepo();
+
+  try {
+    const result = await fixture.repo.provisionPrinterDevice({
+      deviceName: 'Printer Gate A',
+      deviceCode: 'PRN-GATE-A',
+      location: 'Gate A',
+      printerRole: 'receipt',
+      ipAddress: '192.168.1.80',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.device.deviceId, 'PRN-GATE-A');
+    assert.equal(result.device.deviceType, 'printer');
+    assert.equal(result.device.printerRole, 'receipt');
+    assert.equal(result.device.ipAddress, '192.168.1.80');
+    assert.equal(typeof result.deviceToken, 'string');
+    assert.ok(result.deviceToken.length > 20);
+    assert.equal(result.device.deviceTokenHash, undefined);
+
+    const verified = await fixture.repo.verifyRegisteredDeviceToken('PRN-GATE-A', result.deviceToken, ['printer']);
+    assert.equal(verified.ok, true);
+    assert.equal(verified.device.deviceTokenHash, undefined);
+
+    const saved = fixture.getConfig().devices[0];
+    assert.equal(typeof saved.deviceTokenHash, 'string');
+  } finally {
+    fixture.restore();
+  }
+});
+
+test('rejects duplicate provisioned printer ids', async () => {
+  const fixture = loadDevicesRepo({
+    devices: [
+      {
+        id: 'PRN-GATE-A',
+        deviceId: 'PRN-GATE-A',
+        deviceCode: 'PRN-GATE-A',
+        deviceName: 'Printer Gate A',
+        deviceType: 'printer',
+        status: 'active',
+      },
+    ],
+  });
+
+  try {
+    const result = await fixture.repo.provisionPrinterDevice({
+      deviceName: 'Printer Gate A',
+      deviceCode: 'PRN-GATE-A',
+    });
+
+    assert.deepEqual(result, { ok: false, reason: 'duplicate' });
+  } finally {
+    fixture.restore();
+  }
+});

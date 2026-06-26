@@ -21,6 +21,7 @@ async function upsertBarrierGateHeartbeat(deviceId, details = {}) {
     name: barrierGate.name,
     location: barrierGate.location,
     ip: barrierGate.ip,
+    printerIds: barrierGate.printerIds,
   });
 
   // คืนค่าข้อมูล Barrier Gate หลังจากอัปเดต Heartbeat
@@ -42,6 +43,7 @@ async function activateBarrierGate(code) {
     gateId: data.gateId,
     direction: data.direction,
     cameraIds: data.cameraIds,
+    printerIds: data.printerIds,
   });
 
   // ถ้าไม่พบ deviceToken แสดงว่า device ไม่พร้อมใช้งานหรือข้อมูลหมดอายุ
@@ -56,6 +58,7 @@ async function activateBarrierGate(code) {
     gateId: data.gateId,
     direction: data.direction,
     cameraIds: data.cameraIds,
+    printerIds: data.printerIds,
   });
 
   // ลบ Activation Code หลังใช้งานสำเร็จ เพื่อป้องกันการใช้ซ้ำ
@@ -73,6 +76,7 @@ async function activateBarrierGate(code) {
     gateId: registered.device.gateId || null,
     direction: registered.device.direction || null,
     cameraIds: registered.device.cameraIds || [],
+    printerIds: registered.device.printerIds || [],
     status: registered.device.status,
   };
 }

@@ -8,7 +8,7 @@ const { hashToken } = require('../../utils/auth');
 // Constant key สำหรับอ้างอิง devices config ใน table app_config
 const CONFIG_KEY = 'devices';
 const OFFLINE_AFTER_MINUTES = 5;
-const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate', 'camera']);
+const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate', 'camera', 'printer']);
 const appEvents = require('../../utils/events');
 
 // Function สร้าง device token แบบสุ่มเพื่อใช้ยืนยันตัวตนของ kiosk/barrier gate
@@ -64,9 +64,17 @@ function normalizeDirection(direction) {
   return ['IN', 'OUT'].includes(value) ? value : null;
 }
 
+function normalizeDeviceIds(deviceIds) {
+  if (!Array.isArray(deviceIds)) return [];
+  return [...new Set(deviceIds.map((deviceId) => String(deviceId || '').trim()).filter(Boolean))];
+}
+
 function normalizeCameraIds(cameraIds) {
-  if (!Array.isArray(cameraIds)) return [];
-  return [...new Set(cameraIds.map((cameraId) => String(cameraId || '').trim()).filter(Boolean))];
+  return normalizeDeviceIds(cameraIds);
+}
+
+function normalizePrinterIds(printerIds) {
+  return normalizeDeviceIds(printerIds);
 }
 
 // Function เพิ่ม summary online/offline ให้ config devices
@@ -232,6 +240,8 @@ async function createPendingActivationDevice(payload = {}) {
     direction,
     cameraIds,
     cameraRole,
+    printerIds,
+    printerRole,
     note
   } = payload;
 
@@ -258,6 +268,8 @@ async function createPendingActivationDevice(payload = {}) {
     direction: normalizeDirection(direction),
     cameraIds: normalizeCameraIds(cameraIds),
     cameraRole: cameraRole ? String(cameraRole).trim() : null,
+    printerIds: normalizePrinterIds(printerIds),
+    printerRole: printerRole ? String(printerRole).trim() : null,
     status: 'pending_activation',
     isOnline: false,
     note: note || 'Waiting for activation'
@@ -269,11 +281,12 @@ async function createPendingActivationDevice(payload = {}) {
 }
 
 // Function เปลี่ยน device ที่รอ activate ให้เป็น active หลังอุปกรณ์ยืนยัน activation สำเร็จ
-async function provisionCameraDevice(payload = {}) {
+async function provisionCredentialedDevice(deviceType, payload = {}) {
   const config = await getDevicesConfig();
-  const cameras = (config.devices || []).filter((device) => device.deviceType === 'camera');
+  const devicesOfType = (config.devices || []).filter((device) => device.deviceType === deviceType);
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const generatedDeviceId = payload.deviceId || payload.deviceCode || `CAM-${dateStr}-${(cameras.length + 1).toString().padStart(3, '0')}`;
+  const prefix = deviceType === 'printer' ? 'PRN' : 'CAM';
+  const generatedDeviceId = payload.deviceId || payload.deviceCode || `${prefix}-${dateStr}-${(devicesOfType.length + 1).toString().padStart(3, '0')}`;
   const deviceCode = payload.deviceCode || generatedDeviceId;
 
   if ((config.devices || []).some((device) => (
@@ -291,17 +304,19 @@ async function provisionCameraDevice(payload = {}) {
     deviceId: generatedDeviceId,
     deviceCode,
     deviceName: payload.deviceName || payload.name || generatedDeviceId,
-    deviceType: 'camera',
+    deviceType,
     connectionType: payload.connectionType || 'lan',
     ipAddress: payload.ipAddress || payload.ip || null,
     location: payload.location || null,
     gateId: payload.gateId ? String(payload.gateId).trim() : null,
     direction: normalizeDirection(payload.direction),
     cameraIds: [],
-    cameraRole: payload.cameraRole ? String(payload.cameraRole).trim() : 'lpr',
+    cameraRole: deviceType === 'camera' ? (payload.cameraRole ? String(payload.cameraRole).trim() : 'lpr') : null,
+    printerIds: [],
+    printerRole: deviceType === 'printer' ? (payload.printerRole ? String(payload.printerRole).trim() : 'receipt') : null,
     status: 'active',
     isOnline: false,
-    note: payload.note || 'Provisioned by admin',
+    note: payload.note || `Provisioned ${deviceType} by admin`,
     deviceTokenHash: hashToken(deviceToken),
     deviceTokenIssuedAt: now,
     activatedAt: now,
@@ -327,6 +342,14 @@ async function provisionCameraDevice(payload = {}) {
     config: toSafeConfig(withSummary(saved)),
     deviceToken,
   };
+}
+
+async function provisionCameraDevice(payload = {}) {
+  return provisionCredentialedDevice('camera', payload);
+}
+
+async function provisionPrinterDevice(payload = {}) {
+  return provisionCredentialedDevice('printer', payload);
 }
 
 async function activateRegisteredDevice(generatedDeviceId, details = {}) {
@@ -355,6 +378,8 @@ async function activateRegisteredDevice(generatedDeviceId, details = {}) {
       direction: normalizeDirection(details.direction) || current.direction || null,
       cameraIds: details.cameraIds !== undefined ? normalizeCameraIds(details.cameraIds) : normalizeCameraIds(current.cameraIds),
       cameraRole: details.cameraRole || current.cameraRole || null,
+      printerIds: details.printerIds !== undefined ? normalizePrinterIds(details.printerIds) : normalizePrinterIds(current.printerIds),
+      printerRole: details.printerRole || current.printerRole || null,
       ipAddress: details.ip || details.ipAddress || current.ipAddress || null,
       status: 'active',
       isOnline: true,
@@ -439,6 +464,8 @@ async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) 
       direction: details.direction !== undefined ? normalizeDirection(details.direction) : current.direction || null,
       cameraIds: details.cameraIds !== undefined ? normalizeCameraIds(details.cameraIds) : normalizeCameraIds(current.cameraIds),
       cameraRole: details.cameraRole !== undefined ? String(details.cameraRole || '').trim() || null : current.cameraRole || null,
+      printerIds: details.printerIds !== undefined ? normalizePrinterIds(details.printerIds) : normalizePrinterIds(current.printerIds),
+      printerRole: details.printerRole !== undefined ? String(details.printerRole || '').trim() || null : current.printerRole || null,
       status: current.status === 'maintenance' ? 'maintenance' : 'active',
       isOnline: current.status === 'maintenance' ? current.isOnline : true,
       lastSeen: new Date().toISOString(),
@@ -489,6 +516,8 @@ async function updateDevice(id, body = {}) {
     'direction',
     'cameraIds',
     'cameraRole',
+    'printerIds',
+    'printerRole',
     'status',
     'isOnline',
     'note'
@@ -501,6 +530,7 @@ async function updateDevice(id, body = {}) {
   if ('ip' in body && !('ipAddress' in patch)) patch.ipAddress = body.ip;
   if ('direction' in patch) patch.direction = normalizeDirection(patch.direction);
   if ('cameraIds' in patch) patch.cameraIds = normalizeCameraIds(patch.cameraIds);
+  if ('printerIds' in patch) patch.printerIds = normalizePrinterIds(patch.printerIds);
   if ('status' in patch && !('isOnline' in patch)) patch.isOnline = patch.status === 'active';
 
   devices[index] = { ...devices[index], ...patch };
@@ -545,6 +575,7 @@ module.exports = {
   getDevicesConfig,
   getDevicesConfigWithMeta,
   provisionCameraDevice,
+  provisionPrinterDevice,
   refreshDeviceRuntimeState,
   toSafeConfig,
   toSafeDevice,
