@@ -1068,6 +1068,38 @@ const openapi = {
         },
       },
     },
+    '/api/v1/payment-gateway/omise/simulate-paid': {
+      post: {
+        tags: ['Payment Gateway'],
+        summary: 'Simulate successful Omise payment for testing',
+        description: 'Test/UAT helper for Postman. Requires ENABLE_PAYMENT_SIMULATION=true. If PAYMENT_SIMULATION_TOKEN is configured, send it as x-simulation-token or simulationToken in the body. This endpoint does not call Omise; it marks the saved gateway charge successful, processes the payment, and emits payment_updated for the websocket client.',
+        security: publicRoute,
+        parameters: [
+          {
+            name: 'x-simulation-token',
+            in: 'header',
+            required: false,
+            schema: { type: 'string' },
+            example: 'uat-secret',
+          },
+        ],
+        requestBody: body({
+          type: 'object',
+          required: ['chargeId'],
+          properties: {
+            chargeId: { type: 'string', example: 'chrg_test_123' },
+            simulationToken: { type: 'string', example: 'uat-secret' },
+          },
+        }),
+        responses: {
+          200: ok('Payment simulated'),
+          400: error('chargeId is required or payment processing failed'),
+          401: error('Invalid payment simulation token'),
+          403: error('Payment simulation is disabled'),
+          404: error('Gateway charge not found'),
+        },
+      },
+    },
     '/api/v1/client/check-in': {
       post: {
         tags: ['Client Events'],

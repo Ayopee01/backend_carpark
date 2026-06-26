@@ -3,7 +3,12 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 const omiseService = require('../src/services/omise.service');
-const { getChargeQrDocumentPath, normalizeGatewayMethod } = require('../src/services/paymentGateway.service');
+const {
+  getChargeQrDocumentPath,
+  isPaymentSimulationEnabled,
+  normalizeGatewayMethod,
+  verifyPaymentSimulationToken,
+} = require('../src/services/paymentGateway.service');
 
 test('converts baht amounts to Omise minor currency units', () => {
   assert.equal(omiseService.toMinorAmount(40), 4000);
@@ -128,4 +133,34 @@ test('prefers Omise QR download_uri when it is available', () => {
     getChargeQrDocumentPath(charge),
     '/charges/chrg_test_123/documents/docu_test_123/download'
   );
+});
+
+test('guards payment simulation with env flag and optional token', () => {
+  const originalEnabled = process.env.ENABLE_PAYMENT_SIMULATION;
+  const originalToken = process.env.PAYMENT_SIMULATION_TOKEN;
+
+  try {
+    delete process.env.ENABLE_PAYMENT_SIMULATION;
+    delete process.env.PAYMENT_SIMULATION_TOKEN;
+    assert.equal(isPaymentSimulationEnabled(), false);
+    assert.equal(verifyPaymentSimulationToken('anything'), true);
+
+    process.env.ENABLE_PAYMENT_SIMULATION = 'true';
+    process.env.PAYMENT_SIMULATION_TOKEN = 'uat-secret';
+    assert.equal(isPaymentSimulationEnabled(), true);
+    assert.equal(verifyPaymentSimulationToken('wrong'), false);
+    assert.equal(verifyPaymentSimulationToken('uat-secret'), true);
+  } finally {
+    if (originalEnabled === undefined) {
+      delete process.env.ENABLE_PAYMENT_SIMULATION;
+    } else {
+      process.env.ENABLE_PAYMENT_SIMULATION = originalEnabled;
+    }
+
+    if (originalToken === undefined) {
+      delete process.env.PAYMENT_SIMULATION_TOKEN;
+    } else {
+      process.env.PAYMENT_SIMULATION_TOKEN = originalToken;
+    }
+  }
 });

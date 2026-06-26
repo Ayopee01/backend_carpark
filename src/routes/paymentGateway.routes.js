@@ -1,6 +1,11 @@
 const express = require('express');
 const omiseService = require('../services/omise.service');
-const { processOmiseWebhookEvent } = require('../services/paymentGateway.service');
+const {
+  isPaymentSimulationEnabled,
+  processOmiseWebhookEvent,
+  simulateOmiseChargePaid,
+  verifyPaymentSimulationToken,
+} = require('../services/paymentGateway.service');
 
 const router = express.Router();
 
@@ -21,6 +26,32 @@ router.post('/omise/webhook', async (req, res, next) => {
     const result = await processOmiseWebhookEvent(req.body);
     return res.json({
       received: true,
+      ...result,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Endpoint (API Testing)
+router.post('/omise/simulate-paid', async (req, res, next) => {
+  try {
+    if (!isPaymentSimulationEnabled()) {
+      return res.status(403).json({ message: 'Payment simulation is disabled' });
+    }
+
+    const token = req.get('x-simulation-token') || req.body?.simulationToken || '';
+    if (!verifyPaymentSimulationToken(token)) {
+      return res.status(401).json({ message: 'Invalid payment simulation token' });
+    }
+
+    const chargeId = req.body?.chargeId === undefined || req.body?.chargeId === null
+      ? ''
+      : String(req.body.chargeId).trim();
+    const result = await simulateOmiseChargePaid(chargeId);
+
+    return res.json({
+      simulated: true,
       ...result,
     });
   } catch (err) {

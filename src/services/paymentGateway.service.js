@@ -170,6 +170,58 @@ async function getOmiseQrImage({ chargeId, documentPath } = {}) {
   return downloadFirstQrDocument(qrDocumentPaths);
 }
 
+async function completeSuccessfulGatewayCharge(existing, charge, { processedByPrefix = 'omise' } = {}) {
+  if (existing.processedAt) {
+    const updated = await paymentGatewayRepo.updateGatewayCharge(existing.chargeId, {
+      status: 'successful',
+      raw: charge,
+    });
+    return {
+      action: 'already_processed',
+      chargeId: existing.chargeId,
+      status: 'successful',
+      gatewayCharge: updated,
+    };
+  }
+
+  const paidAmount = existing.amount / 100;
+  const transaction = await processPayment(existing.transactionId, {
+    method: existing.method,
+    channel: existing.channel,
+    amount: paidAmount,
+    processedBy: `${processedByPrefix}_${existing.chargeId}`,
+  });
+  if (!transaction) throw createHttpError(400, 'Payment processing failed');
+
+  const updated = await paymentGatewayRepo.updateGatewayCharge(existing.chargeId, {
+    status: 'successful',
+    raw: charge,
+    paidAt: omiseService.getChargePaidAt(charge) || new Date().toISOString(),
+    processedAt: new Date().toISOString(),
+  });
+
+  appEvents.emit('payment_updated', {
+    type: 'payment_updated',
+    provider: 'omise',
+    chargeId: existing.chargeId,
+    plateNo: transaction.plateNo,
+    transactionId: transaction.id,
+    paymentStatus: 'successful',
+    transactionStatus: transaction.status,
+    remainingAmount: transaction.remainingAmount,
+    exitTimeLimit: transaction.exitTimeLimit,
+    gatewayCharge: updated,
+    emittedAt: new Date().toISOString(),
+  });
+
+  return {
+    action: 'processed',
+    chargeId: existing.chargeId,
+    status: 'successful',
+    transaction,
+  };
+}
+
 async function processOmiseWebhookEvent(event) {
   const chargeId = omiseService.extractChargeIdFromEvent(event);
   if (!chargeId) throw createHttpError(400, 'Omise charge id not found in webhook event');
@@ -209,48 +261,45 @@ async function processOmiseWebhookEvent(event) {
     return { action: 'updated', chargeId, status };
   }
 
-  const paidAmount = existing.amount / 100;
-  const transaction = await processPayment(existing.transactionId, {
-    method: existing.method,
-    channel: existing.channel,
-    amount: paidAmount,
-    processedBy: `omise_${chargeId}`,
-  });
-  if (!transaction) throw createHttpError(400, 'Payment processing failed');
+  return completeSuccessfulGatewayCharge(existing, charge);
+}
 
-  const updated = await paymentGatewayRepo.updateGatewayCharge(chargeId, {
-    status,
-    raw: charge,
-    paidAt: omiseService.getChargePaidAt(charge),
-    processedAt: new Date().toISOString(),
-  });
+async function simulateOmiseChargePaid(chargeId) {
+  if (!chargeId) throw createHttpError(400, 'chargeId is required');
 
-  appEvents.emit('payment_updated', {
-    type: 'payment_updated',
-    provider: 'omise',
-    chargeId,
-    plateNo: transaction.plateNo,
-    transactionId: transaction.id,
-    paymentStatus: status,
-    transactionStatus: transaction.status,
-    remainingAmount: transaction.remainingAmount,
-    exitTimeLimit: transaction.exitTimeLimit,
-    gatewayCharge: updated,
-    emittedAt: new Date().toISOString(),
-  });
+  const existing = await paymentGatewayRepo.getGatewayChargeByChargeId(chargeId);
+  if (!existing) throw createHttpError(404, 'Gateway charge not found');
+  if (existing.provider !== 'omise') throw createHttpError(400, 'Gateway charge is not an Omise charge');
 
-  return {
-    action: 'processed',
-    chargeId,
-    status,
-    transaction,
+  const simulatedCharge = {
+    ...(existing.raw || {}),
+    id: chargeId,
+    object: 'charge',
+    status: 'successful',
+    paid: true,
+    paid_at: new Date().toISOString(),
   };
+
+  return completeSuccessfulGatewayCharge(existing, simulatedCharge, { processedByPrefix: 'omise_simulated' });
+}
+
+function isPaymentSimulationEnabled() {
+  return process.env.ENABLE_PAYMENT_SIMULATION === 'true';
+}
+
+function verifyPaymentSimulationToken(token) {
+  const expected = process.env.PAYMENT_SIMULATION_TOKEN;
+  if (!expected) return true;
+  return token === expected;
 }
 
 module.exports = {
   createOmiseChargeForClient,
   getOmiseQrImage,
   processOmiseWebhookEvent,
+  simulateOmiseChargePaid,
+  isPaymentSimulationEnabled,
+  verifyPaymentSimulationToken,
   normalizeGatewayMethod,
   getChargeQrDocumentPath,
   getChargeQrDocumentPaths,
