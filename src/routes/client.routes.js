@@ -9,7 +9,6 @@ const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceA
 const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const { activateKiosk } = require('../data/repositories/kiosks.repo');
 const { activateBarrierGate } = require('../services/barrierGates.service');
-const { activateCamera } = require('../services/cameras.service');
 const { createOmiseChargeForClient, getOmiseQrImage } = require('../services/paymentGateway.service');
 
 const router = express.Router();
@@ -119,12 +118,8 @@ router.post('/activate', async (req, res, next) => {
     const kioskResult = await activateKiosk(code);
     if (kioskResult.success) return res.json(kioskResult);
 
-    const [barrierGateResult, cameraResult] = await Promise.all([
-      activateBarrierGate(code),
-      activateCamera(code),
-    ]);
+    const barrierGateResult = await activateBarrierGate(code);
     if (barrierGateResult.success) return res.json(barrierGateResult);
-    if (cameraResult.success) return res.json(cameraResult);
 
     return res.status(400).json({ message: 'Invalid or expired code' });
   } catch (err) {

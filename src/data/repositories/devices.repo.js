@@ -269,6 +269,66 @@ async function createPendingActivationDevice(payload = {}) {
 }
 
 // Function เปลี่ยน device ที่รอ activate ให้เป็น active หลังอุปกรณ์ยืนยัน activation สำเร็จ
+async function provisionCameraDevice(payload = {}) {
+  const config = await getDevicesConfig();
+  const cameras = (config.devices || []).filter((device) => device.deviceType === 'camera');
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const generatedDeviceId = payload.deviceId || payload.deviceCode || `CAM-${dateStr}-${(cameras.length + 1).toString().padStart(3, '0')}`;
+  const deviceCode = payload.deviceCode || generatedDeviceId;
+
+  if ((config.devices || []).some((device) => (
+    device.id === generatedDeviceId ||
+    device.deviceId === generatedDeviceId ||
+    device.deviceCode === deviceCode
+  ))) {
+    return { ok: false, reason: 'duplicate' };
+  }
+
+  const deviceToken = createDeviceToken();
+  const now = new Date().toISOString();
+  const device = {
+    id: generatedDeviceId,
+    deviceId: generatedDeviceId,
+    deviceCode,
+    deviceName: payload.deviceName || payload.name || generatedDeviceId,
+    deviceType: 'camera',
+    connectionType: payload.connectionType || 'lan',
+    ipAddress: payload.ipAddress || payload.ip || null,
+    location: payload.location || null,
+    gateId: payload.gateId ? String(payload.gateId).trim() : null,
+    direction: normalizeDirection(payload.direction),
+    cameraIds: [],
+    cameraRole: payload.cameraRole ? String(payload.cameraRole).trim() : 'lpr',
+    status: 'active',
+    isOnline: false,
+    note: payload.note || 'Provisioned by admin',
+    deviceTokenHash: hashToken(deviceToken),
+    deviceTokenIssuedAt: now,
+    activatedAt: now,
+    lastSeen: null,
+  };
+
+  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices: [...config.devices, device] }));
+  appEvents.emit('device_event', {
+    type: 'device_provisioned',
+    deviceId: device.deviceId,
+    id: device.id,
+    deviceCode: device.deviceCode,
+    deviceType: device.deviceType,
+    deviceName: device.deviceName,
+    status: device.status,
+    isOnline: device.isOnline,
+  });
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
+
+  return {
+    ok: true,
+    device: toSafeDevice(device),
+    config: toSafeConfig(withSummary(saved)),
+    deviceToken,
+  };
+}
+
 async function activateRegisteredDevice(generatedDeviceId, details = {}) {
   const deviceToken = createDeviceToken();
   let activatedDevice = null;
@@ -484,6 +544,7 @@ module.exports = {
   getPendingActivationDeviceByCode,
   getDevicesConfig,
   getDevicesConfigWithMeta,
+  provisionCameraDevice,
   refreshDeviceRuntimeState,
   toSafeConfig,
   toSafeDevice,

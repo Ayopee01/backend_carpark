@@ -448,7 +448,7 @@ const openapi = {
         required: ['deviceName', 'deviceType'],
         properties: {
           deviceName: { type: 'string', example: 'Test Kiosk 1' },
-          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate', 'camera'], example: 'kiosk', description: 'Controls which frontend role/screen or device role the activation code belongs to.' },
+          deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate'], example: 'kiosk', description: 'Controls which frontend role/screen the activation code belongs to. Cameras are provisioned directly through /api/v1/devices/cameras/provision.' },
           deviceCode: { type: 'string', example: 'KIOSK-A' },
           name: { type: 'string', example: 'Test Kiosk 1' },
           location: { type: 'string', example: 'Main Lobby' },
@@ -527,7 +527,7 @@ const openapi = {
         type: 'object',
         properties: {
           status: { type: 'string', example: 'error' },
-          message: { type: 'string', example: 'deviceType must be kiosk, barrier_gate, or camera' },
+          message: { type: 'string', example: 'deviceType must be kiosk or barrier_gate' },
         },
       },
       ActivationRequest: {
@@ -552,6 +552,32 @@ const openapi = {
           cameraIds: { type: 'array', items: { type: 'string' }, example: ['CAM-OUT-A'] },
           cameraRole: { type: 'string', nullable: true, example: 'lpr' },
           status: { type: 'string', example: 'active' },
+        },
+      },
+      CameraProvisionRequest: {
+        type: 'object',
+        required: ['deviceName'],
+        properties: {
+          deviceName: { type: 'string', example: 'Camera OUT A' },
+          name: { type: 'string', example: 'Camera OUT A' },
+          deviceCode: { type: 'string', example: 'CAM-OUT-A' },
+          deviceId: { type: 'string', example: 'CAM-OUT-A' },
+          location: { type: 'string', example: 'Gate A' },
+          gateId: { type: 'string', example: 'GATE-A' },
+          direction: { type: 'string', enum: ['IN', 'OUT'], example: 'OUT' },
+          cameraRole: { type: 'string', example: 'lpr' },
+          connectionType: { type: 'string', example: 'lan' },
+          ipAddress: { type: 'string', example: '192.168.1.50' },
+          note: { type: 'string', example: 'Provisioned for Postman simulation' },
+        },
+      },
+      CameraProvisionResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string', example: 'Camera provisioned' },
+          device: ref('DeviceResponse'),
+          deviceToken: { type: 'string', description: 'Secret device credential returned only once. Store it in the LPR middleware or Postman environment.' },
         },
       },
       CheckInRequest: {
@@ -936,12 +962,33 @@ const openapi = {
       post: {
         tags: ['Devices'],
         summary: 'Create activation code for frontend/device role',
-        description: 'Requires permission: devices. Creates an activation code for kiosk, barrier gate, or camera. Barrier gate configs may include gateId, direction, and cameraIds mapped to activated camera devices.',
+        description: 'Requires permission: devices. Creates an activation code for kiosk or barrier gate. Barrier gate configs may include gateId, direction, and cameraIds mapped to provisioned camera devices. Cameras are created with POST /api/v1/devices/cameras/provision instead of the activation-code flow.',
         requestBody: body(ref('DeviceActivationCodeCreateRequest'), { deviceName: 'Exit Barrier Gate 1', deviceType: 'barrier_gate', gateId: 'GATE-A', direction: 'OUT', cameraIds: ['CAM-OUT-A'] }),
         responses: {
           201: ok('Activation code created', ref('DeviceActivationCodeCreateResponse')),
           400: { description: 'Invalid request', content: json(ref('ActivationErrorResponse')) },
           409: { description: 'Duplicate device code', content: json(ref('ActivationErrorResponse')) },
+          ...bearer403,
+        },
+      },
+    },
+    '/api/v1/devices/cameras/provision': {
+      post: {
+        tags: ['Devices'],
+        summary: 'Provision an activated camera directly',
+        description: 'Requires permission: devices. Creates an active camera device and returns a one-time deviceToken for LPR middleware or Postman simulation.',
+        requestBody: body(ref('CameraProvisionRequest'), {
+          deviceName: 'Camera OUT A',
+          deviceCode: 'CAM-OUT-A',
+          location: 'Gate A',
+          gateId: 'GATE-A',
+          direction: 'OUT',
+          cameraRole: 'lpr',
+        }),
+        responses: {
+          201: ok('Camera provisioned', ref('CameraProvisionResponse')),
+          400: error('deviceName is required'),
+          409: error('Device code already exists'),
           ...bearer403,
         },
       },
@@ -982,8 +1029,8 @@ const openapi = {
     '/api/v1/client/activate': {
       post: {
         tags: ['Client Events'],
-        summary: 'Activate kiosk, barrier gate, or camera with activation code',
-        description: 'Shared activation endpoint for frontend clients/devices. The role is determined by the activation code created from POST /api/v1/devices, so the client only needs to send the code.',
+        summary: 'Activate kiosk or barrier gate with activation code',
+        description: 'Shared activation endpoint for kiosk and barrier gate frontends. The role is determined by the activation code created from POST /api/v1/devices, so the client only needs to send the code. Cameras are provisioned directly by admins through POST /api/v1/devices/cameras/provision.',
         security: publicRoute,
         requestBody: body(ref('ActivationRequest')),
         responses: { 200: ok('Activation successful', ref('ActivationResponse')), 400: error('Activation code is required, invalid, or expired') },

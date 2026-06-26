@@ -4,6 +4,7 @@ const {
   createPendingActivationDevice,
   deleteDevice,
   getDevicesConfigWithMeta,
+  provisionCameraDevice,
   refreshDeviceRuntimeState,
   toSafeConfig,
   updateDevice,
@@ -23,26 +24,6 @@ const {
 const router = express.Router();
 
 let runtimeMonitorStarted = false;
-
-function createActivationCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-async function generateCameraActivationCode(details = {}) {
-  const config = await getDevicesConfigWithMeta();
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const deviceCount = (config.devices || []).filter((device) => device.deviceType === 'camera').length;
-  const count = (deviceCount + 1).toString().padStart(3, '0');
-  const deviceId = details.deviceCode || `CAM-${dateStr}-${count}`;
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-  return {
-    code: createActivationCode(),
-    deviceId,
-    deviceType: 'camera',
-    expiresAt: expiresAt.toISOString(),
-  };
-}
 
 function toActivationPayload(body = {}, deviceType) {
   return {
@@ -99,9 +80,22 @@ function toDeviceMutationResponse(device) {
     connectionType: device.connectionType,
     location: device.location || null,
     ipAddress: device.ipAddress || null,
+    gateId: device.gateId || null,
+    direction: device.direction || null,
+    cameraIds: Array.isArray(device.cameraIds) ? device.cameraIds : [],
+    cameraRole: device.cameraRole || null,
     status: device.status,
     isOnline: Boolean(device.isOnline),
     note: device.note || '',
+  };
+}
+
+function toProvisionedCameraResponse(result) {
+  return {
+    success: true,
+    message: 'Camera provisioned',
+    device: toDeviceMutationResponse(result.device),
+    deviceToken: result.deviceToken,
   };
 }
 
@@ -223,23 +217,21 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Create activation code for kiosk, barrier gate, or camera frontend/device roles.
+// Create activation code for kiosk or barrier gate frontend roles.
 router.post('/', async (req, res, next) => {
   try {
     const { deviceName, name, deviceType } = req.body || {};
     if (!deviceName && !name) {
       return res.status(400).json({ status: 'error', message: 'deviceName is required' });
     }
-    if (!['kiosk', 'barrier_gate', 'camera'].includes(deviceType)) {
-      return res.status(400).json({ status: 'error', message: 'deviceType must be kiosk, barrier_gate, or camera' });
+    if (!['kiosk', 'barrier_gate'].includes(deviceType)) {
+      return res.status(400).json({ status: 'error', message: 'deviceType must be kiosk or barrier_gate' });
     }
 
     const payload = toActivationPayload(req.body || {}, deviceType);
     const result = deviceType === 'barrier_gate'
       ? await generateBarrierGateActivationCode(payload)
-      : deviceType === 'camera'
-        ? await generateCameraActivationCode(payload)
-        : await generateActivationCode(payload);
+      : await generateActivationCode(payload);
 
     const pending = await createPendingActivationDevice({
       ...payload,
@@ -252,6 +244,25 @@ router.post('/', async (req, res, next) => {
     }
 
     return res.status(201).json(toPublicActivationResponse(result, payload));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Provision a camera directly for LPR devices or Postman simulation.
+router.post('/cameras/provision', async (req, res, next) => {
+  try {
+    const { deviceName, name } = req.body || {};
+    if (!deviceName && !name) {
+      return res.status(400).json({ status: 'error', message: 'deviceName is required' });
+    }
+
+    const result = await provisionCameraDevice(req.body || {});
+    if (!result.ok && result.reason === 'duplicate') {
+      return res.status(409).json({ status: 'error', message: 'Device code already exists' });
+    }
+
+    return res.status(201).json(toProvisionedCameraResponse(result));
   } catch (err) {
     next(err);
   }

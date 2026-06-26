@@ -58,9 +58,13 @@ transaction id in `qrData`, currently `/payment?tx=<transactionId>`.
 Device credential behavior:
 
 - Activated kiosk/barrier devices receive a `deviceId` and `deviceToken`.
-- Camera devices are also activated devices. Cameras must use their own
+- Camera devices are credentialed devices. Cameras must use their own
   `deviceId`/`deviceToken` when posting LPR transactions, and the request
   `cameraId` must match the authenticated camera `deviceId`.
+- Cameras do not use the kiosk/barrier activation-code flow. Admins provision
+  an active camera directly through
+  `POST /api/v1/devices/cameras/provision`; the returned `deviceToken` is shown
+  once and should be stored in the LPR middleware or Postman environment.
 - `POST /api/v1/client/check-in` requires device credentials via
   `requireDeviceAuth(['kiosk', 'barrier_gate', 'camera'])`.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
