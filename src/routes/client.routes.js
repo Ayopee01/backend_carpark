@@ -324,7 +324,16 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
       if (normalizedCameraId && event.cameraId !== normalizedCameraId) return;
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
+    const refreshDeviceHeartbeat = async () => {
+      if (!deviceId || !req.device) return;
+      try {
+        await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
+      } catch (err) {
+        console.error('Client event heartbeat failed:', err);
+      }
+    };
     const keepAlive = setInterval(() => {
+      refreshDeviceHeartbeat();
       res.write(`data: ${JSON.stringify({ type: 'ping', at: new Date().toISOString() })}\n\n`);
     }, 25 * 1000);
 

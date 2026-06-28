@@ -1091,7 +1091,7 @@ const openapi = {
       get: {
         tags: ['Client Events'],
         summary: 'Shared client SSE event stream',
-        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. LPR results are emitted as lpr_detected after POST /api/v1/transactions is processed. Use gateId, direction, and optionally cameraId to subscribe a barrier-gate screen to only its mapped camera events. Current events include connected, ping, theme_updated, and lpr_detected.',
+        description: 'Shared event stream for kiosk, barrier gate, and public/mobile clients. No admin Bearer token is required. If deviceId is supplied, valid device credentials are required and the device may be kiosk or barrier_gate. For kiosk/barrier clients, the open SSE connection refreshes the device heartbeat on each server ping so the device remains online while connected. LPR results are emitted as lpr_detected after POST /api/v1/transactions is processed. Use gateId, direction, and optionally cameraId to subscribe a barrier-gate screen to only its mapped camera events. Current events include connected, ping, theme_updated, and lpr_detected.',
         security: [...deviceAuth, {}],
         parameters: [
           query('deviceId', { type: 'string' }, 'BG-20260618-001'),

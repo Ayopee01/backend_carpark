@@ -80,7 +80,10 @@ Device credential behavior:
   status/config changes. LPR cameras and printers become online by calling
   `POST /api/v1/client/check-in` with their own device credentials.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
-  and requires device credentials when `deviceId` is present.
+  and requires device credentials when `deviceId` is present. For Kiosk and
+  Barrier Gate clients, keeping this SSE connection open also refreshes the
+  device heartbeat on each server ping so the device remains online while the
+  screen is connected.
 - LPR processing emits `lpr_detected` to the client SSE stream for both accepted
   and rejected `IN/OUT` results. Barrier screens can filter by `gateId` and
   `direction`, and should include `cameraId` when the Barrier Gate is mapped to
