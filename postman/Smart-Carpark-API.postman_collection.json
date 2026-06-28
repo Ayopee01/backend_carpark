@@ -535,6 +535,14 @@
           }
         },
         {
+          "name": "Reissue Device Activation Code",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/devices/{{deviceId}}/reissue-activation-code"
+          }
+        },
+        {
           "name": "Generate Kiosk Activation Code",
           "request": {
             "method": "POST",

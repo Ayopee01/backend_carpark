@@ -112,6 +112,13 @@ Device credential behavior:
   complete desired `cameraIds`/`printerIds` arrays for that Kiosk or Barrier
   Gate. Do not require or send peripheral `deviceToken` values for these admin
   mapping updates.
+- If a Kiosk or Barrier Gate loses its local `deviceToken` because browser
+  storage was cleared, do not recreate the device. Admins can reissue an
+  activation code for the existing device through
+  `POST /api/v1/devices/:deviceId/reissue-activation-code`. The backend
+  preserves the existing `deviceId`, metadata, `cameraIds`, and `printerIds`,
+  invalidates the old token, and returns a new activation code. Activating with
+  that code returns a new one-time `deviceToken`.
 - Transaction lookup/payment client endpoints currently identify kiosk/gate by
   `deviceId`; do not silently change this contract without checking the frontend
   impact.
@@ -258,6 +265,9 @@ Device creation creates activation codes for frontend roles:
 - Use `PUT /api/v1/devices/:deviceId` to edit device metadata or to swap
   Barrier Gate/Kiosk mappings. Barrier Gate mappings include `cameraIds` and
   `printerIds`; Kiosk mappings include `printerIds` only.
+- Use `POST /api/v1/devices/:deviceId/reissue-activation-code` when an existing
+  Kiosk or Barrier Gate needs a new activation code/token. This is a recovery
+  flow for lost local storage, not a Camera/Printer provisioning flow.
 
 Runtime device records are synchronized with kiosk/barrier-gate config where
 needed. Do not treat old separate kiosk/barrier config as the only source of

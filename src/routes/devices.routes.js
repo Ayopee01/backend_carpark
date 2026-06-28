@@ -7,6 +7,7 @@ const {
   provisionCameraDevice,
   provisionPrinterDevice,
   refreshDeviceRuntimeState,
+  reissueActivationCode,
   toSafeConfig,
   updateDevice,
 } = require('../data/repositories/devices.repo');
@@ -108,6 +109,19 @@ function toProvisionedPrinterResponse(result) {
     message: 'Printer provisioned',
     device: toDeviceMutationResponse(result.device),
     deviceToken: result.deviceToken,
+  };
+}
+
+function toReissuedActivationResponse(result) {
+  return {
+    success: true,
+    message: 'Activation code reissued',
+    deviceId: result.device.deviceId || result.device.id,
+    deviceName: result.device.deviceName,
+    deviceType: result.device.deviceType,
+    activationCode: result.activationCode,
+    expiresAt: result.expiresAt,
+    device: toDeviceMutationResponse(result.device),
   };
 }
 
@@ -296,6 +310,28 @@ router.post('/printers/provision', async (req, res, next) => {
     }
 
     return res.status(201).json(toProvisionedPrinterResponse(result));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:deviceId/reissue-activation-code', async (req, res, next) => {
+  try {
+    const result = await reissueActivationCode(req.params.deviceId);
+    if (!result.ok && result.reason === 'not_found') {
+      return res.status(404).json({ status: 'error', message: 'Device not found' });
+    }
+    if (!result.ok && result.reason === 'invalid_type') {
+      return res.status(400).json({ status: 'error', message: 'Activation code can only be reissued for kiosk or barrier_gate devices' });
+    }
+    if (!result.ok && result.reason === 'maintenance') {
+      return res.status(403).json({ status: 'error', message: 'Device is currently under maintenance' });
+    }
+    if (!result.ok) {
+      return res.status(400).json({ status: 'error', message: 'Unable to reissue activation code' });
+    }
+
+    return res.status(201).json(toReissuedActivationResponse(result));
   } catch (err) {
     next(err);
   }

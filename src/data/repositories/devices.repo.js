@@ -9,11 +9,17 @@ const { hashToken } = require('../../utils/auth');
 const CONFIG_KEY = 'devices';
 const OFFLINE_AFTER_MINUTES = 5;
 const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate', 'camera', 'printer']);
+const ACTIVATION_CODE_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate']);
+const ACTIVATION_TTL_MS = 10 * 60 * 1000;
 const appEvents = require('../../utils/events');
 
 // Function สร้าง device token แบบสุ่มเพื่อใช้ยืนยันตัวตนของ kiosk/barrier gate
 function createDeviceToken() {
   return crypto.randomBytes(32).toString('hex');
+}
+
+function createActivationCode() {
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 // Function เปรียบเทียบ hash แบบ timing-safe เพื่อใช้ตรวจ device token
@@ -26,6 +32,10 @@ function timingSafeStringEqual(actual, expected) {
 // Function ตรวจสอบว่า device เป็นอุปกรณ์ที่ต้อง activate ก่อนใช้งานหรือไม่
 function isActivationDevice(device) {
   return ACTIVATION_DEVICE_TYPES.has(device?.deviceType);
+}
+
+function isActivationCodeDevice(device) {
+  return ACTIVATION_CODE_DEVICE_TYPES.has(device?.deviceType);
 }
 
 // Function ตรวจสอบวันหมดอายุของค่าเวลา เช่น activationExpiresAt
@@ -133,6 +143,30 @@ async function refreshDeviceRuntimeState({ emitEvents = false } = {}) {
         return !shouldRemove;
       })
       .map((device) => {
+        if (
+          isActivationCodeDevice(device) &&
+          ['active', 'offline'].includes(device.status) &&
+          device.activationCode &&
+          isExpired(device.activationExpiresAt, now)
+        ) {
+          changed = true;
+          events.push({
+            type: 'device_activation_expired',
+            deviceId: device.deviceId,
+            id: device.id,
+            deviceCode: device.deviceCode,
+            deviceType: device.deviceType,
+            deviceName: device.deviceName,
+            status: device.status,
+            isOnline: device.isOnline,
+          });
+          return {
+            ...device,
+            activationCode: null,
+            activationExpiresAt: null,
+          };
+        }
+
         if (
           isActivationDevice(device) &&
           device.status === 'active' &&
@@ -352,6 +386,64 @@ async function provisionPrinterDevice(payload = {}) {
   return provisionCredentialedDevice('printer', payload);
 }
 
+async function reissueActivationCode(id) {
+  const config = await getDevicesConfig();
+  const devices = [...config.devices];
+  const index = findDeviceIndex(devices, id);
+  if (index === -1) return { ok: false, reason: 'not_found' };
+
+  const current = devices[index];
+  if (!isActivationCodeDevice(current)) {
+    return { ok: false, reason: 'invalid_type', device: toSafeDevice(current) };
+  }
+  if (current.status === 'maintenance') {
+    return { ok: false, reason: 'maintenance', device: toSafeDevice(current) };
+  }
+
+  let activationCode;
+  do {
+    activationCode = createActivationCode();
+  } while (devices.some((device, deviceIndex) => (
+    deviceIndex !== index &&
+    device.activationCode === activationCode &&
+    !isExpired(device.activationExpiresAt)
+  )));
+
+  const activationExpiresAt = new Date(Date.now() + ACTIVATION_TTL_MS).toISOString();
+  const updatedDevice = {
+    ...current,
+    activationCode,
+    activationExpiresAt,
+    deviceTokenHash: null,
+    deviceTokenIssuedAt: null,
+    isOnline: false,
+    status: current.status === 'offline' ? 'offline' : 'active',
+  };
+  devices[index] = updatedDevice;
+
+  const saved = await setConfig(CONFIG_KEY, withSummary({ ...config, devices }));
+  appEvents.emit('device_event', {
+    type: 'device_activation_reissued',
+    deviceId: updatedDevice.deviceId,
+    id: updatedDevice.id,
+    deviceCode: updatedDevice.deviceCode,
+    deviceType: updatedDevice.deviceType,
+    deviceName: updatedDevice.deviceName,
+    status: updatedDevice.status,
+    isOnline: updatedDevice.isOnline,
+    activationExpiresAt,
+  });
+  appEvents.emit('devices_config_updated', toSafeConfig(withSummary(saved)));
+
+  return {
+    ok: true,
+    activationCode,
+    expiresAt: activationExpiresAt,
+    device: toSafeDevice(updatedDevice),
+    config: toSafeConfig(withSummary(saved)),
+  };
+}
+
 async function activateRegisteredDevice(generatedDeviceId, details = {}) {
   const deviceToken = createDeviceToken();
   let activatedDevice = null;
@@ -363,7 +455,9 @@ async function activateRegisteredDevice(generatedDeviceId, details = {}) {
     if (index === -1) return undefined;
 
     const current = devices[index];
-    if (!isActivationDevice(current) || current.status !== 'pending_activation' || isExpired(current.activationExpiresAt)) {
+    const canActivate = isActivationCodeDevice(current) &&
+      ['pending_activation', 'active', 'offline'].includes(current.status);
+    if (!canActivate || isExpired(current.activationExpiresAt)) {
       return undefined;
     }
 
@@ -422,7 +516,8 @@ async function getPendingActivationDeviceByCode(code, deviceType = null) {
   const normalizedCode = String(code).trim();
   const config = await getDevicesConfig();
   return config.devices.find((device) => (
-    device.status === 'pending_activation' &&
+    ['pending_activation', 'active', 'offline'].includes(device.status) &&
+    isActivationCodeDevice(device) &&
     String(device.activationCode || '').trim() === normalizedCode &&
     (!deviceType || device.deviceType === deviceType)
   )) || null;
@@ -577,6 +672,7 @@ module.exports = {
   provisionCameraDevice,
   provisionPrinterDevice,
   refreshDeviceRuntimeState,
+  reissueActivationCode,
   toSafeConfig,
   toSafeDevice,
   verifyRegisteredDeviceToken,

@@ -945,7 +945,7 @@ const openapi = {
       get: {
         tags: ['Devices'],
         summary: 'Admin Server-Sent Events stream for device updates',
-        description: 'Requires permission: devices. Admin realtime stream for device status/config updates such as device_provisioned, device_status_changed, device_deleted, and devices_config_updated. Admin Frontend should use this stream with GET /api/v1/devices?deviceType=camera to show online LPR cameras before saving Barrier Gate cameraIds.',
+        description: 'Requires permission: devices. Admin realtime stream for device status/config updates such as device_provisioned, device_activation_reissued, device_status_changed, device_deleted, and devices_config_updated. Admin Frontend should use this stream with GET /api/v1/devices?deviceType=camera to show online LPR cameras before saving Barrier Gate cameraIds.',
         responses: { 200: { description: 'SSE stream' }, ...bearer403 },
       },
     },
@@ -1057,6 +1057,33 @@ const openapi = {
         description: 'Requires permission: devices. Works for kiosk, barrier_gate, and other device records.',
         parameters: [idParam('deviceId', 'K-20260524-001')],
         responses: { 200: ok('Device deleted', ref('DeleteSuccessResponse')), 404: error('Device not found'), ...bearer403 },
+      },
+    },
+    '/api/v1/devices/{deviceId}/reissue-activation-code': {
+      post: {
+        tags: ['Devices'],
+        summary: 'Reissue activation code for an existing kiosk or barrier gate',
+        description: 'Requires permission: devices. Creates a new activation code for an existing kiosk or barrier_gate without recreating the device or losing cameraIds/printerIds mappings. The previous deviceToken is invalidated; after the device frontend activates with the new code, the backend returns a new one-time deviceToken.',
+        parameters: [idParam('deviceId', 'BG-20260628-001')],
+        responses: {
+          201: ok('Activation code reissued', {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              message: { type: 'string', example: 'Activation code reissued' },
+              deviceId: { type: 'string', example: 'BG-20260628-001' },
+              deviceName: { type: 'string', example: 'Barrier Gate OUT A' },
+              deviceType: { type: 'string', enum: ['kiosk', 'barrier_gate'], example: 'barrier_gate' },
+              activationCode: { type: 'string', example: '483921' },
+              expiresAt: { type: 'string', format: 'date-time' },
+              device: ref('DeviceMutationResponse'),
+            },
+          }),
+          400: error('Activation code can only be reissued for kiosk or barrier_gate devices'),
+          403: error('Device is currently under maintenance'),
+          404: error('Device not found'),
+          ...bearer403,
+        },
       },
     },
 
