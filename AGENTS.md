@@ -58,22 +58,27 @@ transaction id in `qrData`, currently `/payment?tx=<transactionId>`.
 Device credential behavior:
 
 - Activated kiosk/barrier devices receive a `deviceId` and `deviceToken`.
+- `deviceToken` is only for device authentication. Do not use it as mapping
+  data in Admin Frontend forms. Admin mappings use device ids only:
+  `cameraIds` for LPR cameras and `printerIds` for printers.
 - Camera devices are credentialed devices. Cameras must use their own
   `deviceId`/`deviceToken` when posting LPR transactions, and the request
   `cameraId` must match the authenticated camera `deviceId`.
-- Cameras do not use the kiosk/barrier activation-code flow. Admins provision
-  an active camera directly through
-  `POST /api/v1/devices/cameras/provision`; the returned `deviceToken` is shown
-  once and should be stored in the LPR middleware or Postman environment.
-- Printers also use direct admin provisioning through
-  `POST /api/v1/devices/printers/provision`; the returned `deviceToken` is
-  shown once and should be stored in the printer service or Postman
-  environment.
+- Cameras do not use the kiosk/barrier activation-code flow. They are
+  provisioned directly through `POST /api/v1/devices/cameras/provision`. In the
+  current simulation/integration flow, this can be done from Postman with admin
+  credentials; the returned `deviceToken` is shown once and should be stored in
+  the LPR middleware or Postman environment.
+- Printers also use direct provisioning through
+  `POST /api/v1/devices/printers/provision`. In the current
+  simulation/integration flow, this can be done from Postman with admin
+  credentials; the returned `deviceToken` is shown once and should be stored in
+  the printer service or Postman environment.
 - `POST /api/v1/client/check-in` requires device credentials via
   `requireDeviceAuth(['kiosk', 'barrier_gate', 'camera', 'printer'])`.
 - `GET /api/v1/devices/events` is the admin SSE stream for realtime device
-  status/config changes. LPR cameras become online by calling
-  `POST /api/v1/client/check-in` with their camera credentials.
+  status/config changes. LPR cameras and printers become online by calling
+  `POST /api/v1/client/check-in` with their own device credentials.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
   and requires device credentials when `deviceId` is present.
 - LPR processing emits `lpr_detected` to the client SSE stream for both accepted
@@ -93,6 +98,20 @@ Device credential behavior:
   to provisioned printer devices. Cameras stay mapped to Barrier Gates only;
   printers are the shared peripheral type that can be selected by Kiosks or
   Barrier Gates.
+- Admin Frontend should treat Camera/Printer management as a mapping/status UI
+  unless a provisioning screen is explicitly requested. It should list devices
+  from `GET /api/v1/devices`, watch `/api/v1/devices/events`, show which
+  cameras/printers are online, and map available device ids onto
+  Kiosk/Barrier Gate records.
+- There is no backend `unassigned=true` filter. If the Admin Frontend needs an
+  "available devices" list, derive it from current mappings: cameras are
+  assigned when their `deviceId` appears in any Barrier Gate `cameraIds`;
+  printers are assigned when their `deviceId` appears in any Kiosk or Barrier
+  Gate `printerIds`.
+- Mapping changes and reassignment use `PUT /api/v1/devices/:deviceId` with the
+  complete desired `cameraIds`/`printerIds` arrays for that Kiosk or Barrier
+  Gate. Do not require or send peripheral `deviceToken` values for these admin
+  mapping updates.
 - Transaction lookup/payment client endpoints currently identify kiosk/gate by
   `deviceId`; do not silently change this contract without checking the frontend
   impact.
@@ -230,6 +249,15 @@ Device creation creates activation codes for frontend roles:
 - Allowed activation device types: `kiosk`, `barrier_gate`.
 - Activation code flow returns a code to enter on the device frontend.
 - Device activation returns `deviceId` and a one-time `deviceToken`.
+- Camera and printer records are not created through the activation-code flow.
+  Provision them through the dedicated camera/printer admin APIs, often from
+  Postman during simulation. Admin Frontend should usually only display those
+  records, their online state, and their current mappings.
+- `deviceToken` values are never returned by list/update APIs and should not be
+  expected after the provisioning or activation response is closed.
+- Use `PUT /api/v1/devices/:deviceId` to edit device metadata or to swap
+  Barrier Gate/Kiosk mappings. Barrier Gate mappings include `cameraIds` and
+  `printerIds`; Kiosk mappings include `printerIds` only.
 
 Runtime device records are synchronized with kiosk/barrier-gate config where
 needed. Do not treat old separate kiosk/barrier config as the only source of
