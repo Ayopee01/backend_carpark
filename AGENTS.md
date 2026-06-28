@@ -71,15 +71,24 @@ Device credential behavior:
   environment.
 - `POST /api/v1/client/check-in` requires device credentials via
   `requireDeviceAuth(['kiosk', 'barrier_gate', 'camera', 'printer'])`.
+- `GET /api/v1/devices/events` is the admin SSE stream for realtime device
+  status/config changes. LPR cameras become online by calling
+  `POST /api/v1/client/check-in` with their camera credentials.
 - `GET /api/v1/client/events` allows public SSE when no `deviceId` is present,
   and requires device credentials when `deviceId` is present.
-- LPR processing emits `lpr_detected` to this SSE stream for both accepted and
-  rejected `IN/OUT` results. Barrier screens can filter by `gateId` and
-  `direction`.
+- LPR processing emits `lpr_detected` to the client SSE stream for both accepted
+  and rejected `IN/OUT` results. Barrier screens can filter by `gateId` and
+  `direction`, and should include `cameraId` when the Barrier Gate is mapped to
+  a specific camera.
 - Barrier Gate devices should be configured with `gateId`, `direction`, and
   `cameraIds`. `POST /api/v1/transactions` validates that the submitted
-  `cameraId` belongs to an activated camera and is mapped to the submitted
+  `cameraId` belongs to a provisioned camera and is mapped to the submitted
   `gateId`/`direction` before processing the LPR event.
+- Backend intentionally does not require `cameraIds` to be online when saving a
+  Barrier Gate. Admin Frontend should show/filter online LPR cameras using
+  `GET /api/v1/devices?deviceType=camera` plus `/api/v1/devices/events`, then
+  send selected `cameraIds`. This keeps online-selection UI policy out of the
+  backend and avoids duplicate validation logic.
 - Kiosk and Barrier Gate devices may be configured with `printerIds` that point
   to provisioned printer devices. Cameras stay mapped to Barrier Gates only;
   printers are the shared peripheral type that can be selected by Kiosks or
@@ -138,11 +147,16 @@ Payment gateway behavior:
 
 ## Transaction Flow
 
-Camera/LPR transaction creation uses the admin transaction route:
+Camera/LPR transaction creation uses the transaction route:
 
 - `POST /api/v1/transactions`
-- Requires admin auth and `transactions` permission.
+- Admin callers require Bearer auth and `transactions` permission.
+- Provisioned cameras can call the same route before admin auth by sending
+  `x-device-id` and `x-device-token`; the camera `deviceId` must match body
+  `cameraId`.
 - Validates through `validateCameraTransactionPayload()`.
+- Validates `cameraId` against the Barrier Gate mapping through
+  `validateCameraGateBinding()`.
 - Creates or updates through `createTransactionFromCamera()`.
 
 Core transaction repository behavior:

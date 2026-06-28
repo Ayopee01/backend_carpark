@@ -336,7 +336,7 @@ async function validateCameraGateBinding({ cameraId, gateId, direction } = {}) {
 
   const camera = await getRegisteredDevice(normalizedCameraId);
   if (!camera || camera.deviceType !== 'camera') {
-    return { ok: false, statusCode: 400, reason: 'camera_not_registered', message: 'cameraId is not an activated camera device' };
+    return { ok: false, statusCode: 400, reason: 'camera_not_registered', message: 'cameraId is not a provisioned camera device' };
   }
   if (!['active', 'offline'].includes(camera.status)) {
     return { ok: false, statusCode: 403, reason: 'camera_inactive', message: 'Camera device is not active' };

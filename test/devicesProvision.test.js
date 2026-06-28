@@ -51,7 +51,7 @@ function loadDevicesRepo(initialConfig = { devices: [] }) {
   };
 }
 
-test('provisions an activated camera with a one-time device token', async () => {
+test('provisions a credentialed camera with a one-time device token', async () => {
   const fixture = loadDevicesRepo();
 
   try {
@@ -111,7 +111,7 @@ test('rejects duplicate provisioned camera ids', async () => {
   }
 });
 
-test('provisions an activated printer with a one-time device token', async () => {
+test('provisions a credentialed printer with a one-time device token', async () => {
   const fixture = loadDevicesRepo();
 
   try {

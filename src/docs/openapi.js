@@ -722,7 +722,7 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Create or update transaction from camera/LPR body',
-        description: 'Admin/camera integration flow. Admins may use Bearer token with transactions permission; activated cameras may use x-device-id and x-device-token. cameraId must match the authenticated camera device when device credentials are used, and must be mapped to the submitted gateId/direction through a barrier gate config. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
+        description: 'Admin/camera integration flow. Admins may use Bearer token with transactions permission; provisioned cameras may use x-device-id and x-device-token. cameraId must match the authenticated camera device when device credentials are used, and must be mapped to the submitted gateId/direction through a barrier gate config. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
         security: [...deviceAuth, ...bearer],
         requestBody: body(ref('CameraTransactionRequest')),
         responses: { 200: ok('Duplicate, active transaction, or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
@@ -945,7 +945,7 @@ const openapi = {
       get: {
         tags: ['Devices'],
         summary: 'Admin Server-Sent Events stream for device updates',
-        description: 'Requires permission: devices.',
+        description: 'Requires permission: devices. Admin realtime stream for device status/config updates such as device_provisioned, device_status_changed, device_deleted, and devices_config_updated. Admin Frontend should use this stream with GET /api/v1/devices?deviceType=camera to show online LPR cameras before saving Barrier Gate cameraIds.',
         responses: { 200: { description: 'SSE stream' }, ...bearer403 },
       },
     },
@@ -990,7 +990,7 @@ const openapi = {
       post: {
         tags: ['Devices'],
         summary: 'Create activation code for frontend/device role',
-        description: 'Requires permission: devices. Creates an activation code for kiosk or barrier gate. Kiosk and barrier gate configs may include printerIds mapped to provisioned printer devices. Barrier gate configs may also include gateId, direction, and cameraIds mapped to provisioned camera devices. Cameras and printers are created through their provision endpoints instead of the activation-code flow.',
+        description: 'Requires permission: devices. Creates an activation code for kiosk or barrier gate. Kiosk and barrier gate configs may include printerIds mapped to provisioned printer devices. Barrier gate configs may also include gateId, direction, and cameraIds mapped to provisioned camera devices. Backend does not require cameraIds to be online at save time; Admin Frontend should filter/show online cameras before saving. Cameras and printers are created through their provision endpoints instead of the activation-code flow.',
         requestBody: body(ref('DeviceActivationCodeCreateRequest'), { deviceName: 'Exit Barrier Gate 1', deviceType: 'barrier_gate', gateId: 'GATE-A', direction: 'OUT', cameraIds: ['CAM-OUT-A'], printerIds: ['PRN-GATE-A'] }),
         responses: {
           201: ok('Activation code created', ref('DeviceActivationCodeCreateResponse')),
@@ -1003,7 +1003,7 @@ const openapi = {
     '/api/v1/devices/cameras/provision': {
       post: {
         tags: ['Devices'],
-        summary: 'Provision an activated camera directly',
+        summary: 'Provision a credentialed camera directly',
         description: 'Requires permission: devices. Creates an active camera device and returns a one-time deviceToken for LPR middleware or Postman simulation.',
         requestBody: body(ref('CameraProvisionRequest'), {
           deviceName: 'Camera OUT A',
@@ -1024,7 +1024,7 @@ const openapi = {
     '/api/v1/devices/printers/provision': {
       post: {
         tags: ['Devices'],
-        summary: 'Provision an activated printer directly',
+        summary: 'Provision a credentialed printer directly',
         description: 'Requires permission: devices. Creates an active printer device and returns a one-time deviceToken for a printer service, kiosk, barrier gate, or Postman simulation. Kiosks and barrier gates can reference provisioned printers through printerIds.',
         requestBody: body(ref('PrinterProvisionRequest'), {
           deviceName: 'Printer Gate A',
