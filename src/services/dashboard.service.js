@@ -1,7 +1,7 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
 const { listChannels } = require('../data/repositories/paymentSettings.repo');
-const { getPaymentAmount, getTransactionPayments, getTransactionRevenue } = require('../utils/payments');
+const { getPaymentAmount, getTransactionPayments } = require('../utils/payments');
 
 // Constant รายการช่องทางรับชำระเงินที่ใช้สรุปหน้า dashboard
 const FALLBACK_CHANNELS = [
@@ -31,22 +31,93 @@ const FALLBACK_CHANNELS = [
   }
 ];
 
-// Function สร้างช่วงเวลาเริ่มต้นและสิ้นสุดของวันนี้
-function getTodayRange() {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+function getBangkokParts(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return { year: 0, month: 0, day: 0 };
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
 
   return {
-    startDate: startOfToday.toISOString(),
-    endDate: endOfToday.toISOString()
+    year: Number(parts.find((part) => part.type === 'year')?.value),
+    month: Number(parts.find((part) => part.type === 'month')?.value),
+    day: Number(parts.find((part) => part.type === 'day')?.value)
   };
+}
+
+function bangkokDateToUtcIso(year, month, day, hour = 0, minute = 0, second = 0, ms = 0) {
+  return new Date(
+    Date.UTC(year, month - 1, day, hour - 7, minute, second, ms)
+  ).toISOString();
+}
+
+// Function สร้างช่วงเวลาเริ่มต้นและสิ้นสุดของวันนี้ตามเวลา Bangkok
+function getTodayRange() {
+  const { year, month, day } = getBangkokParts(new Date());
+
+  return {
+    startDate: bangkokDateToUtcIso(year, month, day, 0, 0, 0, 0),
+    endDate: bangkokDateToUtcIso(year, month, day, 23, 59, 59, 999)
+  };
+}
+
+function isDateInRange(value, startDate, endDate) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= new Date(startDate) && date <= new Date(endDate);
+}
+
+function normalizeMethod(method) {
+  return String(method || '').trim().toLowerCase();
+}
+
+function isCashierCashPayment(payment) {
+  return payment.channel === 'cashier' && normalizeMethod(payment.method) === 'cash';
+}
+
+function isPromptPayPayment(payment) {
+  return ['promptpay', 'qr', 'qr_code'].includes(normalizeMethod(payment.method));
+}
+
+function getChannelCode(channel) {
+  const rawCode = channel?.code || channel?.channel || channel?.id || channel?.name || '';
+  const code = String(rawCode).trim().toLowerCase();
+  if (code.startsWith('ch_')) return code.slice(3);
+  if (code === 'exit gate' || code === 'barrier_gate' || code === 'barrier gate') return 'gate';
+  if (code === 'cashier' || code === 'admin') return 'cashier';
+  if (['kiosk', 'gate', 'mobile'].includes(code)) return code;
+  return code;
+}
+
+function normalizeChannel(channel) {
+  const code = getChannelCode(channel);
+  return {
+    ...channel,
+    code,
+    label: channel?.label || channel?.name || channel?.code || code,
+    subLabel: channel?.subLabel || channel?.description || '',
+  };
+}
+
+function getPaymentDashboardChannel(payment) {
+  if (payment.channel === 'cashier') return 'cashier';
+  if (payment.deviceType === 'kiosk' || payment.channel === 'kiosk') return 'kiosk';
+  if (payment.deviceType === 'barrier_gate' || payment.channel === 'gate') return 'gate';
+  return 'mobile';
 }
 
 // Function สร้าง dashboard summary response
 async function getDashboardSummary(currentUserId = 'u1') {
   const { startDate, endDate } = getTodayRange();
-  const transactionsRaw = await listAllTransactions({ startDate, endDate });
+  const [transactionsRaw, paymentTransactionsRaw] = await Promise.all([
+    listAllTransactions({ startDate, endDate }),
+    listAllTransactions()
+  ]);
 
   const cleanTransactions = transactionsRaw.filter((transaction) => {
     return transaction && transaction.status;
@@ -56,22 +127,20 @@ async function getDashboardSummary(currentUserId = 'u1') {
     return !transaction.isOverstay;
   });
 
-  const paidToday = dailyTransactions.filter((transaction) => {
-    return transaction.status === 'completed' || transaction.status === 'paid' || transaction.status === 'paid_waiting_exit';
-  });
-
   const unpaidToday = dailyTransactions.filter((transaction) => {
     return transaction.status === 'pending' || transaction.status === 'partially_paid';
   });
 
-  const paidPayments = paidToday.flatMap(getTransactionPayments);
-  const totalRevenueToday = paidToday.reduce((sum, transaction) => {
-    return sum + getTransactionRevenue(transaction);
+  const paidPayments = paymentTransactionsRaw
+    .filter((transaction) => transaction && transaction.status && !transaction.isOverstay)
+    .flatMap(getTransactionPayments)
+    .filter((payment) => isDateInRange(payment.paidAt, startDate, endDate));
+
+  const totalRevenueToday = paidPayments.reduce((sum, payment) => {
+    return sum + getPaymentAmount(payment);
   }, 0);
 
-  const cashierPayments = paidPayments.filter((payment) => {
-    return payment.channel === 'cashier';
-  });
+  const cashierPayments = paidPayments.filter(isCashierCashPayment);
 
   const totalCashToday = cashierPayments.reduce((sum, payment) => {
     return sum + getPaymentAmount(payment);
@@ -83,9 +152,7 @@ async function getDashboardSummary(currentUserId = 'u1') {
       return sum + getPaymentAmount(payment);
     }, 0);
 
-  const epayPayments = paidPayments.filter((payment) => {
-    return payment.channel !== 'cashier';
-  });
+  const epayPayments = paidPayments.filter(isPromptPayPayment);
 
   const totalEpayToday = epayPayments.reduce((sum, payment) => {
     return sum + getPaymentAmount(payment);
@@ -107,11 +174,14 @@ async function getDashboardSummary(currentUserId = 'u1') {
     }
   ];
 
-  const channels = await listChannels() || FALLBACK_CHANNELS;
-  
+  const configuredChannels = await listChannels();
+  const channels = (configuredChannels && configuredChannels.length ? configuredChannels : FALLBACK_CHANNELS)
+    .map(normalizeChannel)
+    .filter((channel) => ['cashier', 'kiosk', 'gate', 'mobile'].includes(channel.code));
+
   const channelBreakdown = channels.map((channel) => {
     const filteredPayments = paidPayments.filter((payment) => {
-      return payment.channel === channel.code;
+      return getPaymentDashboardChannel(payment) === channel.code;
     });
 
     const amount = filteredPayments.reduce((sum, payment) => {
@@ -129,7 +199,7 @@ async function getDashboardSummary(currentUserId = 'u1') {
   return {
     summaryCards: {
       totalTickets: dailyTransactions.length,
-      paidCount: paidToday.length,
+      paidCount: new Set(paidPayments.map((payment) => payment.transactionId)).size,
       paidRevenue: totalRevenueToday,
       pendingCount: unpaidToday.length,
       avgWaitTime: '12 min'

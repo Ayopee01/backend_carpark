@@ -47,7 +47,14 @@ Admin route permissions are enforced with `authorize(...)`:
 
 Dashboard and overview are separate admin surfaces:
 
-- `GET /api/v1/dashboard` returns today's dashboard summary.
+- `GET /api/v1/dashboard` returns today's dashboard summary using Bangkok time.
+  Ticket counts are based on transactions created/entered today. Payment totals
+  are based on `payments[].paidAt` today, even if the transaction entered on a
+  different day. Pending count includes `pending` and `partially_paid`
+  transactions created today. The staff/help revenue group is cashier/admin cash
+  only. The scan revenue group is PromptPay/QR payments across cashier, kiosk,
+  gate, and mobile. Channel breakdown keeps the public codes
+  `cashier`, `kiosk`, `gate`, and `mobile`; `cashier` means Admin.
 - `GET /api/v1/dashboard/events` is the admin SSE stream for dashboard data.
   It sends `connected`, `dashboard_snapshot`, periodic `dashboard_summary`,
   `dashboard_updated` after transaction/payment changes, and `ping`.
