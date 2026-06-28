@@ -34,12 +34,37 @@ Important entry points:
 
 Admin route permissions are enforced with `authorize(...)`:
 
+- `dashboard` permission for `/api/v1/dashboard`.
+- `overview` permission for `/api/v1/overview`.
 - `transactions` permission for `/api/v1/transactions`.
 - `pricing` permission for `/api/v1/service-pricing` and
   `/api/v1/payment-settings`.
 - `devices` permission for admin device management.
 - `theme` permission for `/api/v1/theme`.
 - `settings` permission for `/api/v1/system-settings`.
+
+## Admin Dashboard And Overview Realtime
+
+Dashboard and overview are separate admin surfaces:
+
+- `GET /api/v1/dashboard` returns today's dashboard summary.
+- `GET /api/v1/dashboard/events` is the admin SSE stream for dashboard data.
+  It sends `connected`, `dashboard_snapshot`, periodic `dashboard_summary`,
+  `dashboard_updated` after transaction/payment changes, and `ping`.
+- `GET /api/v1/overview/summary` returns overview data by date range. It accepts
+  `start_date`/`end_date` or `startDate`/`endDate`, as `YYYY-MM-DD` or
+  date-time values. If no dates are supplied, it defaults to the current Bangkok
+  month through now.
+- `GET /api/v1/overview/events` is the admin SSE stream for realtime overview
+  data and uses the same date range query as `/api/v1/overview/summary`. It
+  sends `connected`, `overview_snapshot`, periodic `overview_summary`,
+  `overview_updated` after transaction/payment changes, `overview_error` on
+  stream refresh failures, and `ping`.
+
+Admin Frontend should close the previous overview SSE connection before opening
+a new one when the date range changes. Native browser `EventSource` cannot send
+an `Authorization` header, so use an SSE client/polyfill that supports Bearer
+headers or another intentional authenticated SSE strategy.
 
 ## Client, Mobile, Kiosk, And Barrier-Gate Flow
 

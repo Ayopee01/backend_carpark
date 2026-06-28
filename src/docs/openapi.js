@@ -703,6 +703,22 @@ const openapi = {
         responses: { 200: ok('Overview summary'), 400: error('Invalid start_date or end_date'), ...bearer403 },
       },
     },
+    '/api/v1/overview/events': {
+      get: {
+        tags: ['Overview'],
+        summary: 'Overview Server-Sent Events stream',
+        description: 'Requires permission: overview. Uses the same start_date/end_date filters as /api/v1/overview/summary. Sends an initial overview_snapshot, periodic overview_summary events, ping keepalives, and overview_updated events after transaction changes.',
+        parameters: [
+          query('start_date', { type: 'string', description: 'YYYY-MM-DD or date-time' }, '2026-05-01'),
+          query('end_date', { type: 'string', description: 'YYYY-MM-DD or date-time' }, '2026-05-25'),
+        ],
+        responses: {
+          200: { description: 'SSE stream' },
+          400: error('Invalid start_date or end_date'),
+          ...bearer403,
+        },
+      },
+    },
 
     '/api/v1/transactions': {
       get: {
