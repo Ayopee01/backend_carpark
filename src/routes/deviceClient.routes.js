@@ -4,7 +4,7 @@ const defaults = require('../data/defaults');
 
 const router = express.Router();
 
-// Public base config endpoint for every client before activation/login.
+// Route public config พื้นฐานก่อน activation/login
 router.get('/config', async (req, res, next) => {
   try {
     const currentTheme = await getConfig('theme', defaults.theme);
@@ -25,4 +25,5 @@ router.get('/config', async (req, res, next) => {
   }
 });
 
+// Export Router
 module.exports = router;

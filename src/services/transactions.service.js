@@ -5,6 +5,7 @@ const {
 } = require('../data/repositories/transactions.repo');
 const appEvents = require('../utils/events');
 
+// Constant เวลากัน event กล้องซ้ำ
 const DUPLICATE_WINDOW_MS = 10 * 1000;
 
 // Function สร้าง response มาตรฐานสำหรับ gate/camera integration
@@ -23,17 +24,20 @@ function toGateResponse(transaction, action, message, success, direction = trans
   };
 }
 
+// Function อ่านเวลาที่กล้องจับภาพจาก DTO
 function getCapturedTime(dto) {
   const capturedTime = dto.capturedAt ? new Date(dto.capturedAt) : new Date();
   return Number.isNaN(capturedTime.getTime()) ? new Date() : capturedTime;
 }
 
+// Function อ่าน exitTimeLimit ของ transaction
 function getExitTimeLimit(transaction) {
   if (!transaction?.exitTimeLimit) return null;
   const exitTimeLimit = new Date(transaction.exitTimeLimit);
   return Number.isNaN(exitTimeLimit.getTime()) ? null : exitTimeLimit;
 }
 
+// Function ตรวจว่า transaction ออกได้หรือยังต้องจ่ายเพิ่ม
 function validateExitEligibility(transaction, capturedTime) {
   if (!transaction) {
     return { ok: false, action: 'TRANSACTION_NOT_FOUND', message: 'ไม่พบรายการจอดที่ยังเปิดอยู่' };
@@ -56,6 +60,7 @@ function validateExitEligibility(transaction, capturedTime) {
   return { ok: true, exitTimeLimit: exitTimeLimit.toISOString() };
 }
 
+// Function emit event LPR ไปยัง client SSE
 function emitLprDetected(dto, result) {
   const data = result.body?.data || {};
   appEvents.emit('lpr_detected', {
@@ -140,6 +145,7 @@ async function createTransactionFromCamera(dto) {
   });
 }
 
+// Export Functions
 module.exports = {
   createTransactionFromCamera,
 };

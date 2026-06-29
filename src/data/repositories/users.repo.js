@@ -4,6 +4,7 @@ const { prisma } = require('../../db/prisma');
 const { pick } = require('../../utils/helpers');
 const { hashPassword, verifyPassword } = require('../../utils/auth');
 
+// Constant fields ที่ปลอดภัยสำหรับส่งข้อมูล user
 const SAFE_USER_SELECT = {
   id: true,
   username: true,

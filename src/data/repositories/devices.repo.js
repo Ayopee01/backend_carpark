@@ -7,9 +7,13 @@ const { hashToken } = require('../../utils/auth');
 
 // Constant key สำหรับอ้างอิง devices config ใน table app_config
 const CONFIG_KEY = 'devices';
+// Constant เวลาที่ device ถือว่า offline
 const OFFLINE_AFTER_MINUTES = 5;
+// Constant ประเภท device ที่ต้องมี token
 const ACTIVATION_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate', 'camera', 'printer']);
+// Constant ประเภท device ที่ใช้ activation code
 const ACTIVATION_CODE_DEVICE_TYPES = new Set(['kiosk', 'barrier_gate']);
+// Constant อายุ activation code
 const ACTIVATION_TTL_MS = 10 * 60 * 1000;
 const appEvents = require('../../utils/events');
 
@@ -18,6 +22,7 @@ function createDeviceToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Function สร้าง activation code แบบสุ่ม
 function createActivationCode() {
   return crypto.randomInt(100000, 1000000).toString();
 }
@@ -34,6 +39,7 @@ function isActivationDevice(device) {
   return ACTIVATION_DEVICE_TYPES.has(device?.deviceType);
 }
 
+// Function ตรวจว่า device ใช้ activation code หรือไม่
 function isActivationCodeDevice(device) {
   return ACTIVATION_CODE_DEVICE_TYPES.has(device?.deviceType);
 }
@@ -69,20 +75,24 @@ function toSafeConfig(config) {
   };
 }
 
+// Function normalize direction ให้เป็น IN/OUT
 function normalizeDirection(direction) {
   const value = String(direction || '').trim().toUpperCase();
   return ['IN', 'OUT'].includes(value) ? value : null;
 }
 
+// Function normalize device ids ให้ไม่ซ้ำและไม่มีค่าว่าง
 function normalizeDeviceIds(deviceIds) {
   if (!Array.isArray(deviceIds)) return [];
   return [...new Set(deviceIds.map((deviceId) => String(deviceId || '').trim()).filter(Boolean))];
 }
 
+// Function normalize camera ids
 function normalizeCameraIds(cameraIds) {
   return normalizeDeviceIds(cameraIds);
 }
 
+// Function normalize printer ids
 function normalizePrinterIds(printerIds) {
   return normalizeDeviceIds(printerIds);
 }
@@ -378,14 +388,17 @@ async function provisionCredentialedDevice(deviceType, payload = {}) {
   };
 }
 
+// Function provision camera พร้อม device token
 async function provisionCameraDevice(payload = {}) {
   return provisionCredentialedDevice('camera', payload);
 }
 
+// Function provision printer พร้อม device token
 async function provisionPrinterDevice(payload = {}) {
   return provisionCredentialedDevice('printer', payload);
 }
 
+// Function reissue activation code สำหรับ kiosk/barrier gate เดิม
 async function reissueActivationCode(id) {
   const config = await getDevicesConfig();
   const devices = [...config.devices];
@@ -444,6 +457,7 @@ async function reissueActivationCode(id) {
   };
 }
 
+// Function activate registered device ด้วย generated device id
 async function activateRegisteredDevice(generatedDeviceId, details = {}) {
   const deviceToken = createDeviceToken();
   let activatedDevice = null;
@@ -589,6 +603,7 @@ async function updateRegisteredDeviceHeartbeat(generatedDeviceId, details = {}) 
   return { device: toSafeDevice(updatedDevice), config: toSafeConfig(withSummary(saved)) };
 }
 
+// Function หา device index จาก id, deviceId หรือ deviceCode
 function findDeviceIndex(devices, value) {
   return devices.findIndex((item) => item.id === value || item.deviceId === value || item.deviceCode === value);
 }

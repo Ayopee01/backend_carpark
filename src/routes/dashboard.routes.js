@@ -22,7 +22,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Route SSE stream dashboard summary updates.
+// Route SSE stream สำหรับ dashboard summary
 router.get('/events', async (req, res, next) => {
   try {
     const currentUserId = req.user.id;
@@ -68,5 +68,5 @@ router.get('/events', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;

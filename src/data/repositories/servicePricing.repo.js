@@ -5,7 +5,9 @@ const { getConfig, getConfigWithMeta, setConfig, stripConfigMeta } = require('./
 
 // Constant key สำหรับ pricing config ใน app_config table
 const CONFIG_KEY = 'pricing_config';
+// Constant fee types ที่ระบบรองรับ
 const ALLOWED_FEE_TYPES = ['base_hour', 'next_hour', 'overnight_day', 'overnight_week', 'overnight_month', 'overnight_year'];
+// Constant vehicle types ที่ระบบรองรับ
 const ALLOWED_VEHICLE_TYPES = ['car', 'motorcycle'];
 
 // Function แปลงค่าให้เป็น number ถ้าแปลงไม่ได้ใช้ fallback

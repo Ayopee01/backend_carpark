@@ -9,8 +9,11 @@ const {
 
 // Config ของ Barrier Gate
 const CONFIG_KEY = 'barrier_gates';
+// Constant เวลาที่ Barrier Gate ถือว่า offline
 const OFFLINE_AFTER_MINUTES = 5;
+// Constant อายุ activation code
 const ACTIVATION_TTL_MS = 10 * 60 * 1000;
+// Constant เก็บ activation code ชั่วคราวใน memory
 const activationCodes = new Map();
 
 // Function ลบ Activation Code ที่หมดอายุออกจากหน่วยความจำ
@@ -53,20 +56,24 @@ async function saveBarrierGates(barrierGates) {
   return setConfig(CONFIG_KEY, { barrierGates });
 }
 
+// Function หา index ของ Barrier Gate จาก deviceId
 function findBarrierGateIndex(barrierGates, deviceId) {
   return barrierGates.findIndex((barrierGate) => barrierGate.deviceId === deviceId);
 }
 
+// Function normalize direction ให้เป็น IN/OUT
 function normalizeDirection(direction) {
   const value = String(direction || '').trim().toUpperCase();
   return ['IN', 'OUT'].includes(value) ? value : null;
 }
 
+// Function normalize cameraIds ให้เป็น array ไม่ซ้ำ
 function normalizeCameraIds(cameraIds) {
   if (!Array.isArray(cameraIds)) return [];
   return [...new Set(cameraIds.map((cameraId) => String(cameraId || '').trim()).filter(Boolean))];
 }
 
+// Function normalize printerIds ให้เป็น array ไม่ซ้ำ
 function normalizePrinterIds(printerIds) {
   if (!Array.isArray(printerIds)) return [];
   return [...new Set(printerIds.map((printerId) => String(printerId || '').trim()).filter(Boolean))];
@@ -100,6 +107,7 @@ async function searchBarrierGate(deviceId) {
   return withRuntimeStatus(barrierGates.find((barrierGate) => barrierGate.deviceId === deviceId) || null);
 }
 
+// Function query Barrier Gate รายตัว
 async function getBarrierGate(deviceId) {
   return searchBarrierGate(deviceId);
 }
@@ -161,6 +169,7 @@ async function resolveBarrierGateActivationCode(code) {
   return { ...data, code: normalizedCode };
 }
 
+// Function ลบ activation code ของ Barrier Gate จาก memory
 function deleteBarrierGateActivationCode(code) {
   if (!code) return;
   activationCodes.delete(String(code).trim());
@@ -201,6 +210,7 @@ async function createBarrierGate(data = {}) {
   };
 }
 
+// Function update Barrier Gate ด้วย deviceId
 async function updateBarrierGate(deviceId, details = {}) {
   const { barrierGates } = await getBarrierGatesConfig();
   const index = findBarrierGateIndex(barrierGates, deviceId);
@@ -225,6 +235,7 @@ async function updateBarrierGate(deviceId, details = {}) {
   };
 }
 
+// Alias สำหรับชื่อเดิมของ update Barrier Gate
 const editBarrierGate = updateBarrierGate;
 
 // Function ลบ Barrier Gate ออกจาก Config ตาม deviceId
@@ -294,6 +305,7 @@ async function upsertBarrierGateHeartbeatRecord(deviceId, details = {}) {
   return barrierGate;
 }
 
+// Alias สำหรับชื่อเดิมของ heartbeat Barrier Gate
 const updateBarrierGateStatus = upsertBarrierGateHeartbeatRecord;
 
 // Function แสดงรายการ Barrier Gate ทั้งหมด พร้อมคำนวณสถานะ Runtime ล่าสุดให้แต่ละตัว
@@ -311,6 +323,7 @@ async function listAllBarrierGatesWithMeta() {
   };
 }
 
+// Function หา Barrier Gate ที่ map กับ camera
 async function findBarrierGateByCamera(cameraId, { gateId = null, direction = null } = {}) {
   const normalizedCameraId = String(cameraId || '').trim();
   if (!normalizedCameraId) return null;
@@ -328,6 +341,7 @@ async function findBarrierGateByCamera(cameraId, { gateId = null, direction = nu
   }) || null;
 }
 
+// Function validate ว่า camera ถูก map กับ gate/direction ถูกต้อง
 async function validateCameraGateBinding({ cameraId, gateId, direction } = {}) {
   const normalizedCameraId = String(cameraId || '').trim();
   if (!normalizedCameraId) {
@@ -350,6 +364,7 @@ async function validateCameraGateBinding({ cameraId, gateId, direction } = {}) {
   return { ok: true, camera, barrierGate };
 }
 
+// Export Functions
 module.exports = {
   createBarrierGate,
   deleteBarrierGateActivationCode,

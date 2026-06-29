@@ -3,7 +3,7 @@ const router = express.Router();
 const memberRepo = require('../data/repositories/members.repo');
 const { authorize } = require('../middleware/permission');
 
-// Member management access is driven by members.permissions.
+// Apply permission check สำหรับจัดการ member
 router.use(authorize('settings'));
 
 // Route query สถิติ member เช่น จำนวนทั้งหมด active และ admin
@@ -73,6 +73,6 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;
 

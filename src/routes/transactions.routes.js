@@ -1,5 +1,11 @@
 const express = require('express');
-const { listTransactions, lookupTransactionApiByPlateNo, processPayment, updateTransaction, deleteTransaction } = require('../data/repositories/transactions.repo');
+const {
+  listTransactions,
+  lookupTransactionApiByPlateNo,
+  processPaymentByPlateNo,
+  updateTransactionByPlateNo,
+  deleteTransactionByPlateNo,
+} = require('../data/repositories/transactions.repo');
 const { authorize } = require('../middleware/permission');
 const { createTransactionFromCamera } = require('../services/transactions.service');
 const { validateCameraTransactionPayload } = require('../validators/transactions.validator');
@@ -10,6 +16,7 @@ const { createSseStream } = require('../utils/sse');
 const router = express.Router();
 const TRANSACTIONS_STREAM_INTERVAL_MS = Number(process.env.TRANSACTIONS_STREAM_INTERVAL_MS || 10000);
 
+// Function แปลง transaction เป็น response หลัง admin payment
 function toAdminPaymentResponse(transaction) {
   const latestPayment = Array.isArray(transaction.payments) && transaction.payments.length
     ? transaction.payments[transaction.payments.length - 1]
@@ -46,6 +53,7 @@ function toAdminPaymentResponse(transaction) {
   };
 }
 
+// Function แปลง transaction เป็น item สำหรับ list
 function toTransactionListItem(transaction) {
   const latestPayment = Array.isArray(transaction.payments) && transaction.payments.length
     ? transaction.payments[transaction.payments.length - 1]
@@ -82,6 +90,7 @@ function toTransactionListItem(transaction) {
   };
 }
 
+// Function อ่าน filter list transaction จาก query
 function getTransactionListFilters(query = {}) {
   const { keyword, plate_no: plateNo, bill_no: billNo, page = 1, per_page = 10, all } = query;
   return {
@@ -94,6 +103,7 @@ function getTransactionListFilters(query = {}) {
   };
 }
 
+// Function สร้าง response list transaction พร้อม meta
 async function getTransactionListResponse(query = {}) {
   const result = await listTransactions(getTransactionListFilters(query));
   return {
@@ -105,10 +115,10 @@ async function getTransactionListResponse(query = {}) {
   };
 }
 
-// Apply permission check from members.permissions.
+// Apply permission check สำหรับ transactions
 router.use(authorize('transactions'));
 
-// Route list/search transactions with pagination controlled by frontend query params.
+// Route list/search transactions พร้อม pagination จาก query
 router.get('/', async (req, res, next) => {
   try {
     res.json(await getTransactionListResponse(req.query));
@@ -117,7 +127,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Route SSE stream transaction list updates.
+// Route SSE stream สำหรับ transaction list
 router.get('/events', async (req, res, next) => {
   try {
     let isSending = false;
@@ -162,8 +172,8 @@ router.get('/events', async (req, res, next) => {
   }
 });
 
-// Route handler for camera/LPR body payload.
-// Request body receives plateNo, cameraId, gateId, direction, capturedAt, imageUrl.
+// Route handler สำหรับ payload จาก camera/LPR
+// Request body รับ plateNo, cameraId, gateId, direction, capturedAt, imageUrl
 async function handleCameraTransactionRequest(req, res, next) {
   try {
     const validation = validateCameraTransactionPayload(req.body);
@@ -205,10 +215,10 @@ async function handleCameraTransactionRequest(req, res, next) {
 
 router.post('/', handleCameraTransactionRequest);
 
-// Route get one transaction by transaction id or plateNo.
-router.get('/:id', async (req, res, next) => {
+// Route get one transaction by plateNo.
+router.get('/:plateNo', async (req, res, next) => {
   try {
-    const lookup = await lookupTransactionApiByPlateNo(req.params.id);
+    const lookup = await lookupTransactionApiByPlateNo(req.params.plateNo);
     if (lookup.matchType === 'invalid') return res.status(400).json({ message: lookup.message });
     if (lookup.matchType === 'multiple') return res.json(lookup);
 
@@ -220,13 +230,14 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// Route confirm payment by transaction id or plateNo from path.
-router.post('/:id/payment', async (req, res, next) => {
+// Route confirm payment by plateNo from path.
+router.post('/:plateNo/payment', async (req, res, next) => {
   try {
     const { plateNo, method, channel, amount, deviceId, deviceType, deviceName, deviceLocation } = req.body;
     const processedBy = req.user.id;
+    const pathPlateNo = req.params.plateNo;
     
-    const updated = await processPayment(req.params.id, { 
+    const updated = await processPaymentByPlateNo(pathPlateNo, {
       plateNo,
       method, 
       channel, 
@@ -251,10 +262,10 @@ router.post('/:id/payment', async (req, res, next) => {
   }
 });
 
-// Route update transaction fields by transaction id or plateNo.
-router.patch('/:id', async (req, res, next) => {
+// Route update transaction fields by plateNo.
+router.patch('/:plateNo', async (req, res, next) => {
   try {
-    const updated = await updateTransaction(req.params.id, req.body);
+    const updated = await updateTransactionByPlateNo(req.params.plateNo, req.body);
     if (!updated) return res.status(404).json({ message: 'Not found' });
     res.json({ message: 'Updated successfully', transaction: updated });
   } catch (err) {
@@ -262,10 +273,10 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// Route update transaction status by transaction id or plateNo.
-router.patch('/:id/status', async (req, res, next) => {
+// Route update transaction status by plateNo.
+router.patch('/:plateNo/status', async (req, res, next) => {
   try {
-    const updated = await updateTransaction(req.params.id, req.body);
+    const updated = await updateTransactionByPlateNo(req.params.plateNo, req.body);
     if (!updated) return res.status(404).json({ message: 'Not found' });
     res.json({
       success: true,
@@ -278,10 +289,10 @@ router.patch('/:id/status', async (req, res, next) => {
 });
 
 
-// Route delete transaction by transaction id or plateNo.
-router.delete('/:id', async (req, res, next) => {
+// Route delete transaction by plateNo.
+router.delete('/:plateNo', async (req, res, next) => {
   try {
-    const success = await deleteTransaction(req.params.id);
+    const success = await deleteTransactionByPlateNo(req.params.plateNo);
     if (!success) return res.status(404).json({ message: 'Not found' });
     res.json({ message: 'Deleted successfully' });
   } catch (err) {
@@ -289,6 +300,8 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Export Router
 module.exports = router;
+// Export handler สำหรับ camera route ก่อน admin auth
 module.exports.handleCameraTransactionRequest = handleCameraTransactionRequest;
 

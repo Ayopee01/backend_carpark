@@ -1,42 +1,52 @@
+// Constant หน่วยเวลาเป็น milliseconds
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
+// Function ตรวจว่า rule active และตรงประเภทรถหรือไม่
 function isActiveVehicleRule(rule, vehicleType) {
   return rule.status === 'active' && (!rule.vehicleType || rule.vehicleType === vehicleType);
 }
 
+// Function กรอง pricing rules ที่ใช้งานได้
 function getActiveRules(pricingRules = [], vehicleType = 'car') {
   return pricingRules.filter((rule) => isActiveVehicleRule(rule, vehicleType));
 }
 
+// Function แปลงค่าเป็น number ถ้าไม่ได้ให้ใช้ fallback
 function toFiniteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
 
+// Function อ่านราคาจาก pricing rule
 function getRulePrice(rule) {
   return toFiniteNumber(rule?.price, 0);
 }
 
+// Function อ่านจำนวนชั่วโมงฐานจาก rule
 function getBaseHours(rule) {
   return Math.max(1, toFiniteNumber(rule?.baseHours ?? rule?.hourEnd, 1));
 }
 
+// Function อ่านชั่วโมงสิ้นสุดของช่วงราคา
 function getHourEnd(rule) {
   if (rule.hourEnd === null || rule.hourEnd === undefined || rule.hourEnd === 999) return null;
   return toFiniteNumber(rule.hourEnd, null);
 }
 
+// Function อ่าน period สิ้นสุดของ overnight rule
 function getPeriodEnd(rule) {
   if (rule.periodEnd === null || rule.periodEnd === undefined || rule.periodEnd === 999) return null;
   return toFiniteNumber(rule.periodEnd, null);
 }
 
+// Function ตรวจว่า overnight rule เป็นแบบ flat หรือไม่
 function isFlatOvernightRule(rule) {
   const mode = String(rule.chargeMode || rule.calculationMode || rule.mode || '').toLowerCase();
   return ['daily_flat', 'flat_day', 'flat', 'replace'].includes(mode);
 }
 
+// Function คำนวณค่าจอดจาก pricing config รุ่นใหม่
 function calculateModernFee(totalHours, diffMs, rules) {
   const baseRule = rules.find((rule) => rule.feeType === 'base_hour');
   const nextRules = rules
@@ -135,6 +145,7 @@ function calculateModernFee(totalHours, diffMs, rules) {
   };
 }
 
+// Function คำนวณค่าจอดจาก pricing config รุ่นเก่า
 function calculateLegacyFee(totalHours, relevantRules) {
   let totalAmount = 0;
   const appliedRules = [];
@@ -163,6 +174,7 @@ function calculateLegacyFee(totalHours, relevantRules) {
   return { totalAmount, appliedRules, missingHours };
 }
 
+// Function คำนวณค่าบริการจากเวลาเข้า-ออกและ pricing rules
 function calculateFee(entryAt, exitAt, pricingRules = [], { vehicleType = 'car', serviceType = 'parking' } = {}) {
   const start = new Date(entryAt);
   const end = exitAt ? new Date(exitAt) : new Date();
@@ -207,4 +219,5 @@ function calculateFee(entryAt, exitAt, pricingRules = [], { vehicleType = 'car',
   };
 }
 
+// Export Functions
 module.exports = { calculateFee };

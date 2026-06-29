@@ -28,6 +28,7 @@ const router = express.Router();
 
 let runtimeMonitorStarted = false;
 
+// Function แปลง body เป็น payload สำหรับ activation
 function toActivationPayload(body = {}, deviceType) {
   return {
     ...(body.deviceName ? { deviceName: body.deviceName } : {}),
@@ -44,6 +45,7 @@ function toActivationPayload(body = {}, deviceType) {
   };
 }
 
+// Function ตรวจว่า device ตรงกับ keyword หรือไม่
 function matchesKeyword(device, keyword) {
   if (!keyword) return true;
   const normalized = String(keyword).trim().toLowerCase();
@@ -59,6 +61,7 @@ function matchesKeyword(device, keyword) {
   ].some((value) => String(value || '').toLowerCase().includes(normalized));
 }
 
+// Function สรุปจำนวน device ตามสถานะ
 function summarizeDevices(devices) {
   return {
     total: devices.length,
@@ -68,11 +71,13 @@ function summarizeDevices(devices) {
   };
 }
 
+// Function แปลง status เป็น runtime status
 function toRuntimeStatus(status) {
   if (status === 'active') return 'online';
   return status;
 }
 
+// Function แปลง device เป็น response หลัง mutation
 function toDeviceMutationResponse(device) {
   if (!device) return null;
 
@@ -95,6 +100,7 @@ function toDeviceMutationResponse(device) {
   };
 }
 
+// Function สร้าง response หลัง provision camera
 function toProvisionedCameraResponse(result) {
   return {
     success: true,
@@ -104,6 +110,7 @@ function toProvisionedCameraResponse(result) {
   };
 }
 
+// Function สร้าง response หลัง provision printer
 function toProvisionedPrinterResponse(result) {
   return {
     success: true,
@@ -113,6 +120,7 @@ function toProvisionedPrinterResponse(result) {
   };
 }
 
+// Function สร้าง response หลัง reissue activation code
 function toReissuedActivationResponse(result) {
   return {
     success: true,
@@ -126,6 +134,7 @@ function toReissuedActivationResponse(result) {
   };
 }
 
+// Function sync runtime config ของ kiosk/barrier gate
 async function syncRuntimeDevice(device, body = {}, action = 'update') {
   const deviceId = device?.deviceId || device?.id;
   if (!deviceId) return;
@@ -160,6 +169,7 @@ async function syncRuntimeDevice(device, body = {}, action = 'update') {
   }
 }
 
+// Function เริ่ม monitor device runtime เพียงครั้งเดียว
 function startDeviceRuntimeMonitor() {
   if (runtimeMonitorStarted) return;
   runtimeMonitorStarted = true;
@@ -173,7 +183,7 @@ function startDeviceRuntimeMonitor() {
 
 startDeviceRuntimeMonitor();
 
-// Admin SSE for realtime device updates.
+// Route SSE สำหรับ device realtime ของ admin
 router.get('/events', async (req, res) => {
   try {
     const stream = createSseStream(req, res, {
@@ -202,6 +212,7 @@ router.get('/events', async (req, res) => {
   }
 });
 
+// Function สร้าง response activation แบบ public
 function toPublicActivationResponse(result, payload) {
   return {
     CodeActivate: result.code,
@@ -212,7 +223,7 @@ function toPublicActivationResponse(result, payload) {
   };
 }
 
-// List every managed device in one endpoint. Filter by deviceType/status/keyword when needed.
+// Route list device ทั้งหมดพร้อม filter
 router.get('/', async (req, res, next) => {
   try {
     const config = toSafeConfig(await getDevicesConfigWithMeta());
@@ -239,7 +250,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Create activation code for kiosk or barrier gate frontend roles.
+// Route สร้าง activation code สำหรับ kiosk หรือ barrier gate
 router.post('/', async (req, res, next) => {
   try {
     const { deviceName, name, deviceType } = req.body || {};
@@ -271,7 +282,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// Provision a camera directly for LPR devices or Postman simulation.
+// Route provision camera สำหรับ LPR หรือ Postman simulation
 router.post('/cameras/provision', async (req, res, next) => {
   try {
     const { deviceName, name } = req.body || {};
@@ -290,7 +301,7 @@ router.post('/cameras/provision', async (req, res, next) => {
   }
 });
 
-// Provision a printer directly for kiosk or barrier gate use.
+// Route provision printer สำหรับ kiosk หรือ barrier gate
 router.post('/printers/provision', async (req, res, next) => {
   try {
     const { deviceName, name } = req.body || {};
@@ -331,7 +342,7 @@ router.post('/:deviceId/reissue-activation-code', async (req, res, next) => {
   }
 });
 
-// Update by id, deviceId, or deviceCode.
+// Route update device ด้วย id, deviceId หรือ deviceCode
 router.put('/:deviceId', async (req, res, next) => {
   try {
     const result = await updateDevice(req.params.deviceId, req.body || {});
@@ -347,7 +358,7 @@ router.put('/:deviceId', async (req, res, next) => {
   }
 });
 
-// Delete by id, deviceId, or deviceCode.
+// Route delete device ด้วย id, deviceId หรือ deviceCode
 router.delete('/:deviceId', async (req, res, next) => {
   try {
     const result = await deleteDevice(req.params.deviceId);
@@ -363,5 +374,5 @@ router.delete('/:deviceId', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;

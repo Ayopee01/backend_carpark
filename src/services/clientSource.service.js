@@ -1,11 +1,13 @@
 const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 
+// Function สร้าง HTTP error พร้อม statusCode
 function createHttpError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
 }
 
+// Function resolve client source จาก deviceId หรือ mobile
 async function resolveClientSource(deviceId, req) {
   if (!deviceId) return { clientType: 'mobile', device: null };
 
@@ -32,12 +34,14 @@ async function resolveClientSource(deviceId, req) {
   };
 }
 
+// Function map client source เป็น payment channel
 function getPaymentChannelForClientSource(source) {
   if (source.clientType === 'barrier_gate') return 'gate';
   if (source.clientType === 'kiosk') return 'kiosk';
   return 'mobile';
 }
 
+// Export Functions
 module.exports = {
   getPaymentChannelForClientSource,
   resolveClientSource,

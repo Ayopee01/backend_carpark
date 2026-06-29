@@ -1,6 +1,7 @@
-// OpenAPI schema synchronized with the Express routes in src/routes.
-// Keep this file as the human-facing contract for Swagger UI.
+// OpenAPI schema ที่ sync กับ Express routes ใน src/routes
+// ใช้ไฟล์นี้เป็น API contract สำหรับ Swagger UI
 
+// Function สร้าง content type แบบ JSON
 const json = (schema, example) => ({
   'application/json': {
     schema,
@@ -8,27 +9,33 @@ const json = (schema, example) => ({
   },
 });
 
+// Constant security scheme สำหรับ route ที่ต้อง auth
 const bearer = [{ bearerAuth: [] }];
 const deviceAuth = [{ deviceIdHeader: [], deviceTokenHeader: [] }, { deviceBearerAuth: [] }];
 const publicRoute = [];
 
+// Function สร้าง schema reference
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 
+// Function สร้าง request body schema
 const body = (schema, example, required = true) => ({
   required,
   content: json(schema, example),
 });
 
+// Function สร้าง response สำเร็จ
 const ok = (description = 'OK', schema = ref('AnyObject'), example) => ({
   description,
   content: json(schema, example),
 });
 
+// Function สร้าง error response
 const error = (description) => ({
   description,
   content: json(ref('ErrorResponse')),
 });
 
+// Function สร้าง path parameter
 const idParam = (name = 'id', example = 't_123') => ({
   in: 'path',
   name,
@@ -37,6 +44,7 @@ const idParam = (name = 'id', example = 't_123') => ({
   example,
 });
 
+// Function สร้าง query parameter
 const query = (name, schema, example, required = false) => ({
   in: 'query',
   name,
@@ -779,12 +787,12 @@ const openapi = {
         },
       },
     },
-    '/api/v1/transactions/{id}': {
+    '/api/v1/transactions/{plateNo}': {
       get: {
         tags: ['Transactions'],
         summary: 'Lookup transaction by plateNo',
         description: 'Admin flow. Requires Bearer token and transactions permission. The path value is a full or partial plateNo with at least 4 normalized characters. If more than one full plate matches, the response is a candidate list so the frontend can let the admin choose a full plate and call this endpoint again. Admin lookup includes completed and cancelled transactions.',
-        parameters: [idParam('id', '1234')],
+        parameters: [idParam('plateNo', '1234')],
         responses: {
           200: ok('Transaction or plate candidates', {
             oneOf: [ref('Transaction'), ref('PlateLookupMultipleResponse')],
@@ -796,26 +804,26 @@ const openapi = {
       },
       patch: {
         tags: ['Transactions'],
-        summary: 'Update transaction fields by id or plateNo',
-        description: 'Admin flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo.',
-        parameters: [idParam('id', '3งจ9012')],
+        summary: 'Update transaction fields by plateNo',
+        description: 'Admin flow. Requires Bearer token and transactions permission. The path value is plateNo.',
+        parameters: [idParam('plateNo', '3งจ9012')],
         requestBody: body(ref('TransactionUpdateRequest')),
         responses: { 200: ok('Transaction updated'), 404: error('Not found'), ...bearer403 },
       },
       delete: {
         tags: ['Transactions'],
-        summary: 'Delete transaction by id or plateNo',
-        description: 'Admin flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo.',
-        parameters: [idParam('id', '3งจ9012')],
+        summary: 'Delete transaction by plateNo',
+        description: 'Admin flow. Requires Bearer token and transactions permission. The path value is plateNo.',
+        parameters: [idParam('plateNo', '3งจ9012')],
         responses: { 200: ok('Transaction deleted'), 404: error('Not found'), ...bearer403 },
       },
     },
-    '/api/v1/transactions/{id}/payment': {
+    '/api/v1/transactions/{plateNo}/payment': {
       post: {
         tags: ['Transactions'],
-        summary: 'Confirm payment by transaction id or plateNo',
-        description: 'Admin payment flow. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. method must be active and allowed by channel in payment settings.',
-        parameters: [idParam('id', '3งจ9012')],
+        summary: 'Confirm payment by plateNo',
+        description: 'Admin payment flow. Requires Bearer token and transactions permission. The path value is plateNo. method must be active and allowed by channel in payment settings.',
+        parameters: [idParam('plateNo', '3งจ9012')],
         requestBody: body(ref('PaymentRequest'), {
           method: 'cash',
           channel: 'cashier',
@@ -830,12 +838,12 @@ const openapi = {
       },
 
     },
-    '/api/v1/transactions/{id}/status': {
+    '/api/v1/transactions/{plateNo}/status': {
       patch: {
         tags: ['Transactions'],
-        summary: 'Update transaction status by id or plateNo',
-        description: 'Admin flow after payment. Requires Bearer token and transactions permission. The path value can be a transaction id or plateNo. It currently calls the same update logic as PATCH /api/v1/transactions/{id}.',
-        parameters: [idParam('id', '3งจ9012')],
+        summary: 'Update transaction status by plateNo',
+        description: 'Admin flow after payment. Requires Bearer token and transactions permission. The path value is plateNo. It currently calls the same update logic as PATCH /api/v1/transactions/{plateNo}.',
+        parameters: [idParam('plateNo', '3งจ9012')],
         requestBody: body(ref('TransactionUpdateRequest'), { status: 'cancelled' }),
         responses: { 200: ok('Transaction status updated', ref('AdminTransactionStatusResponse')), 404: error('Not found'), ...bearer403 },
       },
@@ -1453,4 +1461,5 @@ const openapi = {
   },
 };
 
+// Export OpenAPI schema
 module.exports = openapi;

@@ -4,9 +4,22 @@ const { prisma } = require('../../db/prisma');
 const { normalizePagination, buildMeta } = require('../../utils/pagination');
 const { calculateFee } = require('../../utils/pricing');
 const appEvents = require('../../utils/events');
+const {
+  isGatePaymentSource,
+  normalizePaymentSource,
+  resolvePaymentSource,
+} = require('../../services/paymentSource.service');
 const { getConfig } = require('./config.repo');
 const { validatePaymentSelection } = require('./paymentSettings.repo');
 const defaults = require('../defaults');
+const {
+  normalizePlateNo,
+  normalizeVehicleType,
+  toDateOrNull,
+  toIsoOrNull,
+  toJsonArray,
+  toTransactionApi,
+} = require('./transactions.mapper');
 
 // Constant fallback เวลาหลังจ่ายเงินแล้วให้ออกจากลาน
 const DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES = 30;
@@ -14,167 +27,11 @@ const DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES = 30;
 // Constant สถานะ transaction ที่จบแล้ว
 const TERMINAL_TRANSACTION_STATUSES = new Set(['completed', 'cancelled']);
 
-// Constant payment source ที่ระบบรองรับ
-const VALID_PAYMENT_SOURCES = new Set(['kiosk', 'barrier_gate', 'mobile', 'admin']);
-
-// Constant map source กลาง ไปยัง channel เดิมของระบบ
-const SOURCE_TO_PAYMENT_CHANNEL = {
-  kiosk: 'kiosk',
-  barrier_gate: 'gate',
-  mobile: 'mobile',
-  admin: 'cashier'
-};
-
-// Constant alias สำหรับแปลงชื่อ source/channel ให้เป็นค่ากลาง
-const SOURCE_ALIASES = {
-  gate: 'barrier_gate',
-  barrier: 'barrier_gate',
-  barrier_gate: 'barrier_gate',
-  kiosk: 'kiosk',
-  client: 'mobile',
-  mobile: 'mobile',
-  omise: 'mobile',
-  cashier: 'admin',
-  counter: 'admin',
-  admin: 'admin'
-};
-
 // Function สร้าง error พร้อม statusCode
 function createHttpError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
-}
-
-// Function normalize ค่า source/channel ให้เป็นรูปแบบเดียวกัน
-function normalizeSourceLikeValue(value) {
-  if (value === null || value === undefined) return null;
-  const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
-  return normalized || null;
-}
-
-// Function normalize payment source ให้เป็นค่าที่ระบบรองรับ
-function normalizePaymentSource(value) {
-  const normalized = normalizeSourceLikeValue(value);
-  if (!normalized) return null;
-
-  const source = SOURCE_ALIASES[normalized] || normalized;
-  return VALID_PAYMENT_SOURCES.has(source) ? source : null;
-}
-
-// Function normalize ข้อมูล device สำหรับ payment
-function normalizeDeviceForPayment(device = {}) {
-  if (!device || typeof device !== 'object') return null;
-
-  const deviceId = device.deviceId || device.id || null;
-  const deviceType = normalizePaymentSource(device.deviceType || device.type);
-  const deviceName = device.deviceName || device.name || null;
-  const deviceLocation = device.deviceLocation || device.location || null;
-
-  if (!deviceId && !deviceType && !deviceName && !deviceLocation) return null;
-
-  return {
-    ...(deviceId ? { deviceId } : {}),
-    ...(deviceType ? { deviceType } : {}),
-    ...(deviceName ? { deviceName } : {}),
-    ...(deviceLocation ? { deviceLocation } : {})
-  };
-}
-
-// Function resolve channel ที่ใช้ตรวจ payment setting
-function resolvePaymentChannel(source, requestedChannel) {
-  const normalizedChannel = normalizeSourceLikeValue(requestedChannel);
-
-  if (normalizedChannel === 'admin') return SOURCE_TO_PAYMENT_CHANNEL.admin;
-  if (normalizedChannel === 'barrier_gate' || normalizedChannel === 'barrier') {
-    return SOURCE_TO_PAYMENT_CHANNEL.barrier_gate;
-  }
-
-  if (normalizedChannel) return normalizedChannel;
-
-  return SOURCE_TO_PAYMENT_CHANNEL[source] || SOURCE_TO_PAYMENT_CHANNEL.admin;
-}
-
-// Function สร้าง source context สำหรับตรวจสอบย้อนหลัง
-function buildPaymentSourceContext({
-  source,
-  inferredFrom,
-  routeType,
-  channel,
-  processedBy,
-  device,
-  sourceContext
-}) {
-  const context = sourceContext && typeof sourceContext === 'object' && !Array.isArray(sourceContext)
-    ? { ...sourceContext }
-    : {};
-
-  const normalizedDevice = normalizeDeviceForPayment(device);
-
-  return {
-    ...context,
-    source,
-    inferredFrom,
-    ...(routeType ? { routeType } : {}),
-    ...(channel ? { requestedChannel: channel } : {}),
-    ...(processedBy ? { actorId: processedBy } : {}),
-    ...(normalizedDevice ? { device: normalizedDevice } : {})
-  };
-}
-
-// Function resolve ว่า payment มาจาก source ไหน
-function resolvePaymentSource({
-  source,
-  paymentSource,
-  routeType,
-  channel,
-  processedBy,
-  device,
-  sourceContext
-} = {}) {
-  const normalizedDevice = normalizeDeviceForPayment(device);
-
-  const candidates = [
-    { value: source, inferredFrom: 'source' },
-    { value: paymentSource, inferredFrom: 'paymentSource' },
-    { value: normalizedDevice?.deviceType, inferredFrom: 'device.deviceType' },
-    { value: routeType, inferredFrom: 'routeType' },
-    { value: channel, inferredFrom: 'channel' },
-    {
-      value: processedBy && processedBy !== 'system' ? 'admin' : null,
-      inferredFrom: 'processedBy'
-    }
-  ];
-
-  const matched = candidates
-    .map((candidate) => ({
-      source: normalizePaymentSource(candidate.value),
-      inferredFrom: candidate.inferredFrom
-    }))
-    .find((candidate) => candidate.source);
-
-  const resolvedSource = matched?.source || 'mobile';
-  const resolvedChannel = resolvePaymentChannel(resolvedSource, channel);
-
-  return {
-    source: resolvedSource,
-    channel: resolvedChannel,
-    sourceContext: buildPaymentSourceContext({
-      source: resolvedSource,
-      inferredFrom: matched?.inferredFrom || 'default_no_device',
-      routeType,
-      channel,
-      processedBy,
-      device,
-      sourceContext
-    }),
-    device: normalizedDevice
-  };
-}
-
-// Function ตรวจสอบว่าเป็น payment จาก Barrier Gate หรือไม่
-function isGatePaymentSource(source) {
-  return normalizePaymentSource(source) === 'barrier_gate';
 }
 
 // Function แจ้ง dashboard ว่า transaction มีการเปลี่ยนแปลง
@@ -185,42 +42,6 @@ function emitDashboardUpdated(reason, transaction) {
     plateNo: transaction?.plateNo || null,
     at: new Date().toISOString(),
   });
-}
-
-// Function แปลงค่าให้เป็น number ถ้าแปลงไม่ได้ให้คืนค่า null
-function toNumberOrNull(value) {
-  if (value === null || value === undefined) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
-
-// Function แปลงค่าให้เป็น Date ถ้าไม่มีค่าให้คืนค่า null
-function toDateOrNull(value) {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-// Function แปลง Date เป็น ISO string ถ้าไม่มีค่าให้คืนค่า null
-function toIsoOrNull(value) {
-  if (!value) return null;
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-// Function ทำให้ค่า JSON เป็น array เสมอ
-function toJsonArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-// Function normalize ทะเบียนรถ โดยตัดช่องว่างและขีดออกก่อนค้นหา/บันทึก
-function normalizePlateNo(plateNo) {
-  return plateNo ? String(plateNo).trim().replace(/[\s-]/g, '') : null;
-}
-
-// Function normalize ประเภทรถให้เหลือเฉพาะค่าที่ระบบรองรับ
-function normalizeVehicleType(vehicleType) {
-  const normalized = vehicleType ? String(vehicleType).trim().toLowerCase() : 'car';
-  return ['car', 'motorcycle'].includes(normalized) ? normalized : 'car';
 }
 
 // Function เดาว่า keyword น่าจะเป็นเลขทะเบียน เพื่อเลือกวิธีค้นหาให้เหมาะสม
@@ -237,87 +58,6 @@ async function getTransactionContext() {
     getConfig('system_settings', defaults.systemSettings),
   ]);
   return { pricingConfig, systemSettings };
-}
-
-// Function แปลง transaction record เป็นรูปแบบ API และคำนวณยอดเงินล่าสุด
-function toTransactionApi(row, context = {}) {
-  if (!row) return null;
-  const pricingRules = context.pricingConfig?.pricingRules || defaults.pricingConfig.pricingRules;
-  const entryAt = toIsoOrNull(row.entryAt);
-  const now = new Date();
-  let cutoffAt = toIsoOrNull(row.exitAt);
-  let isOverstay = false;
-  const payments = toJsonArray(row.payments);
-  const exitTimeLimit = toIsoOrNull(row.exitTimeLimit);
-
-  if (!cutoffAt && exitTimeLimit && now > new Date(exitTimeLimit)) {
-    isOverstay = true;
-    cutoffAt = now.toISOString();
-  } else if (!cutoffAt) {
-    if (['completed', 'paid_waiting_exit'].includes(row.status) && payments.length > 0) {
-      const latestPayment = [...payments].sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt))[0];
-      cutoffAt = latestPayment.paidAt;
-    } else {
-      cutoffAt = now.toISOString();
-    }
-  }
-
-  const feeResult = calculateFee(entryAt, cutoffAt, pricingRules, {
-    vehicleType: row.vehicleType,
-    serviceType: row.serviceType
-  });
-
-  const netAmount = feeResult.totalAmount;
-  const totalPaid = Number(row.totalPaid ?? 0);
-  const remainingAmount = Math.max(0, netAmount - totalPaid);
-  let finalStatus = row.status;
-  if (row.status === 'cancelled') {
-    finalStatus = 'cancelled';
-  } else if (row.exitAt) {
-    finalStatus = 'completed';
-  } else if (remainingAmount > 0) {
-    finalStatus = totalPaid > 0 ? 'partially_paid' : 'pending';
-  } else if (totalPaid > 0 || payments.length > 0) {
-    finalStatus = 'paid_waiting_exit';
-  }
-
-  const entryDate = new Date(entryAt);
-  const day = String(entryDate.getDate()).padStart(2, '0');
-  const month = String(entryDate.getMonth() + 1).padStart(2, '0');
-  const year = entryDate.getFullYear();
-  const dateFormatted = `${day}-${month}-${year}`;
-
-  const durationMs = feeResult.durationMs;
-  const hrs = Math.floor(durationMs / (1000 * 60 * 60));
-  const mins = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
-  const durationFormatted = `${hrs} : ${mins}`;
-
-  return {
-    id: row.id,
-    billNo: row.billNo,
-    plateNo: row.plateNo,
-    vehicleType: row.vehicleType,
-    entryAt,
-    exitAt: toIsoOrNull(row.exitAt),
-    calculatedAt: cutoffAt,
-    exitTimeLimit,
-    isOverstay,
-    status: finalStatus,
-    baseAmount: Number(row.amount ?? feeResult.totalAmount),
-    netAmount,
-    totalPaid,
-    remainingAmount,
-    serviceDisplay: `${dateFormatted} | ${durationFormatted}`,
-    durationHour: hrs + (mins > 0 ? 1 : 0),
-    totalMinutes: Math.floor(durationMs / 60000),
-    payments: payments.map((payment) => ({
-      ...payment,
-      paidAmount: toNumberOrNull(payment.amount ?? payment.paidAmount)
-    })),
-    qrData: `${context.systemSettings?.general?.frontendUrl || ''}/payment?tx=${row.id}`,
-    createdAt: toIsoOrNull(row.createdAt) || entryAt,
-    updatedAt: toIsoOrNull(row.updatedAt) || toIsoOrNull(row.exitAt) || entryAt
-  };
 }
 
 // Function สร้าง Prisma where สำหรับ filter transaction
@@ -412,6 +152,7 @@ async function getTransactionById(id, client = prisma) {
   return client.transaction.findUnique({ where: { id } });
 }
 
+// Function ตรวจว่า transaction ยังสามารถชำระเงินได้หรือไม่
 function isPayableTransaction(row) {
   if (!row) return false;
   if (TERMINAL_TRANSACTION_STATUSES.has(row.status)) return false;
@@ -439,7 +180,7 @@ async function getLatestTransactionByPlateNo(plateNo, { payableOnly = false } = 
   return rows[0] || null;
 }
 
-// Function ค้นหา transaction ด้วย id ก่อน ถ้าไม่พบจึงลองค้นหาด้วยทะเบียนรถ
+// Function สร้าง filter สำหรับ lookup เฉพาะรายการที่ยังจ่ายได้
 function buildPayableLookupFilter(payableOnly) {
   return payableOnly ? {
     status: { notIn: [...TERMINAL_TRANSACTION_STATUSES] },
@@ -447,6 +188,7 @@ function buildPayableLookupFilter(payableOnly) {
   } : {};
 }
 
+// Function แปลง transaction เป็น candidate สำหรับเลือกทะเบียน
 function toPlateCandidate(row) {
   return {
     plateNo: row.plateNo,
@@ -459,6 +201,7 @@ function toPlateCandidate(row) {
   };
 }
 
+// Function หา candidate transaction จากทะเบียนบางส่วน
 async function findPlateTransactionCandidates(plateNo, { payableOnly = false, limit = 10 } = {}, client = prisma) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo) return [];
@@ -482,6 +225,7 @@ async function findPlateTransactionCandidates(plateNo, { payableOnly = false, li
   return [...byPlateNo.values()];
 }
 
+// Function หา transaction ล่าสุดจากทะเบียนแบบ exact match
 async function getLatestExactTransactionByPlateNo(plateNo, { payableOnly = false } = {}, client = prisma) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo) return null;
@@ -495,6 +239,7 @@ async function getLatestExactTransactionByPlateNo(plateNo, { payableOnly = false
   });
 }
 
+// Function lookup transaction API จาก plateNo พร้อมรองรับหลาย candidate
 async function lookupTransactionApiByPlateNo(plateNo, { payableOnly = false, minSearchLength = 4, maxCandidates = 10 } = {}) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo) {
@@ -532,6 +277,7 @@ async function lookupTransactionApiByPlateNo(plateNo, { payableOnly = false, min
   };
 }
 
+// Function หา transaction ด้วย id ก่อนแล้ว fallback เป็น plateNo
 async function getTransactionByIdOrPlateNo(value, options = {}, client = prisma) {
   if (!value) return null;
 
@@ -671,6 +417,11 @@ async function processPayment(id, {
   return toTransactionApi(saved, context);
 }
 
+// Function ชำระเงินด้วยทะเบียนรถจาก admin route
+async function processPaymentByPlateNo(plateNo, options = {}) {
+  return processPayment(null, { ...options, plateNo });
+}
+
 // Function update transaction บาง field ด้วย id
 async function updateTransaction(id, updates) {
   if (!id) return null;
@@ -698,6 +449,13 @@ async function updateTransaction(id, updates) {
   return toTransactionApi(saved, context);
 }
 
+// Function update transaction ล่าสุดด้วยทะเบียนรถ
+async function updateTransactionByPlateNo(plateNo, updates) {
+  const transaction = await getLatestTransactionByPlateNo(plateNo);
+  if (!transaction) return null;
+  return updateTransaction(transaction.id, updates);
+}
+
 // Function delete transaction ด้วย id
 async function deleteTransaction(id) {
   if (!id) return false;
@@ -706,6 +464,13 @@ async function deleteTransaction(id) {
   await prisma.transaction.delete({ where: { id: transaction.id } });
   emitDashboardUpdated('transaction_deleted', transaction);
   return true;
+}
+
+// Function delete transaction ล่าสุดด้วยทะเบียนรถ
+async function deleteTransactionByPlateNo(plateNo) {
+  const transaction = await getLatestTransactionByPlateNo(plateNo);
+  if (!transaction) return false;
+  return deleteTransaction(transaction.id);
 }
 
 // Function create transaction ใหม่ตอนรถเข้า
@@ -746,7 +511,7 @@ function createBillNo(date = new Date()) {
   return `PK${year}${month}${day}-${hours}${mins}${secs}-${String(Date.now()).slice(-4)}`;
 }
 
-// Function find repeated camera event in a short time window.
+// Function หา event กล้องที่ส่งซ้ำในช่วงเวลาสั้น ๆ
 async function findDuplicateCameraTransaction({ plateNo, cameraId, direction, capturedAt }, windowMs = 10000) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo || !cameraId || !direction) return null;
@@ -771,7 +536,7 @@ async function findDuplicateCameraTransaction({ plateNo, cameraId, direction, ca
   }) || null;
 }
 
-// Find the latest transaction that has not reached a terminal status for a plate.
+// Function หา transaction ล่าสุดที่ยังไม่จบของทะเบียนรถ
 async function findOpenTransactionByPlateNo(plateNo) {
   const normalizedPlateNo = normalizePlateNo(plateNo);
   if (!normalizedPlateNo) return null;
@@ -785,7 +550,7 @@ async function findOpenTransactionByPlateNo(plateNo) {
   });
 }
 
-// Function create transaction from LPR/camera body payload.
+// Function สร้างหรือปิด transaction จาก payload กล้อง LPR
 async function createCameraTransaction({
   plateNo,
   vehicleType,
@@ -871,8 +636,11 @@ module.exports = {
   getTransactionApiByIdOrPlateNo,
   lookupTransactionApiByPlateNo,
   updateTransaction,
+  updateTransactionByPlateNo,
   deleteTransaction,
+  deleteTransactionByPlateNo,
   processPayment,
+  processPaymentByPlateNo,
   createTransaction,
   createCameraTransaction,
   findPlateTransactionCandidates,

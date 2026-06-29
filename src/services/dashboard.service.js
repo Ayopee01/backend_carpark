@@ -31,6 +31,7 @@ const FALLBACK_CHANNELS = [
   }
 ];
 
+// Function แปลง date เป็น year/month/day ตาม timezone Bangkok
 function getBangkokParts(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return { year: 0, month: 0, day: 0 };
@@ -49,6 +50,7 @@ function getBangkokParts(value = new Date()) {
   };
 }
 
+// Function แปลงวันเวลา Bangkok เป็น UTC ISO
 function bangkokDateToUtcIso(year, month, day, hour = 0, minute = 0, second = 0, ms = 0) {
   return new Date(
     Date.UTC(year, month - 1, day, hour - 7, minute, second, ms)
@@ -65,6 +67,7 @@ function getTodayRange() {
   };
 }
 
+// Function ตรวจว่า date อยู่ในช่วงที่กำหนดหรือไม่
 function isDateInRange(value, startDate, endDate) {
   if (!value) return false;
   const date = new Date(value);
@@ -72,6 +75,7 @@ function isDateInRange(value, startDate, endDate) {
   return date >= new Date(startDate) && date <= new Date(endDate);
 }
 
+// Function อ่าน channel code จาก payment channel
 function getChannelCode(channel) {
   const rawCode = channel?.code || channel?.channel || channel?.id || channel?.name || '';
   const code = String(rawCode).trim().toLowerCase();
@@ -82,6 +86,7 @@ function getChannelCode(channel) {
   return code;
 }
 
+// Function normalize channel สำหรับ summary
 function normalizeChannel(channel) {
   const code = getChannelCode(channel);
   return {

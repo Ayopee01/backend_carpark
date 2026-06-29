@@ -47,7 +47,7 @@ function getCorsOptions() {
   };
 }
 
-// Create Express app
+// Create Express app หลัก
 const app = express();
 
 // Middleware พื้นฐานสำหรับ request body, cors, log และ static uploads

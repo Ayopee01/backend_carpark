@@ -65,6 +65,7 @@ function normalizeTheme(theme) {
   };
 }
 
+// Function normalize theme พร้อม configUpdatedAt
 function normalizeThemeWithMeta(theme) {
   return {
     ...normalizeTheme(theme),
@@ -202,6 +203,6 @@ router.delete('/logo', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;
 

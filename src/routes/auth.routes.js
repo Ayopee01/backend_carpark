@@ -151,5 +151,5 @@ router.post('/refresh', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;

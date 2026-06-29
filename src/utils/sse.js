@@ -1,5 +1,7 @@
+// Constant ระยะเวลาส่ง ping ของ SSE
 const DEFAULT_PING_INTERVAL_MS = 25000;
 
+// Function สร้าง SSE stream พร้อม cleanup helper
 function createSseStream(req, res, { connected, pingIntervalMs = DEFAULT_PING_INTERVAL_MS } = {}) {
   let closed = false;
   const cleanups = [];
@@ -45,6 +47,7 @@ function createSseStream(req, res, { connected, pingIntervalMs = DEFAULT_PING_IN
   };
 }
 
+// Export Functions
 module.exports = {
   createSseStream,
 };

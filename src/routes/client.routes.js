@@ -15,6 +15,7 @@ const { createSseStream } = require('../utils/sse');
 
 const router = express.Router();
 
+// Function แปลง transaction เป็น response สำหรับ client
 function toClientTransactionResponse(transaction, source) {
   return {
     transactionId: transaction.id,
@@ -42,6 +43,7 @@ function toClientTransactionResponse(transaction, source) {
   };
 }
 
+// Function รับ payment จาก mobile/kiosk/gate client
 async function handleClientPayment(req, res, next, pathPlateNo) {
   try {
     const { transactionId, plateNo: bodyPlateNo, method, amount, deviceId: bodyDeviceId } = req.body || {};
@@ -75,7 +77,7 @@ async function handleClientPayment(req, res, next, pathPlateNo) {
   }
 }
 
-// Shared activation endpoint for kiosk and barrier gate frontends.
+// Route activation กลางสำหรับ kiosk และ barrier gate
 router.post('/activate', async (req, res, next) => {
   try {
     const code = req.body?.code === undefined || req.body?.code === null ? '' : String(req.body.code).trim();
@@ -93,7 +95,7 @@ router.post('/activate', async (req, res, next) => {
   }
 });
 
-// Shared heartbeat/check-in endpoint for credentialed client devices.
+// Route check-in สำหรับ device ที่มี credential
 router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate', 'camera', 'printer']), async (req, res, next) => {
   try {
     const { deviceId, name, location } = req.body || {};
@@ -120,7 +122,7 @@ router.post('/check-in', requireDeviceAuth(['kiosk', 'barrier_gate', 'camera', '
   }
 });
 
-// Public transaction lookup by plateNo from frontend input for kiosk, barrier gate, or mobile clients.
+// Route public lookup transaction ด้วย plateNo สำหรับ client
 router.get('/transaction', async (req, res, next) => {
   try {
     const { plateNo, deviceId } = req.query || {};
@@ -151,7 +153,7 @@ router.get('/transaction', async (req, res, next) => {
   }
 });
 
-// Public transaction lookup by transaction id or plateNo for kiosk, barrier gate, or mobile clients.
+// Route public lookup transaction ด้วย id หรือ plateNo สำหรับ client
 router.get('/transaction/:id', async (req, res, next) => {
   try {
     const { deviceId } = req.query || {};
@@ -242,19 +244,19 @@ router.get('/payment/omise/qr', async (req, res, next) => {
   }
 });
 
-// Public payment endpoint by plateNo in path for kiosk, barrier gate, or mobile clients.
+// Route public payment ด้วย plateNo ใน path
 router.post('/:plateNo/payment', async (req, res, next) => {
   const plateNo = req.params.plateNo === undefined || req.params.plateNo === null ? '' : String(req.params.plateNo).trim();
   if (!plateNo) return res.status(400).json({ message: 'plateNo is required' });
   return handleClientPayment(req, res, next, plateNo);
 });
 
-// Public payment endpoint for kiosk, barrier gate, or mobile clients.
+// Route public payment สำหรับ client
 router.post('/payment', async (req, res, next) => {
   return handleClientPayment(req, res, next);
 });
 
-// Shared SSE stream for kiosk, barrier gate, and public/mobile clients.
+// Route SSE กลางสำหรับ kiosk, barrier gate และ mobile
 router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req, res, next) => {
   try {
     const { deviceId, gateId, direction, cameraId } = req.query;
@@ -309,4 +311,5 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
   }
 });
 
+// Export Router
 module.exports = router;

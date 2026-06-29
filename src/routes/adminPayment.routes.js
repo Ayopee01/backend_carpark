@@ -68,4 +68,5 @@ router.get('/omise/qr', async (req, res, next) => {
   }
 });
 
+// Export Router
 module.exports = router;

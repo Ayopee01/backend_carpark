@@ -8,6 +8,7 @@
     { "key": "token", "value": "" },
     { "key": "refreshToken", "value": "" },
     { "key": "transactionId", "value": "t_seed_002" },
+    { "key": "transactionPlateNo", "value": "2ขค5678" },
     { "key": "userId", "value": "u2" },
     { "key": "memberId", "value": "u2" },
     { "key": "deviceId", "value": "d1" },
@@ -214,11 +215,11 @@
           }
         },
         {
-          "name": "Get Transaction By ID",
+          "name": "Get Transaction By Plate",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionPlateNo}}"
           }
         },
         {
@@ -226,7 +227,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}/payment",
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionPlateNo}}/payment",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"method\": \"cash\",\n  \"channel\": \"cashier\",\n  \"amount\": 40\n}"
@@ -250,7 +251,7 @@
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}",
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionPlateNo}}",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"plateNo\": \"8ขช1001\",\n  \"vehicleType\": \"car\"\n}"
@@ -274,7 +275,7 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionPlateNo}}"
           }
         }
       ]

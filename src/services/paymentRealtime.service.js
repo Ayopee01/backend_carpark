@@ -1,8 +1,11 @@
+// Import Require
 const paymentGatewayRepo = require('../data/repositories/paymentGateway.repo');
 const transactionsRepo = require('../data/repositories/transactions.repo');
 
+// Constant สถานะ gateway ที่ควร replay ให้ client หลัง reconnect
 const REPLAYABLE_GATEWAY_STATUSES = new Set(['successful', 'failed', 'expired', 'reversed']);
 
+// Function สร้าง snapshot payment ล่าสุดจาก chargeId
 async function buildPaymentUpdateSnapshot(chargeId) {
   const gatewayCharge = await paymentGatewayRepo.getGatewayChargeByChargeId(chargeId);
   if (!gatewayCharge) return null;
@@ -29,6 +32,7 @@ async function buildPaymentUpdateSnapshot(chargeId) {
   };
 }
 
+// Export Functions
 module.exports = {
   buildPaymentUpdateSnapshot,
 };

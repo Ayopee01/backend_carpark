@@ -1,9 +1,12 @@
+// Import Require
 const crypto = require('crypto');
 const https = require('https');
 const omiseFactory = require('omise');
 
+// Variable เก็บ Omise client ที่สร้างแล้ว
 let omiseClient = null;
 
+// Function สร้างหรือคืน Omise client
 function getOmiseClient() {
   if (omiseClient) return omiseClient;
   const secretKey = process.env.OMISE_SECRET_KEY;
@@ -15,10 +18,12 @@ function getOmiseClient() {
   return omiseClient;
 }
 
+// Function อ่าน currency ที่ใช้กับ Omise
 function getCurrency() {
   return String(process.env.OMISE_CURRENCY || 'thb').toLowerCase();
 }
 
+// Function แปลงจำนวนเงินเป็น minor unit
 function toMinorAmount(amount) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) {
@@ -27,6 +32,7 @@ function toMinorAmount(amount) {
   return Math.round(value * 100);
 }
 
+// Function normalize สถานะ charge จาก Omise
 function normalizeChargeStatus(charge) {
   if (!charge) return 'unknown';
   if (charge.paid === true || charge.status === 'successful') return 'successful';
@@ -36,10 +42,12 @@ function normalizeChargeStatus(charge) {
   return charge.status || 'pending';
 }
 
+// Function อ่านเวลาจ่ายสำเร็จจาก charge
 function getChargePaidAt(charge) {
   return charge?.paid_at || charge?.paidAt || (charge?.paid ? new Date().toISOString() : null);
 }
 
+// Function แปลง error จาก Omise เป็น HTTP error
 function toOmiseHttpError(err) {
   const message = err?.message || err?.toString?.() || 'Omise request failed';
   const statusCode = err?.object === 'error' || err?.code ? 400 : 502;
@@ -52,6 +60,7 @@ function toOmiseHttpError(err) {
   return wrapped;
 }
 
+// Function normalize path เอกสารจาก Omise
 function normalizeDocumentPath(documentPath) {
   const value = String(documentPath || '').trim();
   if (!value) {
@@ -74,6 +83,7 @@ function normalizeDocumentPath(documentPath) {
   return path;
 }
 
+// Function request binary file จาก Omise document endpoint
 function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const requestUrl = url instanceof URL ? url : new URL(url);
@@ -131,7 +141,7 @@ function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
             const parsed = JSON.parse(body.toString('utf8'));
             downloadUri = parsed.download_uri || parsed.downloadUri || null;
           } catch (err) {
-            // Keep the response generic below when Omise did not return JSON.
+            // ใช้ error กลางด้านล่างเมื่อ Omise ไม่ได้ส่ง JSON กลับมา
           }
 
           if (downloadUri) {
@@ -168,11 +178,13 @@ function requestBinary(url, { authenticated = false, redirectCount = 0 } = {}) {
   });
 }
 
+// Function ดาวน์โหลดเอกสารจาก Omise
 async function downloadDocument(documentPath) {
   const path = normalizeDocumentPath(documentPath);
   return requestBinary(new URL(path, 'https://api.omise.co'), { authenticated: true });
 }
 
+// Function สร้าง charge ผ่าน Omise API
 async function createCharge({ amount, source, token, description, metadata, returnUri }) {
   if (!source && !token) {
     throw Object.assign(new Error('source or token is required'), { statusCode: 400 });
@@ -195,6 +207,7 @@ async function createCharge({ amount, source, token, description, metadata, retu
   }
 }
 
+// Function ดึง charge ล่าสุดจาก Omise
 async function retrieveCharge(chargeId) {
   if (!chargeId) {
     throw Object.assign(new Error('chargeId is required'), { statusCode: 400 });
@@ -206,6 +219,7 @@ async function retrieveCharge(chargeId) {
   }
 }
 
+// Function parse signature header จาก Omise
 function parseSignatureHeader(signatureHeader) {
   if (!signatureHeader) return [];
   return String(signatureHeader)
@@ -221,12 +235,14 @@ function parseSignatureHeader(signatureHeader) {
     .filter((item) => item.value);
 }
 
+// Function compare signature แบบ timing-safe
 function timingSafeEqual(a, b) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+// Function ตรวจสอบ webhook signature จาก Omise
 function verifyWebhookSignature(rawBody, headers) {
   const secret = process.env.OMISE_WEBHOOK_SECRET;
   if (!secret) return true;
@@ -245,11 +261,13 @@ function verifyWebhookSignature(rawBody, headers) {
   });
 }
 
+// Function ดึง chargeId จาก Omise event
 function extractChargeIdFromEvent(event) {
   const charge = event?.data?.object === 'charge' ? event.data : event?.data;
   return charge?.id || event?.charge || event?.chargeId || null;
 }
 
+// Export Functions
 module.exports = {
   createCharge,
   retrieveCharge,

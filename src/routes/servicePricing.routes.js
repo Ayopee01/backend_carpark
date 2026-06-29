@@ -11,10 +11,10 @@ const { authorize } = require('../middleware/permission');
 
 const router = express.Router();
 
-// Service pricing config is an admin area and requires auth + pricing permission.
+// Apply permission check สำหรับ service pricing
 router.use(authorize('pricing'));
 
-// Route query all pricing config.
+// Route query pricing config ทั้งหมด
 router.get('/config', async (req, res, next) => {
   try {
     const config = await getPricingRulesConfigWithMeta();
@@ -24,7 +24,7 @@ router.get('/config', async (req, res, next) => {
   }
 });
 
-// Route update pricing config as one config object.
+// Route update pricing config ทั้งชุด
 router.put('/config', async (req, res, next) => {
   try {
     await updatePricingConfig(req.body || {});
@@ -34,7 +34,7 @@ router.put('/config', async (req, res, next) => {
   }
 });
 
-// Route add one pricing config item.
+// Route add pricing config item
 router.post('/config', async (req, res, next) => {
   try {
     const payload = req.body || {};
@@ -49,7 +49,7 @@ router.post('/config', async (req, res, next) => {
   }
 });
 
-// Route update one pricing config item by id.
+// Route update pricing config item ด้วย id
 router.patch('/config/:id', async (req, res, next) => {
   try {
     const config = await updatePricingConfigItem(req.params.id, req.body || {});
@@ -61,7 +61,7 @@ router.patch('/config/:id', async (req, res, next) => {
   }
 });
 
-// Route delete one pricing config item by id.
+// Route delete pricing config item ด้วย id
 router.delete('/config/:id', async (req, res, next) => {
   try {
     const config = await deletePricingConfigItem(req.params.id);
@@ -76,5 +76,5 @@ router.delete('/config/:id', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;

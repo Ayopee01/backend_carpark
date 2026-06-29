@@ -10,11 +10,14 @@ const {
 
 // Constant key สำหรับอ้างอิง config kiosks ใน table app_config
 const CONFIG_KEY = 'kiosks';
+// Constant เวลาที่ kiosk ถือว่า offline
 const OFFLINE_AFTER_MINUTES = 5;
+// Constant อายุ activation code
 const ACTIVATION_TTL_MS = 10 * 60 * 1000;
 // Constant เก็บ activation code ชั่วคราวใน memory ระหว่างรอ kiosk activate
 const activationCodes = new Map();
 
+// Function normalize printerIds ให้เป็น array ไม่ซ้ำ
 function normalizePrinterIds(printerIds) {
   if (!Array.isArray(printerIds)) return [];
   return [...new Set(printerIds.map((printerId) => String(printerId || '').trim()).filter(Boolean))];

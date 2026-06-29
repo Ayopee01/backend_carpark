@@ -14,7 +14,7 @@ router.get('/omise/config', (req, res) => {
   });
 });
 
-// Endpoint รับ Webhook จาก Omise เมื่อสถานะการชำระเงินเปลี่ยน และอัปเดต payment ในระบบ
+// Route รับ Webhook จาก Omise เมื่อสถานะการชำระเงินเปลี่ยน และอัปเดต payment ในระบบ
 router.post('/omise/webhook', async (req, res, next) => {
   try {
     const verified = omiseService.verifyWebhookSignature(req.rawBody, req.headers);
@@ -30,7 +30,7 @@ router.post('/omise/webhook', async (req, res, next) => {
   }
 });
 
-// Endpoint สำหรับทดสอบเท่านั้น ใช้จำลอง Omise charge เป็นจ่ายสำเร็จ
+// Route สำหรับทดสอบเท่านั้น ใช้จำลอง Omise charge เป็นจ่ายสำเร็จ
 router.post('/omise/simulate-paid', async (req, res, next) => {
   try {
     if (!isPaymentSimulationEnabled()) {
@@ -56,4 +56,5 @@ router.post('/omise/simulate-paid', async (req, res, next) => {
   }
 });
 
+// Export Router
 module.exports = router;

@@ -1,8 +1,10 @@
+// Import Require
 const appEvents = require('../utils/events');
 const transactionsRepo = require('../data/repositories/transactions.repo');
 const paymentGatewayRepo = require('../data/repositories/paymentGateway.repo');
 const omiseService = require('./omise.service');
 
+// Function สร้าง HTTP error พร้อมข้อมูลเสริม
 function createHttpError(statusCode, message, extra = {}) {
   const err = new Error(message);
   err.statusCode = statusCode;
@@ -10,6 +12,7 @@ function createHttpError(statusCode, message, extra = {}) {
   return err;
 }
 
+// Function normalize method สำหรับ gateway payment
 function normalizeGatewayMethod(method, sourceType, { token = null, source = null } = {}) {
   const explicitMethod = String(method || '').trim().toLowerCase();
   if (explicitMethod) return explicitMethod;
@@ -20,6 +23,7 @@ function normalizeGatewayMethod(method, sourceType, { token = null, source = nul
   throw createHttpError(400, 'method or sourceType is required');
 }
 
+// Function แปลง charge และ transaction เป็น response
 function toChargeResponse({ charge, gatewayCharge, transaction }) {
   return {
     provider: 'omise',
@@ -41,6 +45,7 @@ function toChargeResponse({ charge, gatewayCharge, transaction }) {
   };
 }
 
+// Function เติม /download ให้ document path ของ Omise
 function withDownloadPath(documentPath) {
   const value = String(documentPath || '').trim();
   if (!value || /\/download(\?.*)?$/.test(value)) return value;
@@ -50,6 +55,7 @@ function withDownloadPath(documentPath) {
   return `${value.slice(0, queryIndex)}/download${value.slice(queryIndex)}`;
 }
 
+// Function ดึง path รูป QR จาก Omise charge
 function getChargeQrDocumentPaths(charge) {
   const image = charge?.source?.scannable_code?.image;
   const paths = [
@@ -62,10 +68,12 @@ function getChargeQrDocumentPaths(charge) {
   return [...new Set(paths)];
 }
 
+// Function ดึง path รูป QR path แรกที่ใช้ได้
 function getChargeQrDocumentPath(charge) {
   return getChargeQrDocumentPaths(charge)[0] || null;
 }
 
+// Function ดาวน์โหลด QR document จาก path ที่ใช้ได้ตัวแรก
 async function downloadFirstQrDocument(paths) {
   let lastError = null;
   for (const path of paths) {
@@ -80,6 +88,7 @@ async function downloadFirstQrDocument(paths) {
   throw createHttpError(502, 'Omise QR document not found');
 }
 
+// Function หา payable transaction จากทะเบียนรถ
 async function getPayableTransactionForPlate(plateNo) {
   const lookup = await transactionsRepo.lookupTransactionApiByPlateNo(plateNo, { payableOnly: true });
   if (lookup.matchType === 'invalid') throw createHttpError(400, lookup.message);
@@ -91,6 +100,7 @@ async function getPayableTransactionForPlate(plateNo) {
   return lookup.transaction;
 }
 
+// Function หา payable transaction จาก transactionId หรือ plateNo
 async function getPayableTransaction({ transactionId, plateNo } = {}) {
   if (transactionId) {
     const transaction = await transactionsRepo.getTransactionApiById(transactionId);
@@ -105,6 +115,7 @@ async function getPayableTransaction({ transactionId, plateNo } = {}) {
   throw createHttpError(400, 'transactionId or plateNo is required');
 }
 
+// Function ตรวจ amount ที่ frontend ส่งมาต้องตรงกับยอดค้างชำระ
 function validateRequestedMinorAmount(amount, remainingAmount) {
   if (amount === undefined || amount === null || amount === '') return;
 
@@ -119,6 +130,7 @@ function validateRequestedMinorAmount(amount, remainingAmount) {
   }
 }
 
+// Function สร้าง Omise charge สำหรับ client flow
 async function createOmiseChargeForClient({
   plateNo,
   source,
@@ -170,6 +182,7 @@ async function createOmiseChargeForClient({
   return toChargeResponse({ charge, gatewayCharge, transaction });
 }
 
+// Function สร้าง Omise charge สำหรับ admin flow
 async function createOmiseChargeForAdmin({
   transactionId,
   plateNo,
@@ -232,6 +245,7 @@ async function createOmiseChargeForAdmin({
   return toChargeResponse({ charge: raw, gatewayCharge, transaction });
 }
 
+// Function ดึงรูป QR จาก Omise charge หรือ document path
 async function getOmiseQrImage({ chargeId, documentPath } = {}) {
   if (documentPath) {
     return omiseService.downloadDocument(documentPath);
@@ -257,6 +271,7 @@ async function getOmiseQrImage({ chargeId, documentPath } = {}) {
   return downloadFirstQrDocument(qrDocumentPaths);
 }
 
+// Function ปิด gateway charge ที่สำเร็จและบันทึก payment
 async function completeSuccessfulGatewayCharge(existing, charge, { processedByPrefix = 'omise' } = {}) {
   if (existing.processedAt) {
     const updated = await paymentGatewayRepo.updateGatewayCharge(existing.chargeId, {
@@ -313,6 +328,7 @@ async function completeSuccessfulGatewayCharge(existing, charge, { processedByPr
   };
 }
 
+// Function ประมวลผล webhook event จาก Omise
 async function processOmiseWebhookEvent(event) {
   const chargeId = omiseService.extractChargeIdFromEvent(event);
   if (!chargeId) throw createHttpError(400, 'Omise charge id not found in webhook event');
@@ -355,6 +371,7 @@ async function processOmiseWebhookEvent(event) {
   return completeSuccessfulGatewayCharge(existing, charge);
 }
 
+// Function จำลอง charge สำเร็จสำหรับ UAT
 async function simulateOmiseChargePaid(chargeId) {
   if (!chargeId) throw createHttpError(400, 'chargeId is required');
 
@@ -374,16 +391,19 @@ async function simulateOmiseChargePaid(chargeId) {
   return completeSuccessfulGatewayCharge(existing, simulatedCharge, { processedByPrefix: 'omise_simulated' });
 }
 
+// Function ตรวจว่าเปิดโหมดจำลอง payment หรือไม่
 function isPaymentSimulationEnabled() {
   return process.env.ENABLE_PAYMENT_SIMULATION === 'true';
 }
 
+// Function ตรวจ token สำหรับ payment simulation
 function verifyPaymentSimulationToken(token) {
   const expected = process.env.PAYMENT_SIMULATION_TOKEN;
   if (!expected) return true;
   return token === expected;
 }
 
+// Export Functions
 module.exports = {
   createOmiseChargeForClient,
   createOmiseChargeForAdmin,

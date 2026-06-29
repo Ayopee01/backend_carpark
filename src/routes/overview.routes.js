@@ -25,7 +25,7 @@ router.get('/summary', async (req, res, next) => {
   }
 });
 
-// Route SSE stream overview summary updates ตามช่วงวันที่ที่ frontend ส่งมา
+// Route SSE stream สำหรับ overview summary ตามช่วงวันที่
 router.get('/events', async (req, res, next) => {
   try {
     const initialResult = await getOverviewSummary(req.query);
@@ -75,5 +75,5 @@ router.get('/events', async (req, res, next) => {
   }
 });
 
-// Export router
+// Export Router
 module.exports = router;

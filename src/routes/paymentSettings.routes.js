@@ -3,10 +3,10 @@ const router = express.Router();
 const paymentRepo = require('../data/repositories/paymentSettings.repo');
 const { authorize } = require('../middleware/permission');
 
-// Payment settings access is driven by members.permissions.
+// Apply permission check สำหรับ payment settings
 router.use(authorize('pricing'));
 
-// Global payment methods.
+// Route จัดการ payment methods กลาง
 router.get('/methods', async (req, res, next) => {
   try {
     const methods = await paymentRepo.listMethodsWithMeta();
@@ -36,7 +36,7 @@ router.delete('/methods/:id', async (req, res, next) => {
   }
 });
 
-// Service channel mappings.
+// Route จัดการ channel mapping ของบริการ
 router.get('/channels', async (req, res, next) => {
   try {
     const channels = await paymentRepo.listChannelsWithMeta();
@@ -67,4 +67,5 @@ router.delete('/channels/:id', async (req, res, next) => {
   }
 });
 
+// Export Router
 module.exports = router;

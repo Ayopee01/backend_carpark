@@ -1,4 +1,4 @@
-// DTO normalize camera transaction payload before sending it to the service layer.
+// DTO normalize payload จากกล้องก่อนส่งเข้า service
 // Function normalize ทะเบียนรถจาก payload ของกล้อง
 function normalizePlateNo(plateNo) {
   return plateNo ? String(plateNo).trim().replace(/[\s-]/g, '') : '';
@@ -24,6 +24,7 @@ function toCameraTransactionDto(payload = {}) {
   };
 }
 
+// Export Functions
 module.exports = {
   normalizePlateNo,
   normalizeVehicleType,
