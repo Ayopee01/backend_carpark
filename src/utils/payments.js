@@ -1,28 +1,44 @@
-// Function อ่านยอดเงินจาก payment หรือ fallback จาก transaction
 function getPaymentAmount(payment, transaction = null) {
   const amount = Number(payment?.paidAmount ?? payment?.amount ?? 0);
-
-  if (Number.isFinite(amount) && amount > 0) {
-    return amount;
-  }
-
+  if (Number.isFinite(amount) && amount > 0) return amount;
   return Number(transaction?.netAmount ?? transaction?.amount ?? 0);
 }
 
-// Function normalize payment channel ให้ dashboard/overview ใช้กติกาเดียวกัน
-function normalizePaymentChannel(payment) {
-  const channel = payment?.channel;
+function normalizePaymentMethod(method) {
+  return String(method || '').trim().toLowerCase();
+}
 
+function normalizePaymentChannel(payment) {
+  const channel = String(payment?.channel || '').trim().toLowerCase();
   if (['cashier', 'mobile', 'kiosk', 'gate'].includes(channel)) return channel;
 
-  const method = payment?.method;
+  const method = normalizePaymentMethod(payment?.method);
   if (method === 'cash') return 'cashier';
-  if (['qr', 'qr_code', 'epay', 'transfer'].includes(method)) return 'mobile';
+  if (['promptpay', 'qr', 'qr_code', 'epay', 'transfer'].includes(method)) return 'mobile';
 
   return 'cashier';
 }
 
-// Function ดึงรายการ payment ทั้งหมดจาก transaction
+function getPaymentChannel(payment) {
+  const channel = normalizePaymentChannel(payment);
+  if (channel === 'cashier') return 'cashier';
+  if (payment?.deviceType === 'kiosk' || channel === 'kiosk') return 'kiosk';
+  if (payment?.deviceType === 'barrier_gate' || channel === 'gate') return 'gate';
+  return 'mobile';
+}
+
+function isCashPayment(payment) {
+  return normalizePaymentMethod(payment?.method) === 'cash';
+}
+
+function isCashierCashPayment(payment) {
+  return getPaymentChannel(payment) === 'cashier' && isCashPayment(payment);
+}
+
+function isScanPayment(payment) {
+  return ['promptpay', 'qr', 'qr_code'].includes(normalizePaymentMethod(payment?.method));
+}
+
 function getTransactionPayments(transaction) {
   if (Array.isArray(transaction.payments) && transaction.payments.length > 0) {
     return transaction.payments.map((payment) => ({
@@ -47,35 +63,33 @@ function getTransactionPayments(transaction) {
   return [];
 }
 
-// Function ตรวจสอบ paid status
 function isPaidTransaction(transaction) {
   return transaction.status === 'completed' || transaction.status === 'paid' || transaction.status === 'paid_waiting_exit';
 }
 
-// Function ตรวจสอบ pending status
 function isPendingTransaction(transaction) {
   return transaction.status === 'pending' || transaction.status === 'partially_paid';
 }
 
-// Function คำนวณรายได้ของ transaction
 function getTransactionRevenue(transaction) {
   const payments = getTransactionPayments(transaction);
-
   if (payments.length > 0) {
-    return payments.reduce((sum, payment) => {
-      return sum + getPaymentAmount(payment, transaction);
-    }, 0);
+    return payments.reduce((sum, payment) => sum + getPaymentAmount(payment, transaction), 0);
   }
 
   return Number(transaction.netAmount ?? transaction.amount ?? 0);
 }
 
-// Export Functions
 module.exports = {
   getPaymentAmount,
+  getPaymentChannel,
   getTransactionPayments,
   getTransactionRevenue,
+  isCashPayment,
+  isCashierCashPayment,
   isPaidTransaction,
   isPendingTransaction,
+  isScanPayment,
   normalizePaymentChannel,
+  normalizePaymentMethod,
 };

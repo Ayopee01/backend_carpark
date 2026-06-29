@@ -1,7 +1,7 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
 const { listChannels } = require('../data/repositories/paymentSettings.repo');
-const { getPaymentAmount, getTransactionPayments } = require('../utils/payments');
+const { getPaymentAmount, getPaymentChannel, getTransactionPayments, isCashierCashPayment, isScanPayment } = require('../utils/payments');
 
 // Constant รายการช่องทางรับชำระเงินที่ใช้สรุปหน้า dashboard
 const FALLBACK_CHANNELS = [
@@ -72,18 +72,6 @@ function isDateInRange(value, startDate, endDate) {
   return date >= new Date(startDate) && date <= new Date(endDate);
 }
 
-function normalizeMethod(method) {
-  return String(method || '').trim().toLowerCase();
-}
-
-function isCashierCashPayment(payment) {
-  return payment.channel === 'cashier' && normalizeMethod(payment.method) === 'cash';
-}
-
-function isPromptPayPayment(payment) {
-  return ['promptpay', 'qr', 'qr_code'].includes(normalizeMethod(payment.method));
-}
-
 function getChannelCode(channel) {
   const rawCode = channel?.code || channel?.channel || channel?.id || channel?.name || '';
   const code = String(rawCode).trim().toLowerCase();
@@ -102,13 +90,6 @@ function normalizeChannel(channel) {
     label: channel?.label || channel?.name || channel?.code || code,
     subLabel: channel?.subLabel || channel?.description || '',
   };
-}
-
-function getPaymentDashboardChannel(payment) {
-  if (payment.channel === 'cashier') return 'cashier';
-  if (payment.deviceType === 'kiosk' || payment.channel === 'kiosk') return 'kiosk';
-  if (payment.deviceType === 'barrier_gate' || payment.channel === 'gate') return 'gate';
-  return 'mobile';
 }
 
 // Function สร้าง dashboard summary response
@@ -152,7 +133,7 @@ async function getDashboardSummary(currentUserId = 'u1') {
       return sum + getPaymentAmount(payment);
     }, 0);
 
-  const epayPayments = paidPayments.filter(isPromptPayPayment);
+  const epayPayments = paidPayments.filter(isScanPayment);
 
   const totalEpayToday = epayPayments.reduce((sum, payment) => {
     return sum + getPaymentAmount(payment);
@@ -181,7 +162,7 @@ async function getDashboardSummary(currentUserId = 'u1') {
 
   const channelBreakdown = channels.map((channel) => {
     const filteredPayments = paidPayments.filter((payment) => {
-      return getPaymentDashboardChannel(payment) === channel.code;
+      return getPaymentChannel(payment) === channel.code;
     });
 
     const amount = filteredPayments.reduce((sum, payment) => {

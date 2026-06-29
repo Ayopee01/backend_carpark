@@ -1,7 +1,7 @@
 // Import Require
 const { verifyRegisteredDeviceToken } = require('../data/repositories/devices.repo');
 
-// Function read deviceId from header, body, query, or params and reject mismatched ids
+// Function อ่าน deviceId จาก header, body, query หรือ params และตรวจสอบ id ที่ไม่ตรงกัน
 function getRequestDeviceIdentity(req) {
   const candidates = [
     req.get('x-device-id'),
@@ -16,14 +16,14 @@ function getRequestDeviceIdentity(req) {
   };
 }
 
-// Function read device token from the supported kiosk/barrier gate headers
+// Function อ่าน device token จาก header ที่รองรับ kiosk/barrier gate
 function getRequestDeviceToken(req) {
   const authHeader = req.get('authorization') || '';
   if (authHeader.startsWith('Device ')) return authHeader.replace('Device ', '').trim();
   return req.get('x-device-token') || null;
 }
 
-// Function middleware for APIs that must be called by an activated kiosk/barrier gate
+// Function middleware ตรวจสอบสิทธิ์ API ที่ต้องเรียกจาก kiosk/barrier gate ที่เปิดใช้งานแล้ว
 function requireDeviceAuth(allowedTypes = []) {
   return async (req, res, next) => {
     try {
@@ -53,7 +53,7 @@ function requireDeviceAuth(allowedTypes = []) {
   };
 }
 
-// Function middleware for APIs that allow public access when no deviceId is supplied
+// Function middleware สำหรับ API ที่อนุญาตให้ public access ได้เมื่อไม่มี deviceId
 function optionalDeviceAuth(allowedTypes = []) {
   return async (req, res, next) => {
     const identity = getRequestDeviceIdentity(req);

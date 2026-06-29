@@ -5,6 +5,7 @@ const { createTransactionFromCamera } = require('../services/transactions.servic
 const { validateCameraTransactionPayload } = require('../validators/transactions.validator');
 const { validateCameraGateBinding } = require('../data/repositories/barrierGates.repo');
 const appEvents = require('../utils/events');
+const { createSseStream } = require('../utils/sse');
 
 const router = express.Router();
 const TRANSACTIONS_STREAM_INTERVAL_MS = Number(process.env.TRANSACTIONS_STREAM_INTERVAL_MS || 10000);
@@ -119,33 +120,25 @@ router.get('/', async (req, res, next) => {
 // Route SSE stream transaction list updates.
 router.get('/events', async (req, res, next) => {
   try {
-    let isClosed = false;
     let isSending = false;
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    const writeEvent = (payload) => {
-      if (isClosed) return;
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    };
+    const stream = createSseStream(req, res, {
+      connected: { type: 'connected', message: 'Transactions event stream connected' },
+    });
 
     const sendTransactions = async (type = 'transactions_list', trigger = null) => {
-      if (isClosed || isSending) return;
+      if (stream.isClosed() || isSending) return;
       isSending = true;
 
       try {
         const data = await getTransactionListResponse(req.query);
-        writeEvent({
+        stream.write({
           type,
           trigger,
           data,
           generatedAt: new Date().toISOString(),
         });
       } catch (err) {
-        writeEvent({
+        stream.write({
           type: 'transactions_error',
           message: err.message || 'Unable to refresh transactions list',
           generatedAt: new Date().toISOString(),
@@ -155,28 +148,15 @@ router.get('/events', async (req, res, next) => {
       }
     };
 
-    writeEvent({ type: 'connected', message: 'Transactions event stream connected' });
     await sendTransactions('transactions_snapshot');
-
-    const keepAlive = setInterval(() => {
-      writeEvent({ type: 'ping', at: new Date().toISOString() });
-    }, 25 * 1000);
-
-    const refreshInterval = setInterval(() => {
-      sendTransactions('transactions_list', { reason: 'interval' });
-    }, TRANSACTIONS_STREAM_INTERVAL_MS);
+    stream.addInterval(() => sendTransactions('transactions_list', { reason: 'interval' }), TRANSACTIONS_STREAM_INTERVAL_MS);
 
     const onTransactionsUpdated = (event) => {
       sendTransactions('transactions_updated', event);
     };
 
     appEvents.on('dashboard_updated', onTransactionsUpdated);
-    req.on('close', () => {
-      isClosed = true;
-      clearInterval(keepAlive);
-      clearInterval(refreshInterval);
-      appEvents.off('dashboard_updated', onTransactionsUpdated);
-    });
+    stream.addCleanup(() => appEvents.off('dashboard_updated', onTransactionsUpdated));
   } catch (err) {
     next(err);
   }

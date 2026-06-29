@@ -1,35 +1,41 @@
-/**
- * Restrict access based on permissions configured on the member/user record.
- * Preferred usage: authorize('transactions')
- * Legacy usage authorize(['super_admin', 'staff'], 'transactions') is still accepted,
- * but role lists are ignored so access is driven by members.permissions.
- */
+// Function middleware ตรวจสอบ permission ก่อนเข้าถึง route
 const authorize = (permissionOrRoles = null, legacyPermission = null) => {
   const requiredPermission = typeof permissionOrRoles === 'string'
     ? permissionOrRoles
     : legacyPermission;
 
   return (req, res, next) => {
+    // ตรวจสอบว่ามี user จาก token หรือไม่
     if (!req.user) {
-      return res.status(401).json({ message: 'Unauthorized: No user found' });
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
+    // ตรวจสอบ permission ที่จำเป็นสำหรับ route นี้
     if (requiredPermission) {
-      const hasPermission = Array.isArray(req.user.permissions) && req.user.permissions.includes(requiredPermission);
+      const hasPermission =
+        Array.isArray(req.user.permissions) &&
+        req.user.permissions.includes(requiredPermission);
+
       if (!hasPermission) {
-        const body = {
-          message: `Forbidden: You need '${requiredPermission}' permission to access this resource`,
+        // เก็บรายละเอียดไว้ใน server log แทนการส่งกลับไปหา client
+        console.warn('Forbidden access', {
+          userId: req.user?.id,
           requiredPermission,
-        };
-        if (process.env.NODE_ENV !== 'production') {
-          body.yourPermissions = req.user.permissions || [];
-        }
-        return res.status(403).json(body);
+          userPermissions: req.user?.permissions || [],
+          path: req.originalUrl,
+          method: req.method,
+        });
+
+        return res.status(403).json({
+          message: 'Forbidden',
+        });
       }
     }
 
+    // ผ่านการตรวจสอบแล้ว ให้ทำงาน middleware ถัดไป
     return next();
   };
 };
 
+// Export Functions
 module.exports = { authorize };

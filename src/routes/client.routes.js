@@ -6,44 +6,14 @@ const {
   processPayment,
 } = require('../data/repositories/transactions.repo');
 const { optionalDeviceAuth, requireDeviceAuth } = require('../middleware/deviceAuth');
-const { getRegisteredDevice, updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
+const { updateRegisteredDeviceHeartbeat } = require('../data/repositories/devices.repo');
 const { activateKiosk } = require('../data/repositories/kiosks.repo');
 const { activateBarrierGate } = require('../services/barrierGates.service');
+const { getPaymentChannelForClientSource, resolveClientSource } = require('../services/clientSource.service');
 const { createOmiseChargeForClient, getOmiseQrImage } = require('../services/paymentGateway.service');
+const { createSseStream } = require('../utils/sse');
 
 const router = express.Router();
-
-function createHttpError(statusCode, message) {
-  const err = new Error(message);
-  err.statusCode = statusCode;
-  return err;
-}
-
-async function resolveClientSource(deviceId, req) {
-  if (!deviceId) return { clientType: 'mobile', device: null };
-
-  const device = await getRegisteredDevice(deviceId);
-  if (!device || !['kiosk', 'barrier_gate'].includes(device.deviceType)) {
-    throw createHttpError(401, 'Invalid or unregistered deviceId');
-  }
-  if (device.status === 'maintenance') {
-    throw createHttpError(403, 'Device is currently under maintenance');
-  }
-
-  const updated = await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
-  const current = updated?.device || device;
-
-  return {
-    clientType: current.deviceType === 'barrier_gate' ? 'barrier_gate' : 'kiosk',
-    device: {
-      deviceId: current.deviceId,
-      deviceType: current.deviceType,
-      deviceName: current.deviceName,
-      deviceLocation: current.location,
-      status: current.status,
-    },
-  };
-}
 
 function toClientTransactionResponse(transaction, source) {
   return {
@@ -80,11 +50,7 @@ async function handleClientPayment(req, res, next, pathPlateNo) {
     if (!transactionId && !plateNo) return res.status(400).json({ message: 'transactionId or plateNo is required' });
 
     const source = await resolveClientSource(deviceId, req);
-    const channel = source.clientType === 'barrier_gate'
-      ? 'gate'
-      : source.clientType === 'kiosk'
-        ? 'kiosk'
-        : 'mobile';
+    const channel = getPaymentChannelForClientSource(source);
     const defaultMethod = channel === 'gate' ? 'wallet' : 'qr';
 
     const result = await processPayment(transactionId, {
@@ -218,11 +184,7 @@ router.post('/payment/omise/charge', async (req, res, next) => {
     if (!source && !token) return res.status(400).json({ message: 'source or token is required' });
 
     const sourceInfo = await resolveClientSource(deviceId, req);
-    const channel = sourceInfo.clientType === 'barrier_gate'
-      ? 'gate'
-      : sourceInfo.clientType === 'kiosk'
-        ? 'kiosk'
-        : 'mobile';
+    const channel = getPaymentChannelForClientSource(sourceInfo);
     const result = await createOmiseChargeForClient({
       plateNo,
       source,
@@ -309,20 +271,19 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
       clientType = req.device.deviceType;
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-    res.write(`data: ${JSON.stringify({ type: 'connected', clientType, message: 'Client event stream connected' })}\n\n`);
+    const stream = createSseStream(req, res, {
+      connected: { type: 'connected', clientType, message: 'Client event stream connected' },
+      pingIntervalMs: 0,
+    });
 
     const onThemeUpdated = (newTheme) => {
-      res.write(`data: ${JSON.stringify({ type: 'theme_updated', theme: newTheme })}\n\n`);
+      stream.write({ type: 'theme_updated', theme: newTheme });
     };
     const onLprDetected = (event) => {
       if (gateId && event.gateId !== gateId) return;
       if (normalizedDirection && event.direction !== normalizedDirection) return;
       if (normalizedCameraId && event.cameraId !== normalizedCameraId) return;
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      stream.write(event);
     };
     const refreshDeviceHeartbeat = async () => {
       if (!deviceId || !req.device) return;
@@ -332,15 +293,14 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
         console.error('Client event heartbeat failed:', err);
       }
     };
-    const keepAlive = setInterval(() => {
+    stream.addInterval(() => {
       refreshDeviceHeartbeat();
-      res.write(`data: ${JSON.stringify({ type: 'ping', at: new Date().toISOString() })}\n\n`);
+      stream.write({ type: 'ping', at: new Date().toISOString() });
     }, 25 * 1000);
 
     appEvents.on('theme_updated', onThemeUpdated);
     appEvents.on('lpr_detected', onLprDetected);
-    req.on('close', () => {
-      clearInterval(keepAlive);
+    stream.addCleanup(() => {
       appEvents.off('theme_updated', onThemeUpdated);
       appEvents.off('lpr_detected', onLprDetected);
     });

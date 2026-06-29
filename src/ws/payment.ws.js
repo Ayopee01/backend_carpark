@@ -1,25 +1,31 @@
+// Import Require
 const { WebSocketServer } = require('ws');
 const appEvents = require('../utils/events');
 const paymentGatewayRepo = require('../data/repositories/paymentGateway.repo');
 const transactionsRepo = require('../data/repositories/transactions.repo');
 
+// Constant ระยะเวลาส่ง heartbeat เพื่อตรวจสอบ connection
 const HEARTBEAT_INTERVAL_MS = 25000;
 
+// Function normalize เลขทะเบียนให้เทียบกันง่าย
 function normalizePlateNo(plateNo) {
   return plateNo ? String(plateNo).trim().replace(/[\s-]/g, '').toLowerCase() : '';
 }
 
+// Function ตรวจสอบว่า event ตรงกับ subscription หรือไม่
 function matchesSubscription(subscription, event) {
   if (subscription.chargeId && subscription.chargeId === event.chargeId) return true;
   if (subscription.plateNo && subscription.plateNo === normalizePlateNo(event.plateNo)) return true;
   return false;
 }
 
+// Function ส่งข้อมูล JSON ผ่าน WebSocket
 function sendJson(ws, payload) {
   if (ws.readyState !== 1) return;
   ws.send(JSON.stringify(payload));
 }
 
+// Function สร้าง snapshot สถานะ payment ล่าสุดจาก chargeId
 async function buildChargeSnapshot(chargeId) {
   const gatewayCharge = await paymentGatewayRepo.getGatewayChargeByChargeId(chargeId);
   if (!gatewayCharge) return null;
@@ -48,6 +54,7 @@ async function buildChargeSnapshot(chargeId) {
   };
 }
 
+// Function ส่งสถานะ payment ปัจจุบันให้ client ตาม chargeId
 async function sendCurrentChargeStatus(ws, subscription) {
   if (!subscription.chargeId) return;
   try {
@@ -58,6 +65,7 @@ async function sendCurrentChargeStatus(ws, subscription) {
   }
 }
 
+// Function สร้าง WebSocket server สำหรับ payment
 function createPaymentWebSocketServer(server, path) {
   const wss = new WebSocketServer({
     server,
@@ -110,6 +118,7 @@ function createPaymentWebSocketServer(server, path) {
     });
   });
 
+  // Function รับ event payment_updated แล้วส่งต่อให้ client ที่ subscribe ตรงกัน
   const onPaymentUpdated = (event) => {
     for (const [ws, subscription] of subscriptions.entries()) {
       if (matchesSubscription(subscription, event)) sendJson(ws, event);
@@ -117,6 +126,8 @@ function createPaymentWebSocketServer(server, path) {
   };
 
   appEvents.on('payment_updated', onPaymentUpdated);
+
+  // Function heartbeat ตรวจสอบ client ยังเชื่อมต่ออยู่หรือไม่
   const heartbeat = setInterval(() => {
     for (const ws of wss.clients) {
       if (ws.isAlive === false) {
@@ -138,6 +149,7 @@ function createPaymentWebSocketServer(server, path) {
   return wss;
 }
 
+// Function attach WebSocket payment ทั้งฝั่ง client และ admin
 function attachPaymentWebSocket(server) {
   return {
     client: createPaymentWebSocketServer(server, '/api/v1/client/payment/ws'),
@@ -145,6 +157,7 @@ function attachPaymentWebSocket(server) {
   };
 }
 
+// Export Functions
 module.exports = {
   attachPaymentWebSocket,
 };

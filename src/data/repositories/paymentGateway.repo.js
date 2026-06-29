@@ -1,11 +1,14 @@
+// Import Require
 const { prisma } = require('../../db/prisma');
 const { createId } = require('../store');
 
+// Function แปลง Date เป็น ISO String หรือ null
 function toIsoOrNull(value) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : value;
 }
 
+// Function แปลง payment gateway record ให้เป็นรูปแบบ API
 function toApi(row) {
   if (!row) return null;
   return {
@@ -27,6 +30,7 @@ function toApi(row) {
   };
 }
 
+// Function create payment gateway charge ใหม่
 async function createGatewayCharge(data) {
   const saved = await prisma.paymentGatewayCharge.create({
     data: {
@@ -47,11 +51,13 @@ async function createGatewayCharge(data) {
   return toApi(saved);
 }
 
+// Function query payment gateway charge ด้วย chargeId
 async function getGatewayChargeByChargeId(chargeId) {
   if (!chargeId) return null;
   return toApi(await prisma.paymentGatewayCharge.findUnique({ where: { chargeId } }));
 }
 
+// Function update payment gateway charge ด้วย chargeId
 async function updateGatewayCharge(chargeId, updates) {
   if (!chargeId) return null;
 
@@ -69,6 +75,7 @@ async function updateGatewayCharge(chargeId, updates) {
   return toApi(saved);
 }
 
+// Export Functions
 module.exports = {
   createGatewayCharge,
   getGatewayChargeByChargeId,

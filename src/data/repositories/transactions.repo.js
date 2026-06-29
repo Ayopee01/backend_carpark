@@ -8,15 +8,176 @@ const { getConfig } = require('./config.repo');
 const { validatePaymentSelection } = require('./paymentSettings.repo');
 const defaults = require('../defaults');
 
+// Constant fallback เวลาหลังจ่ายเงินแล้วให้ออกจากลาน
 const DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES = 30;
+
+// Constant สถานะ transaction ที่จบแล้ว
 const TERMINAL_TRANSACTION_STATUSES = new Set(['completed', 'cancelled']);
 
+// Constant payment source ที่ระบบรองรับ
+const VALID_PAYMENT_SOURCES = new Set(['kiosk', 'barrier_gate', 'mobile', 'admin']);
+
+// Constant map source กลาง ไปยัง channel เดิมของระบบ
+const SOURCE_TO_PAYMENT_CHANNEL = {
+  kiosk: 'kiosk',
+  barrier_gate: 'gate',
+  mobile: 'mobile',
+  admin: 'cashier'
+};
+
+// Constant alias สำหรับแปลงชื่อ source/channel ให้เป็นค่ากลาง
+const SOURCE_ALIASES = {
+  gate: 'barrier_gate',
+  barrier: 'barrier_gate',
+  barrier_gate: 'barrier_gate',
+  kiosk: 'kiosk',
+  client: 'mobile',
+  mobile: 'mobile',
+  omise: 'mobile',
+  cashier: 'admin',
+  counter: 'admin',
+  admin: 'admin'
+};
+
+// Function สร้าง error พร้อม statusCode
 function createHttpError(statusCode, message) {
   const err = new Error(message);
   err.statusCode = statusCode;
   return err;
 }
 
+// Function normalize ค่า source/channel ให้เป็นรูปแบบเดียวกัน
+function normalizeSourceLikeValue(value) {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return normalized || null;
+}
+
+// Function normalize payment source ให้เป็นค่าที่ระบบรองรับ
+function normalizePaymentSource(value) {
+  const normalized = normalizeSourceLikeValue(value);
+  if (!normalized) return null;
+
+  const source = SOURCE_ALIASES[normalized] || normalized;
+  return VALID_PAYMENT_SOURCES.has(source) ? source : null;
+}
+
+// Function normalize ข้อมูล device สำหรับ payment
+function normalizeDeviceForPayment(device = {}) {
+  if (!device || typeof device !== 'object') return null;
+
+  const deviceId = device.deviceId || device.id || null;
+  const deviceType = normalizePaymentSource(device.deviceType || device.type);
+  const deviceName = device.deviceName || device.name || null;
+  const deviceLocation = device.deviceLocation || device.location || null;
+
+  if (!deviceId && !deviceType && !deviceName && !deviceLocation) return null;
+
+  return {
+    ...(deviceId ? { deviceId } : {}),
+    ...(deviceType ? { deviceType } : {}),
+    ...(deviceName ? { deviceName } : {}),
+    ...(deviceLocation ? { deviceLocation } : {})
+  };
+}
+
+// Function resolve channel ที่ใช้ตรวจ payment setting
+function resolvePaymentChannel(source, requestedChannel) {
+  const normalizedChannel = normalizeSourceLikeValue(requestedChannel);
+
+  if (normalizedChannel === 'admin') return SOURCE_TO_PAYMENT_CHANNEL.admin;
+  if (normalizedChannel === 'barrier_gate' || normalizedChannel === 'barrier') {
+    return SOURCE_TO_PAYMENT_CHANNEL.barrier_gate;
+  }
+
+  if (normalizedChannel) return normalizedChannel;
+
+  return SOURCE_TO_PAYMENT_CHANNEL[source] || SOURCE_TO_PAYMENT_CHANNEL.admin;
+}
+
+// Function สร้าง source context สำหรับตรวจสอบย้อนหลัง
+function buildPaymentSourceContext({
+  source,
+  inferredFrom,
+  routeType,
+  channel,
+  processedBy,
+  device,
+  sourceContext
+}) {
+  const context = sourceContext && typeof sourceContext === 'object' && !Array.isArray(sourceContext)
+    ? { ...sourceContext }
+    : {};
+
+  const normalizedDevice = normalizeDeviceForPayment(device);
+
+  return {
+    ...context,
+    source,
+    inferredFrom,
+    ...(routeType ? { routeType } : {}),
+    ...(channel ? { requestedChannel: channel } : {}),
+    ...(processedBy ? { actorId: processedBy } : {}),
+    ...(normalizedDevice ? { device: normalizedDevice } : {})
+  };
+}
+
+// Function resolve ว่า payment มาจาก source ไหน
+function resolvePaymentSource({
+  source,
+  paymentSource,
+  routeType,
+  channel,
+  processedBy,
+  device,
+  sourceContext
+} = {}) {
+  const normalizedDevice = normalizeDeviceForPayment(device);
+
+  const candidates = [
+    { value: source, inferredFrom: 'source' },
+    { value: paymentSource, inferredFrom: 'paymentSource' },
+    { value: normalizedDevice?.deviceType, inferredFrom: 'device.deviceType' },
+    { value: routeType, inferredFrom: 'routeType' },
+    { value: channel, inferredFrom: 'channel' },
+    {
+      value: processedBy && processedBy !== 'system' ? 'admin' : null,
+      inferredFrom: 'processedBy'
+    }
+  ];
+
+  const matched = candidates
+    .map((candidate) => ({
+      source: normalizePaymentSource(candidate.value),
+      inferredFrom: candidate.inferredFrom
+    }))
+    .find((candidate) => candidate.source);
+
+  const resolvedSource = matched?.source || 'mobile';
+  const resolvedChannel = resolvePaymentChannel(resolvedSource, channel);
+
+  return {
+    source: resolvedSource,
+    channel: resolvedChannel,
+    sourceContext: buildPaymentSourceContext({
+      source: resolvedSource,
+      inferredFrom: matched?.inferredFrom || 'default_no_device',
+      routeType,
+      channel,
+      processedBy,
+      device,
+      sourceContext
+    }),
+    device: normalizedDevice
+  };
+}
+
+// Function ตรวจสอบว่าเป็น payment จาก Barrier Gate หรือไม่
+function isGatePaymentSource(source) {
+  return normalizePaymentSource(source) === 'barrier_gate';
+}
+
+// Function แจ้ง dashboard ว่า transaction มีการเปลี่ยนแปลง
 function emitDashboardUpdated(reason, transaction) {
   appEvents.emit('dashboard_updated', {
     reason,
@@ -401,14 +562,38 @@ async function getTransactionApiByIdOrPlateNo(value, options = {}) {
 }
 
 // Function บันทึกการชำระเงินและอัปเดตสถานะ transaction
-async function processPayment(id, { plateNo, method, channel, amount, processedBy, device } = {}) {
+async function processPayment(id, {
+  plateNo,
+  method,
+  channel,
+  source,
+  paymentSource,
+  sourceContext,
+  routeType,
+  amount,
+  processedBy,
+  device
+} = {}) {
   const context = await getTransactionContext();
   const configuredExitWindow = context.systemSettings?.receipt?.paymentBill?.expiryDuration;
   const exitWindowMinutes = Number.isFinite(Number(configuredExitWindow))
     ? Number(configuredExitWindow)
     : DEFAULT_PAYMENT_EXIT_WINDOW_MINUTES;
+
   const paymentMethod = method || 'cash';
-  const paymentChannel = channel || 'cashier';
+
+  const resolvedPayment = resolvePaymentSource({
+    source,
+    paymentSource,
+    routeType,
+    channel,
+    processedBy,
+    device,
+    sourceContext
+  });
+
+  const paymentChannel = resolvedPayment.channel;
+
   const paymentValidation = await validatePaymentSelection(paymentChannel, paymentMethod);
   if (!paymentValidation.ok) {
     throw createHttpError(400, paymentValidation.message);
@@ -418,6 +603,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
     const transaction = id
       ? await getTransactionByIdOrPlateNo(id, { payableOnly: true }, tx)
       : await getLatestTransactionByPlateNo(plateNo, { payableOnly: true }, tx);
+
     if (!transaction) return null;
 
     const pricingRules = context.pricingConfig?.pricingRules || [];
@@ -433,6 +619,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
     const currentTotalPaid = Number(transaction.totalPaid ?? 0);
     const currentRemaining = Math.max(0, currentNetAmount - currentTotalPaid);
     const expiryAt = new Date(new Date(paidAt).getTime() + exitWindowMinutes * 60000).toISOString();
+
     const payAmount = amount !== undefined ? Number(amount) : currentRemaining;
     if (!Number.isFinite(payAmount) || payAmount <= 0) return null;
 
@@ -440,32 +627,30 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
       id: createId('pay'),
       method: paymentMethod,
       channel: paymentChannel,
+      source: resolvedPayment.source,
+      sourceContext: resolvedPayment.sourceContext,
       paidAmount: payAmount,
       paidAt,
       expiryAt,
-      processedBy: processedBy || 'system',
-      ...(device ? {
-        deviceId: device.deviceId,
-        deviceType: device.deviceType,
-        deviceName: device.deviceName,
-        deviceLocation: device.deviceLocation,
-        ...(device.deviceType === 'kiosk' ? {
-          kioskDeviceId: device.deviceId,
-          kioskName: device.deviceName,
-          kioskLocation: device.deviceLocation,
-        } : {})
+      processedBy: processedBy || (resolvedPayment.source === 'admin' ? 'admin' : 'system'),
+      ...(resolvedPayment.device ? {
+        deviceId: resolvedPayment.device.deviceId,
+        deviceType: resolvedPayment.device.deviceType,
+        deviceName: resolvedPayment.device.deviceName,
+        deviceLocation: resolvedPayment.device.deviceLocation
       } : {})
     };
 
     const payments = [...toJsonArray(transaction.payments), newPayment];
     const totalPaid = currentTotalPaid + newPayment.paidAmount;
+
     const updates = {
       payments,
       totalPaid,
       updatedAt: new Date(paidAt)
     };
 
-    if (paymentChannel === 'gate') {
+    if (isGatePaymentSource(resolvedPayment.source)) {
       updates.exitTimeLimit = new Date(paidAt);
       updates.exitAt = new Date(paidAt);
       updates.status = 'completed';
@@ -479,6 +664,7 @@ async function processPayment(id, { plateNo, method, channel, amount, processedB
       data: updates
     });
   });
+
   if (!saved) return null;
 
   emitDashboardUpdated('payment_processed', saved);
@@ -694,5 +880,7 @@ module.exports = {
   findOpenTransactionByPlateNo,
   normalizePlateNo,
   normalizeVehicleType,
+  normalizePaymentSource,
+  resolvePaymentSource,
   toTransactionApi
 };

@@ -1,21 +1,27 @@
+// Import Require
 const defaults = require('../defaults');
 const { getConfig, getConfigWithMeta, setConfig, stripConfigMeta } = require('./config.repo');
 
+// Config Key สำหรับ payment settings
 const CONFIG_KEY = 'payment_settings';
 
+// Function ดึง payment settings
 async function getPaymentSettings() {
   return getConfig(CONFIG_KEY, defaults.paymentSettings);
 }
 
+// Function ดึง payment settings พร้อม meta
 async function getPaymentSettingsWithMeta() {
   return getConfigWithMeta(CONFIG_KEY, defaults.paymentSettings);
 }
 
+// Function query รายการ payment method ทั้งหมด
 async function listMethods() {
   const settings = await getPaymentSettings();
   return settings.methods || [];
 }
 
+// Function query รายการ payment method พร้อม configUpdatedAt
 async function listMethodsWithMeta() {
   const settings = await getPaymentSettingsWithMeta();
   return {
@@ -24,6 +30,7 @@ async function listMethodsWithMeta() {
   };
 }
 
+// Function update payment method ด้วย id
 async function updateMethod(id, updates) {
   const settings = await getPaymentSettings();
   const methods = [...(settings.methods || [])];
@@ -39,6 +46,7 @@ async function updateMethod(id, updates) {
   return { ...methods[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
+// Function delete payment method ด้วย id
 async function deleteMethod(id) {
   const settings = await getPaymentSettings();
   const methods = [...(settings.methods || [])];
@@ -61,11 +69,13 @@ async function deleteMethod(id) {
   return { id, configUpdatedAt: saved.configUpdatedAt };
 }
 
+// Function query รายการ payment channel ทั้งหมด
 async function listChannels() {
   const settings = await getPaymentSettings();
   return settings.channels || [];
 }
 
+// Function query รายการ payment channel พร้อม configUpdatedAt
 async function listChannelsWithMeta() {
   const settings = await getPaymentSettingsWithMeta();
   return {
@@ -74,6 +84,7 @@ async function listChannelsWithMeta() {
   };
 }
 
+// Function update mapping method ที่อนุญาตใน channel
 async function updateChannelMapping(id, allowedMethods) {
   if (!Array.isArray(allowedMethods)) return null;
 
@@ -94,6 +105,7 @@ async function updateChannelMapping(id, allowedMethods) {
   return { ...channels[index], configUpdatedAt: saved.configUpdatedAt };
 }
 
+// Function delete payment channel ด้วย id
 async function deleteChannel(id) {
   const settings = await getPaymentSettings();
   const channels = [...(settings.channels || [])];
@@ -108,6 +120,7 @@ async function deleteChannel(id) {
   return { id, configUpdatedAt: saved.configUpdatedAt };
 }
 
+// Function validate ว่า method สามารถใช้งานกับ channel นี้ได้หรือไม่
 async function validatePaymentSelection(channel, method) {
   const settings = await getPaymentSettings();
   const methods = Array.isArray(settings.methods) ? settings.methods : [];
@@ -133,6 +146,7 @@ async function validatePaymentSelection(channel, method) {
   return { ok: true, method: selectedMethod, channel: selectedChannel };
 }
 
+// Export Functions
 module.exports = {
   getPaymentSettingsWithMeta,
   listMethods,

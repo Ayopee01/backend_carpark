@@ -1,11 +1,13 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
 const {
+  getPaymentChannel,
   getPaymentAmount,
   getTransactionPayments,
   getTransactionRevenue,
   isPaidTransaction,
   isPendingTransaction,
+  isScanPayment,
 } = require('../utils/payments');
 
 // Constant timezone และการคำนวณวัน
@@ -18,25 +20,25 @@ const CHANNELS = [
     id: 'cashier',
     label: 'เงินสด (Cashier)',
     icon: 'cash',
-    match: (payment) => payment.channel === 'cashier'
+    match: (payment) => getPaymentChannel(payment) === 'cashier'
   },
   {
     id: 'epayment',
     label: 'E-payment',
     icon: 'qr',
-    match: (payment) => payment.channel === 'mobile'
+    match: (payment) => getPaymentChannel(payment) === 'mobile'
   },
   {
     id: 'kiosk',
     label: 'Kiosk',
     icon: 'kiosk',
-    match: (payment) => payment.channel === 'kiosk'
+    match: (payment) => getPaymentChannel(payment) === 'kiosk'
   },
   {
     id: 'gate',
     label: 'หน้าทางออก',
     icon: 'gate',
-    match: (payment) => payment.channel === 'gate'
+    match: (payment) => getPaymentChannel(payment) === 'gate'
   }
 ];
 
@@ -351,8 +353,8 @@ async function getOverviewSummary(query = {}) {
     return sum + getTransactionRevenue(transaction);
   }, 0);
 
-  const cashierPayments = paidPayments.filter((payment) => payment.channel === 'cashier');
-  const scanPayments = paidPayments.filter((payment) => payment.channel !== 'cashier');
+  const cashierPayments = paidPayments.filter((payment) => getPaymentChannel(payment) === 'cashier' && !isScanPayment(payment));
+  const scanPayments = paidPayments.filter(isScanPayment);
   const cashierAmount = cashierPayments.reduce((sum, payment) => sum + getPaymentAmount(payment), 0);
   const scanAmount = scanPayments.reduce((sum, payment) => sum + getPaymentAmount(payment), 0);
 

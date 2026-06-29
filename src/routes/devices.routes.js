@@ -22,6 +22,7 @@ const {
   generateBarrierGateActivationCode,
   updateBarrierGate,
 } = require('../data/repositories/barrierGates.repo');
+const { createSseStream } = require('../utils/sse');
 
 const router = express.Router();
 
@@ -175,27 +176,20 @@ startDeviceRuntimeMonitor();
 // Admin SSE for realtime device updates.
 router.get('/events', async (req, res) => {
   try {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'Device event stream connected' })}\n\n`);
+    const stream = createSseStream(req, res, {
+      connected: { type: 'connected', message: 'Device event stream connected' },
+    });
 
     const sendDeviceEvent = (event) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      stream.write(event);
     };
     const sendConfigUpdated = (config) => {
-      res.write(`data: ${JSON.stringify({ type: 'devices_config_updated', config })}\n\n`);
+      stream.write({ type: 'devices_config_updated', config });
     };
-    const keepAlive = setInterval(() => {
-      res.write(`data: ${JSON.stringify({ type: 'ping', at: new Date().toISOString() })}\n\n`);
-    }, 25 * 1000);
 
     appEvents.on('device_event', sendDeviceEvent);
     appEvents.on('devices_config_updated', sendConfigUpdated);
-    req.on('close', () => {
-      clearInterval(keepAlive);
+    stream.addCleanup(() => {
       appEvents.off('device_event', sendDeviceEvent);
       appEvents.off('devices_config_updated', sendConfigUpdated);
     });
