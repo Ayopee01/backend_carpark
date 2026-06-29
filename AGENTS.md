@@ -218,6 +218,11 @@ Payment gateway behavior:
   `WS /api/v1/admin/payment/ws?chargeId=<chargeId>`. Keep
   `WS /api/v1/client/payment/ws` behavior compatible with existing
   kiosk/mobile clients.
+- Payment WebSocket connections send heartbeat ping frames and replay the latest
+  saved gateway charge status when a client subscribes with `chargeId`. This
+  keeps reconnecting frontends from missing a successful webhook/simulation if
+  the live in-memory event was emitted before the new socket subscribed or on a
+  different runtime instance.
 - Creating an Omise charge stores a pending `payment_gateway_charges` row but
   does not mark the transaction paid yet.
 - Omise webhook is the source of truth for successful gateway payment. Webhook
