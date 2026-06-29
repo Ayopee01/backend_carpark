@@ -58,6 +58,14 @@ Dashboard and overview are separate admin surfaces:
 - `GET /api/v1/dashboard/events` is the admin SSE stream for dashboard data.
   It sends `connected`, `dashboard_snapshot`, periodic `dashboard_summary`,
   `dashboard_updated` after transaction/payment changes, and `ping`.
+- `GET /api/v1/transactions/events` is the admin SSE stream for the transaction
+  list and requires `transactions` permission. It accepts the same query params
+  as `GET /api/v1/transactions`: `keyword`, `plate_no`, `bill_no`, `page`,
+  `per_page`, and `all`. It sends `connected`, `transactions_snapshot`,
+  periodic `transactions_list`, `transactions_updated` after transaction/payment
+  changes, `transactions_error` on stream refresh failures, and `ping`. The
+  `data` payload uses the same `{ data, meta }` response shape as the list
+  endpoint.
 - `GET /api/v1/overview/summary` returns overview data by date range. It accepts
   `start_date`/`end_date` or `startDate`/`endDate`, as `YYYY-MM-DD` or
   date-time values. If no dates are supplied, it defaults to the current Bangkok

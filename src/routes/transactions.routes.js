@@ -4,8 +4,10 @@ const { authorize } = require('../middleware/permission');
 const { createTransactionFromCamera } = require('../services/transactions.service');
 const { validateCameraTransactionPayload } = require('../validators/transactions.validator');
 const { validateCameraGateBinding } = require('../data/repositories/barrierGates.repo');
+const appEvents = require('../utils/events');
 
 const router = express.Router();
+const TRANSACTIONS_STREAM_INTERVAL_MS = Number(process.env.TRANSACTIONS_STREAM_INTERVAL_MS || 10000);
 
 function toAdminPaymentResponse(transaction) {
   const latestPayment = Array.isArray(transaction.payments) && transaction.payments.length
@@ -79,31 +81,101 @@ function toTransactionListItem(transaction) {
   };
 }
 
+function getTransactionListFilters(query = {}) {
+  const { keyword, plate_no: plateNo, bill_no: billNo, page = 1, per_page = 10, all } = query;
+  return {
+    keyword,
+    plateNo,
+    billNo,
+    all: all === 'true' || all === '1',
+    page: parseInt(page),
+    perPage: parseInt(per_page)
+  };
+}
+
+async function getTransactionListResponse(query = {}) {
+  const result = await listTransactions(getTransactionListFilters(query));
+  return {
+    data: result.data.map(toTransactionListItem),
+    meta: {
+      ...result.meta,
+      realtime: true,
+    },
+  };
+}
+
 // Apply permission check from members.permissions.
 router.use(authorize('transactions'));
 
 // Route list/search transactions with pagination controlled by frontend query params.
 router.get('/', async (req, res, next) => {
   try {
-    const { keyword, plate_no: plateNo, bill_no: billNo, page = 1, per_page = 10, all } = req.query;
-    const shouldReturnAll = all === 'true' || all === '1';
-    
-    // Page 3: Operation list (Usually shows all or searchable)
-    const result = await listTransactions({
-      keyword,
-      plateNo,
-      billNo,
-      all: shouldReturnAll,
-      page: parseInt(page),
-      perPage: parseInt(per_page)
-    });
+    res.json(await getTransactionListResponse(req.query));
+  } catch (err) {
+    next(err);
+  }
+});
 
-    res.json({
-      data: result.data.map(toTransactionListItem),
-      meta: {
-        ...result.meta,
-        realtime: true,
-      },
+// Route SSE stream transaction list updates.
+router.get('/events', async (req, res, next) => {
+  try {
+    let isClosed = false;
+    let isSending = false;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const writeEvent = (payload) => {
+      if (isClosed) return;
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const sendTransactions = async (type = 'transactions_list', trigger = null) => {
+      if (isClosed || isSending) return;
+      isSending = true;
+
+      try {
+        const data = await getTransactionListResponse(req.query);
+        writeEvent({
+          type,
+          trigger,
+          data,
+          generatedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        writeEvent({
+          type: 'transactions_error',
+          message: err.message || 'Unable to refresh transactions list',
+          generatedAt: new Date().toISOString(),
+        });
+      } finally {
+        isSending = false;
+      }
+    };
+
+    writeEvent({ type: 'connected', message: 'Transactions event stream connected' });
+    await sendTransactions('transactions_snapshot');
+
+    const keepAlive = setInterval(() => {
+      writeEvent({ type: 'ping', at: new Date().toISOString() });
+    }, 25 * 1000);
+
+    const refreshInterval = setInterval(() => {
+      sendTransactions('transactions_list', { reason: 'interval' });
+    }, TRANSACTIONS_STREAM_INTERVAL_MS);
+
+    const onTransactionsUpdated = (event) => {
+      sendTransactions('transactions_updated', event);
+    };
+
+    appEvents.on('dashboard_updated', onTransactionsUpdated);
+    req.on('close', () => {
+      isClosed = true;
+      clearInterval(keepAlive);
+      clearInterval(refreshInterval);
+      appEvents.off('dashboard_updated', onTransactionsUpdated);
     });
   } catch (err) {
     next(err);

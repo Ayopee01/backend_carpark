@@ -744,6 +744,25 @@ const openapi = {
         responses: { 200: ok('Duplicate, active transaction, or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },
       },
     },
+    '/api/v1/transactions/events': {
+      get: {
+        tags: ['Transactions'],
+        summary: 'Transactions Server-Sent Events stream',
+        description: 'Admin flow. Requires Bearer token and transactions permission. Uses the same keyword, plate_no, bill_no, page, per_page, and all query params as GET /api/v1/transactions. Sends connected, transactions_snapshot, periodic transactions_list, transactions_updated after transaction/payment changes, transactions_error on stream refresh failures, and ping.',
+        parameters: [
+          query('keyword', { type: 'string' }, '3งจ9012'),
+          query('plate_no', { type: 'string' }, '3งจ9012'),
+          query('bill_no', { type: 'string' }, 'PK20260524-120000'),
+          query('page', { type: 'integer', default: 1 }, 1),
+          query('per_page', { type: 'integer', default: 10, maximum: 100 }, 10),
+          query('all', { type: 'string', enum: ['true', '1', 'false', '0'] }, 'false'),
+        ],
+        responses: {
+          200: { description: 'SSE stream' },
+          ...bearer403,
+        },
+      },
+    },
     '/api/v1/transactions/{id}': {
       get: {
         tags: ['Transactions'],
