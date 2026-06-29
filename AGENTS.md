@@ -207,6 +207,17 @@ Payment gateway behavior:
   Require `method` or Omise `sourceType` for source-based payments; token-based
   card payments may omit `method` and use `card`. Do not silently map card
   payments to `bank1` or default source payments to `promptpay`.
+- Admin Omise payments use the admin-only endpoints
+  `POST /api/v1/admin/payment/omise/charge` and
+  `GET /api/v1/admin/payment/omise/qr` after Bearer auth with `transactions`
+  permission. Admin PromptPay/QR must stay `channel: "cashier"` and store
+  `sourceContext: "admin"` plus the admin user id in charge metadata. Do not use
+  public client Omise endpoints for Admin QR because client endpoints derive
+  `mobile`, `kiosk`, or `gate` from the client source.
+- Admin payment realtime subscribers can use
+  `WS /api/v1/admin/payment/ws?chargeId=<chargeId>`. Keep
+  `WS /api/v1/client/payment/ws` behavior compatible with existing
+  kiosk/mobile clients.
 - Creating an Omise charge stores a pending `payment_gateway_charges` row but
   does not mark the transaction paid yet.
 - Omise webhook is the source of truth for successful gateway payment. Webhook

@@ -16,6 +16,7 @@ const memberRoutes = require('./routes/members.routes');
 const servicePricingRoutes = require('./routes/servicePricing.routes');
 const paymentSettingsRouter = require('./routes/paymentSettings.routes');
 const paymentGatewayRoutes = require('./routes/paymentGateway.routes');
+const adminPaymentRoutes = require('./routes/adminPayment.routes');
 const clientRoutes = require('./routes/client.routes');
 const deviceClientRoutes = require('./routes/deviceClient.routes');
 const devicesRoutes = require('./routes/devices.routes');
@@ -128,6 +129,7 @@ app.get('/health/db', async (req, res) => {
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/overview', overviewRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
+app.use('/api/v1/admin/payment', adminPaymentRoutes);
 app.use('/api/v1/members', memberRoutes);
 app.use('/api/v1/service-pricing', servicePricingRoutes);
 app.use('/api/v1/payment-settings', paymentSettingsRouter);

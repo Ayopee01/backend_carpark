@@ -3,7 +3,10 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 const omiseService = require('../src/services/omise.service');
+const transactionsRepo = require('../src/data/repositories/transactions.repo');
+const paymentGatewayRepo = require('../src/data/repositories/paymentGateway.repo');
 const {
+  createOmiseChargeForAdmin,
   getChargeQrDocumentPath,
   isPaymentSimulationEnabled,
   normalizeGatewayMethod,
@@ -163,4 +166,73 @@ test('guards payment simulation with env flag and optional token', () => {
       process.env.PAYMENT_SIMULATION_TOKEN = originalToken;
     }
   }
+});
+
+test('creates Admin Omise PromptPay charges as cashier channel', async () => {
+  const originalGetTransactionApiById = transactionsRepo.getTransactionApiById;
+  const originalCreateCharge = omiseService.createCharge;
+  const originalCreateGatewayCharge = paymentGatewayRepo.createGatewayCharge;
+
+  const createdGatewayCharges = [];
+  transactionsRepo.getTransactionApiById = async () => ({
+    id: 't_123',
+    plateNo: '3ABC1234',
+    status: 'pending',
+    remainingAmount: 40,
+    exitAt: null,
+    exitTimeLimit: null,
+  });
+  omiseService.createCharge = async (payload) => ({
+    id: 'chrg_test_admin',
+    status: 'pending',
+    amount: omiseService.toMinorAmount(payload.amount),
+    currency: 'thb',
+    source: { scannable_code: { image: { location: '/charges/chrg_test_admin/documents/docu_test_admin' } } },
+    metadata: payload.metadata,
+  });
+  paymentGatewayRepo.createGatewayCharge = async (data) => {
+    createdGatewayCharges.push(data);
+    return {
+      id: 'pgc_123',
+      provider: 'omise',
+      ...data,
+    };
+  };
+
+  try {
+    const result = await createOmiseChargeForAdmin({
+      transactionId: 't_123',
+      source: 'src_test_123',
+      sourceType: 'promptpay',
+      method: 'promptpay',
+      channel: 'cashier',
+      amount: 4000,
+      processedBy: 'u_admin',
+    });
+
+    assert.equal(result.channel, 'cashier');
+    assert.equal(result.amount, 4000);
+    assert.equal(createdGatewayCharges.length, 1);
+    assert.equal(createdGatewayCharges[0].channel, 'cashier');
+    assert.equal(createdGatewayCharges[0].method, 'promptpay');
+    assert.equal(createdGatewayCharges[0].raw.metadata.sourceContext, 'admin');
+    assert.equal(createdGatewayCharges[0].raw.metadata.processedBy, 'u_admin');
+  } finally {
+    transactionsRepo.getTransactionApiById = originalGetTransactionApiById;
+    omiseService.createCharge = originalCreateCharge;
+    paymentGatewayRepo.createGatewayCharge = originalCreateGatewayCharge;
+  }
+});
+
+test('rejects Admin Omise charges that are not cashier channel', async () => {
+  await assert.rejects(
+    createOmiseChargeForAdmin({
+      transactionId: 't_123',
+      source: 'src_test_123',
+      sourceType: 'promptpay',
+      method: 'promptpay',
+      channel: 'mobile',
+    }),
+    /Admin Omise payment channel must be cashier/
+  );
 });

@@ -16,10 +16,10 @@ function sendJson(ws, payload) {
   ws.send(JSON.stringify(payload));
 }
 
-function attachPaymentWebSocket(server) {
+function createPaymentWebSocketServer(server, path) {
   const wss = new WebSocketServer({
     server,
-    path: '/api/v1/client/payment/ws',
+    path,
   });
   const subscriptions = new Map();
 
@@ -72,6 +72,13 @@ function attachPaymentWebSocket(server) {
   });
 
   return wss;
+}
+
+function attachPaymentWebSocket(server) {
+  return {
+    client: createPaymentWebSocketServer(server, '/api/v1/client/payment/ws'),
+    admin: createPaymentWebSocketServer(server, '/api/v1/admin/payment/ws'),
+  };
 }
 
 module.exports = {

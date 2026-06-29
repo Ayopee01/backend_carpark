@@ -1,8 +1,5 @@
 const appEvents = require('../utils/events');
-const {
-  lookupTransactionApiByPlateNo,
-  processPayment,
-} = require('../data/repositories/transactions.repo');
+const transactionsRepo = require('../data/repositories/transactions.repo');
 const paymentGatewayRepo = require('../data/repositories/paymentGateway.repo');
 const omiseService = require('./omise.service');
 
@@ -84,7 +81,7 @@ async function downloadFirstQrDocument(paths) {
 }
 
 async function getPayableTransactionForPlate(plateNo) {
-  const lookup = await lookupTransactionApiByPlateNo(plateNo, { payableOnly: true });
+  const lookup = await transactionsRepo.lookupTransactionApiByPlateNo(plateNo, { payableOnly: true });
   if (lookup.matchType === 'invalid') throw createHttpError(400, lookup.message);
   if (lookup.matchType === 'not_found') throw createHttpError(404, 'Transaction not found');
   if (lookup.matchType === 'multiple') {
@@ -92,6 +89,34 @@ async function getPayableTransactionForPlate(plateNo) {
   }
   if (!lookup.transaction) throw createHttpError(404, 'Transaction not found');
   return lookup.transaction;
+}
+
+async function getPayableTransaction({ transactionId, plateNo } = {}) {
+  if (transactionId) {
+    const transaction = await transactionsRepo.getTransactionApiById(transactionId);
+    if (!transaction) throw createHttpError(404, 'Transaction not found');
+    if (['completed', 'cancelled'].includes(transaction.status) || transaction.exitAt) {
+      throw createHttpError(400, 'Transaction is not payable');
+    }
+    return transaction;
+  }
+
+  if (plateNo) return getPayableTransactionForPlate(plateNo);
+  throw createHttpError(400, 'transactionId or plateNo is required');
+}
+
+function validateRequestedMinorAmount(amount, remainingAmount) {
+  if (amount === undefined || amount === null || amount === '') return;
+
+  const requestedAmount = Number(amount);
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    throw createHttpError(400, 'amount is invalid');
+  }
+
+  const expectedAmount = omiseService.toMinorAmount(remainingAmount);
+  if (requestedAmount !== expectedAmount) {
+    throw createHttpError(400, 'amount does not match current remaining amount');
+  }
 }
 
 async function createOmiseChargeForClient({
@@ -145,6 +170,68 @@ async function createOmiseChargeForClient({
   return toChargeResponse({ charge, gatewayCharge, transaction });
 }
 
+async function createOmiseChargeForAdmin({
+  transactionId,
+  plateNo,
+  source,
+  token,
+  sourceType,
+  method,
+  channel = 'cashier',
+  amount,
+  processedBy,
+  returnUri,
+} = {}) {
+  if (!source && !token) throw createHttpError(400, 'source or token is required');
+  if (channel !== 'cashier') throw createHttpError(400, 'Admin Omise payment channel must be cashier');
+
+  const transaction = await getPayableTransaction({ transactionId, plateNo });
+  const remainingAmount = Number(transaction.remainingAmount);
+  if (!Number.isFinite(remainingAmount) || remainingAmount <= 0) {
+    throw createHttpError(400, 'No payable amount remaining');
+  }
+  validateRequestedMinorAmount(amount, remainingAmount);
+
+  const paymentMethod = normalizeGatewayMethod(method, sourceType, { token, source });
+  const metadata = {
+    transactionId: transaction.id,
+    plateNo: transaction.plateNo,
+    channel: 'cashier',
+    method: paymentMethod,
+    sourceContext: 'admin',
+    processedBy: processedBy || 'admin',
+  };
+  const charge = await omiseService.createCharge({
+    amount: remainingAmount,
+    source,
+    token,
+    returnUri,
+    description: `Admin parking payment ${transaction.plateNo}`,
+    metadata,
+  });
+  const raw = {
+    ...charge,
+    metadata: {
+      ...(charge.metadata || {}),
+      ...metadata,
+    },
+  };
+
+  const gatewayCharge = await paymentGatewayRepo.createGatewayCharge({
+    chargeId: charge.id,
+    transactionId: transaction.id,
+    plateNo: transaction.plateNo,
+    amount: charge.amount,
+    currency: charge.currency,
+    method: paymentMethod,
+    channel: 'cashier',
+    status: omiseService.normalizeChargeStatus(charge),
+    raw,
+  });
+
+  return toChargeResponse({ charge: raw, gatewayCharge, transaction });
+}
+
 async function getOmiseQrImage({ chargeId, documentPath } = {}) {
   if (documentPath) {
     return omiseService.downloadDocument(documentPath);
@@ -185,11 +272,15 @@ async function completeSuccessfulGatewayCharge(existing, charge, { processedByPr
   }
 
   const paidAmount = existing.amount / 100;
-  const transaction = await processPayment(existing.transactionId, {
+  const metadata = {
+    ...(existing.raw?.metadata || {}),
+    ...(charge?.metadata || {}),
+  };
+  const transaction = await transactionsRepo.processPayment(existing.transactionId, {
     method: existing.method,
     channel: existing.channel,
     amount: paidAmount,
-    processedBy: `${processedByPrefix}_${existing.chargeId}`,
+    processedBy: metadata.processedBy || `${processedByPrefix}_${existing.chargeId}`,
   });
   if (!transaction) throw createHttpError(400, 'Payment processing failed');
 
@@ -295,6 +386,7 @@ function verifyPaymentSimulationToken(token) {
 
 module.exports = {
   createOmiseChargeForClient,
+  createOmiseChargeForAdmin,
   getOmiseQrImage,
   processOmiseWebhookEvent,
   simulateOmiseChargePaid,
