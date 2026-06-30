@@ -108,8 +108,6 @@ function emitLprDetected(dto, result) {
     plateNo: data.plateNo || dto.plateNo,
     vehicleType: dto.vehicleType,
     cameraId: dto.cameraId,
-    deviceId: dto.barrierGateDeviceId || null,
-    targetDeviceId: dto.barrierGateDeviceId || null,
     gateId: dto.gateId,
     direction: data.direction || dto.direction,
     status: data.status || null,

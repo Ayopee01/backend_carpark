@@ -44,7 +44,7 @@ test('resolves gateId from barrier gate mapping when camera payload omits it', a
   };
   barrierGatesRepository.validateCameraGateBinding = async (dto) => {
     assert.equal(dto.gateId, null);
-    return { ok: true, barrierGate: { deviceId: 'BG-GATE-A', gateId: 'GATE-A' } };
+    return { ok: true, barrierGate: { gateId: 'GATE-A' } };
   };
   delete require.cache[routePath];
 
@@ -78,7 +78,6 @@ test('resolves gateId from barrier gate mapping when camera payload omits it', a
 
     assert.equal(res.statusCode, 201);
     assert.equal(receivedDto.gateId, 'GATE-A');
-    assert.equal(receivedDto.barrierGateDeviceId, 'BG-GATE-A');
     assert.equal(receivedDto.direction, 'IN');
   } finally {
     transactionService.createTransactionFromCamera = originalCreateTransactionFromCamera;
@@ -382,7 +381,6 @@ test('blocks OUT when current calculated remaining amount is still due', async (
       plateNo: 'ABC1234',
       cameraId: 'CAM-OUT-01',
       gateId: 'GATE-A',
-      barrierGateDeviceId: 'BG-GATE-A',
       direction: 'OUT',
       capturedAt: '2026-05-01T10:10:00.000Z',
     });
@@ -479,7 +477,6 @@ test('allows OUT when the transaction is paid and still inside the exit window',
       plateNo: 'ABC1234',
       cameraId: 'CAM-OUT-01',
       gateId: 'GATE-A',
-      barrierGateDeviceId: 'BG-GATE-A',
       direction: 'OUT',
       capturedAt: '2026-05-01T10:10:00.000Z',
     });
@@ -490,8 +487,6 @@ test('allows OUT when the transaction is paid and still inside the exit window',
     assert.equal(createCalled, true);
     assert.equal(lprEvent.type, 'lpr_detected');
     assert.equal(lprEvent.gateId, 'GATE-A');
-    assert.equal(lprEvent.targetDeviceId, 'BG-GATE-A');
-    assert.equal(lprEvent.deviceId, 'BG-GATE-A');
     assert.equal(lprEvent.direction, 'OUT');
     assert.equal(lprEvent.action, 'OPEN_GATE');
     assert.equal(lprEvent.transactionId, transaction.id);
