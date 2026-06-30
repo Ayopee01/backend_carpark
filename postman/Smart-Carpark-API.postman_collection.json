@@ -210,7 +210,7 @@
             "url": "{{baseUrl}}/api/v1/transactions",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"plateNo\": \"1กก1234\",\n  \"vehicleType\": \"car\",\n  \"cameraId\": \"CAM-IN-01\",\n  \"gateId\": \"GATE-A\",\n  \"direction\": \"IN\",\n  \"capturedAt\": \"2026-05-22T10:30:00+07:00\",\n  \"confidence\": 0.92,\n  \"imageUrl\": \"https://example.com/plate.jpg\"\n}"
+              "raw": "{\n  \"plateNo\": \"1กก1234\",\n  \"vehicleType\": \"car\",\n  \"cameraId\": \"CAM-IN-01\",\n  \"direction\": \"IN\",\n  \"capturedAt\": \"2026-05-22T10:30:00+07:00\",\n  \"confidence\": 0.92,\n  \"imageUrl\": \"https://example.com/plate.jpg\"\n}"
             }
           }
         },

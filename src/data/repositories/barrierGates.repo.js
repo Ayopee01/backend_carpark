@@ -358,7 +358,7 @@ async function validateCameraGateBinding({ cameraId, gateId, direction } = {}) {
 
   const barrierGate = await findBarrierGateByCamera(normalizedCameraId, { gateId, direction });
   if (!barrierGate) {
-    return { ok: false, statusCode: 400, reason: 'camera_gate_mismatch', message: 'cameraId is not mapped to this gateId and direction' };
+    return { ok: false, statusCode: 400, reason: 'camera_gate_mismatch', message: 'cameraId is not mapped to the requested gate/direction' };
   }
 
   return { ok: true, camera, barrierGate };

@@ -15,7 +15,9 @@ function toCameraTransactionDto(payload = {}) {
     plateNo: normalizePlateNo(payload.plateNo),
     vehicleType: normalizeVehicleType(payload.vehicleType),
     cameraId: String(payload.cameraId).trim(),
-    gateId: String(payload.gateId).trim(),
+    gateId: payload.gateId === undefined || payload.gateId === null
+      ? null
+      : String(payload.gateId).trim(),
     direction: String(payload.direction).trim().toUpperCase(),
     capturedAt: payload.capturedAt ? new Date(payload.capturedAt) : new Date(),
     imageUrl: payload.imageUrl === undefined || payload.imageUrl === null

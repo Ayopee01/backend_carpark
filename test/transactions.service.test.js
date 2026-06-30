@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const repositoryPath = require.resolve('../src/data/repositories/transactions.repo');
 const servicePath = require.resolve('../src/services/transactions.service');
+const routePath = require.resolve('../src/routes/transactions.routes');
+const barrierGatesRepositoryPath = require.resolve('../src/data/repositories/barrierGates.repo');
 const repository = require(repositoryPath);
 const { prisma } = require('../src/db/prisma');
 const appEvents = require('../src/utils/events');
@@ -27,6 +29,61 @@ function loadServiceWithRepository(stubs) {
     },
   };
 }
+
+test('resolves gateId from barrier gate mapping when camera payload omits it', async () => {
+  const transactionService = require(servicePath);
+  const barrierGatesRepository = require(barrierGatesRepositoryPath);
+  const originalCreateTransactionFromCamera = transactionService.createTransactionFromCamera;
+  const originalValidateCameraGateBinding = barrierGatesRepository.validateCameraGateBinding;
+  let receivedDto = null;
+
+  transactionService.createTransactionFromCamera = async (dto) => {
+    receivedDto = dto;
+    return { statusCode: 201, body: { success: true, action: 'OPEN_GATE' } };
+  };
+  barrierGatesRepository.validateCameraGateBinding = async (dto) => {
+    assert.equal(dto.gateId, null);
+    return { ok: true, barrierGate: { gateId: 'GATE-A' } };
+  };
+  delete require.cache[routePath];
+
+  try {
+    const route = require(routePath);
+    const req = {
+      body: {
+        plateNo: 'ABC1234',
+        vehicleType: 'car',
+        cameraId: 'CAM-IN-01',
+        direction: 'IN',
+        capturedAt: '2026-05-22T10:30:00+07:00',
+      },
+    };
+    const res = {
+      statusCode: null,
+      body: null,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(body) {
+        this.body = body;
+        return this;
+      },
+    };
+
+    await route.handleCameraTransactionRequest(req, res, (err) => {
+      throw err;
+    });
+
+    assert.equal(res.statusCode, 201);
+    assert.equal(receivedDto.gateId, 'GATE-A');
+    assert.equal(receivedDto.direction, 'IN');
+  } finally {
+    transactionService.createTransactionFromCamera = originalCreateTransactionFromCamera;
+    barrierGatesRepository.validateCameraGateBinding = originalValidateCameraGateBinding;
+    delete require.cache[routePath];
+  }
+});
 
 test('ignores a repeated camera event within the duplicate window', async () => {
   const transaction = {

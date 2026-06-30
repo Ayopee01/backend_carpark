@@ -264,12 +264,12 @@ const openapi = {
       },
       CameraTransactionRequest: {
         type: 'object',
-        required: ['plateNo', 'cameraId', 'gateId', 'direction'],
+        required: ['plateNo', 'cameraId', 'direction'],
         properties: {
           plateNo: { type: 'string', example: '3งจ9012' },
           vehicleType: { type: 'string', enum: ['car', 'motorcycle'], default: 'car' },
           cameraId: { type: 'string', example: 'CAM-IN-01' },
-          gateId: { type: 'string', example: 'GATE-A' },
+          gateId: { type: 'string', nullable: true, example: 'GATE-A', description: 'Optional. If omitted, backend resolves it from cameraId and direction using barrier gate mapping.' },
           direction: { type: 'string', enum: ['IN', 'OUT'], example: 'IN' },
           capturedAt: { type: 'string', format: 'date-time', example: '2026-05-25T10:30:00+07:00' },
           imageUrl: { type: 'string', example: 'https://example.com/plate.jpg' },
@@ -762,7 +762,7 @@ const openapi = {
       post: {
         tags: ['Transactions'],
         summary: 'Create or update transaction from camera/LPR body',
-        description: 'Admin/camera integration flow. Admins may use Bearer token with transactions permission; provisioned cameras may use x-device-id and x-device-token. cameraId must match the authenticated camera device when device credentials are used, and must be mapped to the submitted gateId/direction through a barrier gate config. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
+        description: 'Admin/camera integration flow. Admins may use Bearer token with transactions permission; provisioned cameras may use x-device-id and x-device-token. cameraId must match the authenticated camera device when device credentials are used. gateId is optional; if omitted, backend resolves it from cameraId and direction through the barrier gate mapping. IN events create pending transactions only when the plate has no open transaction. Repeated IN events for a plate with a pending or partially paid transaction return IGNORE_ACTIVE_TRANSACTION without creating another record. OUT events complete the latest open transaction only when it is paid_waiting_exit and capturedAt is still within exitTimeLimit. If the paid exit window has expired, OUT returns PAYMENT_REQUIRED so the driver must pay again before exiting. Duplicate camera events within 10 seconds return IGNORE_DUPLICATE.',
         security: [...deviceAuth, ...bearer],
         requestBody: body(ref('CameraTransactionRequest')),
         responses: { 200: ok('Duplicate, active transaction, or OUT event processed'), 201: ok('Transaction created'), 400: error('Validation error'), ...bearer403 },

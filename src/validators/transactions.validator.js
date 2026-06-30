@@ -14,7 +14,6 @@ function validateCameraTransactionPayload(payload = {}) {
 
   pushRequiredStringError(errors, payload, 'plateNo');
   pushRequiredStringError(errors, payload, 'cameraId');
-  pushRequiredStringError(errors, payload, 'gateId');
   pushRequiredStringError(errors, payload, 'direction');
 
   // ตรวจสอบ direction ต้องเป็น IN หรือ OUT

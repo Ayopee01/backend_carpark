@@ -173,7 +173,7 @@ router.get('/events', async (req, res, next) => {
 });
 
 // Route handler สำหรับ payload จาก camera/LPR
-// Request body รับ plateNo, cameraId, gateId, direction, capturedAt, imageUrl
+// Request body รับ plateNo, cameraId, direction, capturedAt, imageUrl และเติม gateId จาก mapping
 async function handleCameraTransactionRequest(req, res, next) {
   try {
     const validation = validateCameraTransactionPayload(req.body);
@@ -205,7 +205,12 @@ async function handleCameraTransactionRequest(req, res, next) {
       });
     }
 
-    const result = await createTransactionFromCamera(validation.dto);
+    const transactionDto = {
+      ...validation.dto,
+      gateId: validation.dto.gateId || binding.barrierGate.gateId || null,
+    };
+
+    const result = await createTransactionFromCamera(transactionDto);
 
     res.status(result.statusCode).json(result.body);
   } catch (err) {
