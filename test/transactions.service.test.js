@@ -130,6 +130,7 @@ test('does not create another IN transaction while the plate has an open transac
     receipt: { camera: { direction: 'OUT' } },
   };
   let createCalled = false;
+  let lprEvent = null;
   const fixture = loadServiceWithRepository({
     findDuplicateCameraTransaction: async () => null,
     findOpenTransactionByPlateNo: async () => transaction,
@@ -138,6 +139,10 @@ test('does not create another IN transaction while the plate has an open transac
       return transaction;
     },
   });
+  const onLprDetected = (event) => {
+    lprEvent = event;
+  };
+  appEvents.once('lpr_detected', onLprDetected);
 
   try {
     const result = await fixture.service.createTransactionFromCamera({
@@ -149,8 +154,12 @@ test('does not create another IN transaction while the plate has an open transac
     assert.equal(result.body.action, 'IGNORE_ACTIVE_TRANSACTION');
     assert.equal(result.body.data.transactionId, transaction.id);
     assert.equal(result.body.data.direction, 'IN');
+    assert.equal(lprEvent.direction, 'IN');
+    assert.equal(lprEvent.paymentRequired, false);
+    assert.equal(lprEvent.remainingAmount, null);
     assert.equal(createCalled, false);
   } finally {
+    appEvents.off('lpr_detected', onLprDetected);
     fixture.restore();
   }
 });
@@ -345,8 +354,11 @@ test('blocks OUT when current calculated remaining amount is still due', async (
     ...rawTransaction,
     status: 'partially_paid',
     remainingAmount: 20,
+    netAmount: 40,
+    totalPaid: 20,
   };
   let createCalled = false;
+  let lprEvent = null;
   const fixture = loadServiceWithRepository({
     findDuplicateCameraTransaction: async () => null,
     findOpenTransactionByPlateNo: async () => rawTransaction,
@@ -356,6 +368,10 @@ test('blocks OUT when current calculated remaining amount is still due', async (
       return rawTransaction;
     },
   });
+  const onLprDetected = (event) => {
+    lprEvent = event;
+  };
+  appEvents.once('lpr_detected', onLprDetected);
 
   try {
     const result = await fixture.service.createTransactionFromCamera({
@@ -373,8 +389,18 @@ test('blocks OUT when current calculated remaining amount is still due', async (
     assert.equal(result.body.data.paymentRequired, true);
     assert.equal(result.body.data.reason, 'partially_paid');
     assert.equal(result.body.data.remainingAmount, 20);
+    assert.equal(result.body.data.netAmount, 40);
+    assert.equal(result.body.data.totalPaid, 20);
+    assert.equal(lprEvent.action, 'PAYMENT_REQUIRED');
+    assert.equal(lprEvent.paymentRequired, true);
+    assert.equal(lprEvent.reason, 'partially_paid');
+    assert.equal(lprEvent.remainingAmount, 20);
+    assert.equal(lprEvent.netAmount, 40);
+    assert.equal(lprEvent.totalPaid, 20);
+    assert.ok(lprEvent.checkedAt);
     assert.equal(createCalled, false);
   } finally {
+    appEvents.off('lpr_detected', onLprDetected);
     fixture.restore();
   }
 });
@@ -461,6 +487,9 @@ test('allows OUT when the transaction is paid and still inside the exit window',
     assert.equal(lprEvent.direction, 'OUT');
     assert.equal(lprEvent.action, 'OPEN_GATE');
     assert.equal(lprEvent.transactionId, transaction.id);
+    assert.equal(lprEvent.paymentRequired, false);
+    assert.equal(lprEvent.reason, null);
+    assert.equal(lprEvent.remainingAmount, null);
   } finally {
     appEvents.off('lpr_detected', onLprDetected);
     fixture.restore();

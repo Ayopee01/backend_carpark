@@ -112,6 +112,12 @@ function emitLprDetected(dto, result) {
     direction: data.direction || dto.direction,
     status: data.status || null,
     exitTimeLimit: data.exitTimeLimit || null,
+    paymentRequired: Boolean(data.paymentRequired),
+    reason: data.reason || null,
+    remainingAmount: data.remainingAmount ?? null,
+    netAmount: data.netAmount ?? null,
+    totalPaid: data.totalPaid ?? null,
+    checkedAt: data.checkedAt || null,
     capturedAt: data.capturedAt || getCapturedTime(dto).toISOString(),
     emittedAt: new Date().toISOString(),
   });
@@ -173,6 +179,8 @@ async function createTransactionFromCamera(dto) {
             paymentRequired: Boolean(eligibility.paymentRequired),
             reason: eligibility.reason || null,
             remainingAmount: eligibility.remainingAmount ?? activeTransaction?.remainingAmount ?? null,
+            netAmount: activeTransaction?.netAmount ?? null,
+            totalPaid: activeTransaction?.totalPaid ?? null,
           }
         ),
       });
