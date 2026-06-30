@@ -700,7 +700,7 @@ const openapi = {
       get: {
         tags: ['Dashboard'],
         summary: 'Get today dashboard summary',
-        description: 'Requires permission: dashboard. Ticket counts are based on transactions created/entered today in Bangkok time. Payment totals and payment-channel breakdowns are based on payments with paidAt today. Pending count includes pending and partially_paid transactions created today. Staff/help revenue includes cashier cash payments only. Scan revenue includes PromptPay/QR payments across cashier, kiosk, gate, and mobile channels. Channel breakdown uses cashier, kiosk, gate, and mobile, where cashier means Admin.',
+        description: 'Requires permission: dashboard. Ticket counts are based on transactions created/entered today in Bangkok time. Payment totals are based on payments with paidAt today. Pending count includes pending and partially_paid transactions created today. Paid count includes today transactions with paid_waiting_exit or completed status. Staff revenue includes cashier cash payments only. Scan revenue includes PromptPay/QR payments across cashier, kiosk, gate, and mobile channels. Channel breakdown shows scan client channels kiosk, mobile, and gate with dashboard allowedMethods fixed to qr and promptpay.',
         responses: { 200: ok('Dashboard summary'), ...bearer403 },
       },
     },

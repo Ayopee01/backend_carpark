@@ -2,10 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const transactionsRepoPath = require.resolve('../src/data/repositories/transactions.repo');
-const paymentSettingsRepoPath = require.resolve('../src/data/repositories/paymentSettings.repo');
 const dashboardServicePath = require.resolve('../src/services/dashboard.service');
 const transactionsRepo = require(transactionsRepoPath);
-const paymentSettingsRepo = require(paymentSettingsRepoPath);
 
 function getBangkokTodayRange() {
   const now = new Date();
@@ -52,10 +50,9 @@ function payment(id, { method, channel, amount, paidAt, processedBy = 'system', 
   };
 }
 
-function loadDashboardService({ transactions, channels }) {
+function loadDashboardService({ transactions }) {
   const originals = {
     listAllTransactions: transactionsRepo.listAllTransactions,
-    listChannels: paymentSettingsRepo.listChannels,
   };
 
   transactionsRepo.listAllTransactions = async (filters = {}) => {
@@ -66,7 +63,6 @@ function loadDashboardService({ transactions, channels }) {
       return entryAt >= new Date(filters.startDate) && entryAt <= new Date(filters.endDate);
     });
   };
-  paymentSettingsRepo.listChannels = async () => structuredClone(channels);
 
   delete require.cache[dashboardServicePath];
   const service = require(dashboardServicePath);
@@ -75,7 +71,6 @@ function loadDashboardService({ transactions, channels }) {
     service,
     restore() {
       transactionsRepo.listAllTransactions = originals.listAllTransactions;
-      paymentSettingsRepo.listChannels = originals.listChannels;
       delete require.cache[dashboardServicePath];
     },
   };
@@ -83,12 +78,6 @@ function loadDashboardService({ transactions, channels }) {
 
 test('dashboard uses entry date for tickets and paidAt date for payment totals', async () => {
   const today = getBangkokTodayRange();
-  const channels = [
-    { id: 'ch_cashier', name: 'Cashier', icon: 'user' },
-    { id: 'ch_kiosk', name: 'Kiosk', icon: 'kiosk' },
-    { id: 'ch_gate', name: 'Exit Gate', icon: 'gate' },
-    { id: 'ch_mobile', name: 'Mobile', icon: 'qr' },
-  ];
   const transactions = [
     transaction('pending_today', { entryAt: today.midday, status: 'pending' }),
     transaction('partial_today', {
@@ -127,7 +116,7 @@ test('dashboard uses entry date for tickets and paidAt date for payment totals',
     }),
   ];
 
-  const fixture = loadDashboardService({ transactions, channels });
+  const fixture = loadDashboardService({ transactions });
 
   try {
     const summary = await fixture.service.getDashboardSummary('u1');
@@ -136,17 +125,18 @@ test('dashboard uses entry date for tickets and paidAt date for payment totals',
     assert.equal(summary.summaryCards.pendingCount, 2);
     assert.equal(summary.summaryCards.paidCount, 5);
     assert.equal(summary.summaryCards.paidRevenue, 245);
+    assert.equal('avgWaitTime' in summary.summaryCards, false);
 
     assert.equal(summary.revenueGroups.find((group) => group.id === 'staff').amount, 50);
-    assert.equal(summary.revenueGroups.find((group) => group.id === 'staff').personalAmount, 50);
     assert.equal(summary.revenueGroups.find((group) => group.id === 'scan').amount, 165);
+    assert.equal('personalAmount' in summary.revenueGroups.find((group) => group.id === 'staff'), false);
 
     const breakdown = Object.fromEntries(summary.channelBreakdown.map((item) => [item.code, item]));
-    assert.equal(breakdown.cashier.amount, 75);
-    assert.equal(breakdown.cashier.count, 2);
+    assert.equal(breakdown.cashier, undefined);
     assert.equal(breakdown.kiosk.amount, 40);
     assert.equal(breakdown.gate.amount, 30);
     assert.equal(breakdown.mobile.amount, 100);
+    assert.deepEqual(breakdown.kiosk.allowedMethods, ['qr', 'promptpay']);
   } finally {
     fixture.restore();
   }

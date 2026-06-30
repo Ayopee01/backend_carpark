@@ -1,35 +1,36 @@
 // Import Require
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
-const { listChannels } = require('../data/repositories/paymentSettings.repo');
 const { getPaymentAmount, getPaymentChannel, getTransactionPayments, isCashierCashPayment, isScanPayment } = require('../utils/payments');
 
-// Constant รายการช่องทางรับชำระเงินที่ใช้สรุปหน้า dashboard
-const FALLBACK_CHANNELS = [
+// Constant ช่องทาง scan ที่แสดงบน dashboard
+const DASHBOARD_SCAN_CHANNELS = [
   {
-    code: 'cashier',
-    label: 'แคชเชียร์',
-    subLabel: 'เจ้าหน้าที่หน้างานช่วยเหลือ',
-    icon: 'user'
-  },
-  {
-    code: 'mobile',
-    label: 'พร้อมเพย์',
-    subLabel: 'Mobile App & QR Code',
-    icon: 'qr'
-  },
-  {
+    id: 'ch_kiosk',
     code: 'kiosk',
+    icon: 'vending',
+    name: 'Kiosk',
     label: 'Kiosk',
-    subLabel: 'สถานีบริการด้วยตัวเอง',
-    icon: 'kiosk'
+    subLabel: '',
   },
   {
+    id: 'ch_mobile',
+    code: 'mobile',
+    icon: 'qr',
+    name: 'Mobile',
+    label: 'Mobile',
+    subLabel: '',
+  },
+  {
+    id: 'ch_gate',
     code: 'gate',
-    label: 'หน้าทางออก',
-    subLabel: 'การชำระเงินผ่านประตูอัตโนมัติ',
-    icon: 'gate'
-  }
+    icon: 'gate',
+    name: 'Barrier Gate',
+    label: 'Barrier Gate',
+    subLabel: '',
+  },
 ];
+
+const DASHBOARD_SCAN_METHODS = ['qr', 'promptpay'];
 
 // Function แปลง date เป็น year/month/day ตาม timezone Bangkok
 function getBangkokParts(value = new Date()) {
@@ -75,28 +76,6 @@ function isDateInRange(value, startDate, endDate) {
   return date >= new Date(startDate) && date <= new Date(endDate);
 }
 
-// Function อ่าน channel code จาก payment channel
-function getChannelCode(channel) {
-  const rawCode = channel?.code || channel?.channel || channel?.id || channel?.name || '';
-  const code = String(rawCode).trim().toLowerCase();
-  if (code.startsWith('ch_')) return code.slice(3);
-  if (code === 'exit gate' || code === 'barrier_gate' || code === 'barrier gate') return 'gate';
-  if (code === 'cashier' || code === 'admin') return 'cashier';
-  if (['kiosk', 'gate', 'mobile'].includes(code)) return code;
-  return code;
-}
-
-// Function normalize channel สำหรับ summary
-function normalizeChannel(channel) {
-  const code = getChannelCode(channel);
-  return {
-    ...channel,
-    code,
-    label: channel?.label || channel?.name || channel?.code || code,
-    subLabel: channel?.subLabel || channel?.description || '',
-  };
-}
-
 // Function สร้าง dashboard summary response
 async function getDashboardSummary(currentUserId = 'u1') {
   const { startDate, endDate } = getTodayRange();
@@ -132,12 +111,6 @@ async function getDashboardSummary(currentUserId = 'u1') {
     return sum + getPaymentAmount(payment);
   }, 0);
 
-  const myCashToday = cashierPayments
-    .filter((payment) => payment.processedBy === currentUserId)
-    .reduce((sum, payment) => {
-      return sum + getPaymentAmount(payment);
-    }, 0);
-
   const epayPayments = paidPayments.filter(isScanPayment);
 
   const totalEpayToday = epayPayments.reduce((sum, payment) => {
@@ -147,25 +120,23 @@ async function getDashboardSummary(currentUserId = 'u1') {
   const revenueGroups = [
     {
       id: 'staff',
-      label: 'เจ้าหน้าที่ช่วยเหลือ',
       amount: totalCashToday,
-      personalAmount: myCashToday,
       percent: totalRevenueToday > 0 ? Math.round((totalCashToday / totalRevenueToday) * 100) : 0
     },
     {
       id: 'scan',
-      label: 'สแกนจ่าย',
       amount: totalEpayToday,
       percent: totalRevenueToday > 0 ? Math.round((totalEpayToday / totalRevenueToday) * 100) : 0
     }
   ];
 
-  const configuredChannels = await listChannels();
-  const channels = (configuredChannels && configuredChannels.length ? configuredChannels : FALLBACK_CHANNELS)
-    .map(normalizeChannel)
-    .filter((channel) => ['cashier', 'kiosk', 'gate', 'mobile'].includes(channel.code));
+  const paidTransactionIdsToday = new Set(
+    dailyTransactions
+      .filter((transaction) => ['paid_waiting_exit', 'completed'].includes(transaction.status))
+      .map((transaction) => transaction.id)
+  );
 
-  const channelBreakdown = channels.map((channel) => {
+  const channelRows = DASHBOARD_SCAN_CHANNELS.map((channel) => {
     const filteredPayments = paidPayments.filter((payment) => {
       return getPaymentChannel(payment) === channel.code;
     });
@@ -176,19 +147,25 @@ async function getDashboardSummary(currentUserId = 'u1') {
 
     return {
       ...channel,
+      allowedMethods: DASHBOARD_SCAN_METHODS,
       amount,
       count: filteredPayments.length,
-      percent: totalRevenueToday > 0 ? Math.round((amount / totalRevenueToday) * 100) : 0
+      percent: 0
     };
   });
+
+  const channelRevenueTotal = channelRows.reduce((sum, channel) => sum + channel.amount, 0);
+  const channelBreakdown = channelRows.map((channel) => ({
+    ...channel,
+    percent: channelRevenueTotal > 0 ? Math.round((channel.amount / channelRevenueTotal) * 100) : 0,
+  }));
 
   return {
     summaryCards: {
       totalTickets: dailyTransactions.length,
-      paidCount: new Set(paidPayments.map((payment) => payment.transactionId)).size,
+      paidCount: paidTransactionIdsToday.size,
       paidRevenue: totalRevenueToday,
       pendingCount: unpaidToday.length,
-      avgWaitTime: '12 min'
     },
     revenueGroups,
     channelBreakdown,
