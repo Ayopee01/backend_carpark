@@ -275,6 +275,7 @@ const appConfigs = [
   }
 ];
 
+// Function seed ข้อมูลตั้งต้นของระบบ
 async function main() {
   for (const user of users) {
     await prisma.user.upsert({

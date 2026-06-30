@@ -16,6 +16,7 @@ router.get('/methods', async (req, res, next) => {
   }
 });
 
+// Route update payment method ด้วย id
 router.patch('/methods/:id', async (req, res, next) => {
   try {
     const method = await paymentRepo.updateMethod(req.params.id, req.body);
@@ -26,6 +27,7 @@ router.patch('/methods/:id', async (req, res, next) => {
   }
 });
 
+// Route delete payment method ด้วย id
 router.delete('/methods/:id', async (req, res, next) => {
   try {
     const deleted = await paymentRepo.deleteMethod(req.params.id);
@@ -46,6 +48,7 @@ router.get('/channels', async (req, res, next) => {
   }
 });
 
+// Route update allowed methods ของ channel
 router.patch('/channels/:id', async (req, res, next) => {
   try {
     const { allowedMethods } = req.body;
@@ -57,6 +60,7 @@ router.patch('/channels/:id', async (req, res, next) => {
   }
 });
 
+// Route delete payment channel ด้วย id
 router.delete('/channels/:id', async (req, res, next) => {
   try {
     const deleted = await paymentRepo.deleteChannel(req.params.id);

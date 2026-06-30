@@ -7,6 +7,11 @@ const appEvents = require('../utils/events');
 
 // Constant เวลากัน event กล้องซ้ำ
 const DUPLICATE_WINDOW_MS = 10 * 1000;
+const PAYMENT_REQUIRED_STATUSES = new Set(['pending', 'partially_paid']);
+const PAYMENT_REQUIRED_MESSAGES = {
+  pending: 'รายการนี้ยังชำระเงินไม่ครบ กรุณาชำระเงินก่อนออก',
+  partially_paid: 'หมดเวลาออกหลังชำระเงินแล้ว กรุณาชำระเงินใหม่ก่อนออก',
+};
 
 // Function สร้าง response มาตรฐานสำหรับ gate/camera integration
 function toGateResponse(transaction, action, message, success, direction = transaction.receipt?.camera?.direction, extra = {}) {
@@ -43,8 +48,24 @@ function validateExitEligibility(transaction, capturedTime) {
     return { ok: false, action: 'TRANSACTION_NOT_FOUND', message: 'ไม่พบรายการจอดที่ยังเปิดอยู่' };
   }
 
+  if (PAYMENT_REQUIRED_STATUSES.has(transaction.status)) {
+    return {
+      ok: false,
+      action: 'PAYMENT_REQUIRED',
+      message: PAYMENT_REQUIRED_MESSAGES[transaction.status],
+      paymentRequired: true,
+      reason: transaction.status,
+    };
+  }
+
   if (transaction.status !== 'paid_waiting_exit') {
-    return { ok: false, action: 'PAYMENT_REQUIRED', message: 'รายการนี้ยังชำระเงินไม่ครบ กรุณาชำระเงินก่อนออก' };
+    return {
+      ok: false,
+      action: 'PAYMENT_REQUIRED',
+      message: 'รายการนี้ยังไม่พร้อมออก กรุณาตรวจสอบสถานะการชำระเงิน',
+      paymentRequired: true,
+      reason: transaction.status,
+    };
   }
 
   const exitTimeLimit = getExitTimeLimit(transaction);
@@ -53,6 +74,8 @@ function validateExitEligibility(transaction, capturedTime) {
       ok: false,
       action: 'PAYMENT_REQUIRED',
       message: 'หมดเวลาออกหลังชำระเงินแล้ว กรุณาชำระเงินใหม่ก่อนออก',
+      paymentRequired: true,
+      reason: 'exit_window_expired',
       exitTimeLimit: exitTimeLimit ? exitTimeLimit.toISOString() : null,
     };
   }
@@ -131,6 +154,8 @@ async function createTransactionFromCamera(dto) {
           {
             exitTimeLimit: eligibility.exitTimeLimit || null,
             capturedAt: capturedTime.toISOString(),
+            paymentRequired: Boolean(eligibility.paymentRequired),
+            reason: eligibility.reason || null,
           }
         ),
       });

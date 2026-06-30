@@ -5,6 +5,7 @@ const transactionsRepoPath = require.resolve('../src/data/repositories/transacti
 const dashboardServicePath = require.resolve('../src/services/dashboard.service');
 const transactionsRepo = require(transactionsRepoPath);
 
+// Function สร้างช่วงเวลาวันนี้ตาม Bangkok time สำหรับ test
 function getBangkokTodayRange() {
   const now = new Date();
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -25,6 +26,7 @@ function getBangkokTodayRange() {
   };
 }
 
+// Function สร้าง transaction fixture สำหรับ dashboard test
 function transaction(id, { entryAt, status = 'completed', isOverstay = false, payments = [] }) {
   return {
     id,
@@ -37,6 +39,7 @@ function transaction(id, { entryAt, status = 'completed', isOverstay = false, pa
   };
 }
 
+// Function สร้าง payment fixture สำหรับ dashboard test
 function payment(id, { method, channel, amount, paidAt, processedBy = 'system', deviceType }) {
   return {
     id,
@@ -50,6 +53,7 @@ function payment(id, { method, channel, amount, paidAt, processedBy = 'system', 
   };
 }
 
+// Function โหลด dashboard service พร้อม mock repository
 function loadDashboardService({ transactions }) {
   const originals = {
     listAllTransactions: transactionsRepo.listAllTransactions,
@@ -119,7 +123,7 @@ test('dashboard uses entry date for tickets and paidAt date for payment totals',
   const fixture = loadDashboardService({ transactions });
 
   try {
-    const summary = await fixture.service.getDashboardSummary('u1');
+    const summary = await fixture.service.getDashboardSummary();
 
     assert.equal(summary.summaryCards.totalTickets, 7);
     assert.equal(summary.summaryCards.pendingCount, 2);

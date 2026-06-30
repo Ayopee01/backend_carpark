@@ -4,8 +4,10 @@ const { createOmiseChargeForAdmin, getOmiseQrImage } = require('../services/paym
 
 const router = express.Router();
 
+// Apply permission check สำหรับ Admin payment
 router.use(authorize('transactions'));
 
+// Route สร้าง Omise charge สำหรับ Admin/Cashier
 router.post('/omise/charge', async (req, res, next) => {
   try {
     const result = await createOmiseChargeForAdmin({
@@ -46,6 +48,7 @@ router.post('/omise/charge', async (req, res, next) => {
   }
 });
 
+// Route ดึงรูป QR ของ Omise สำหรับ Admin/Cashier
 router.get('/omise/qr', async (req, res, next) => {
   try {
     const image = await getOmiseQrImage({

@@ -14,8 +14,7 @@ router.use(authorize('dashboard'));
 // Route query dashboard summary ของวันนี้
 router.get('/', async (req, res, next) => {
   try {
-    const currentUserId = req.user.id;
-    const summary = await getDashboardSummary(currentUserId);
+    const summary = await getDashboardSummary();
     res.json(summary);
   } catch (err) {
     next(err);
@@ -25,7 +24,6 @@ router.get('/', async (req, res, next) => {
 // Route SSE stream สำหรับ dashboard summary
 router.get('/events', async (req, res, next) => {
   try {
-    const currentUserId = req.user.id;
     let isSending = false;
     const stream = createSseStream(req, res, {
       connected: { type: 'connected', message: 'Dashboard event stream connected' },
@@ -36,7 +34,7 @@ router.get('/events', async (req, res, next) => {
       isSending = true;
 
       try {
-        const summary = await getDashboardSummary(currentUserId);
+        const summary = await getDashboardSummary();
         stream.write({
           type,
           trigger,

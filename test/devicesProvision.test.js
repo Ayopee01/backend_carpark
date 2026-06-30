@@ -6,6 +6,7 @@ const devicesRepoPath = require.resolve('../src/data/repositories/devices.repo')
 const configRepo = require(configRepoPath);
 const { hashToken } = require('../src/utils/auth');
 
+// Function โหลด devices repo พร้อม mock config repo
 function loadDevicesRepo(initialConfig = { devices: [] }) {
   let config = structuredClone(initialConfig);
   const originals = {

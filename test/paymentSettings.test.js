@@ -5,6 +5,7 @@ const configRepoPath = require.resolve('../src/data/repositories/config.repo');
 const paymentSettingsRepoPath = require.resolve('../src/data/repositories/paymentSettings.repo');
 const configRepo = require(configRepoPath);
 
+// Function โหลด payment settings repo พร้อม mock config
 function loadPaymentSettingsRepo(initialSettings) {
   let settings = structuredClone(initialSettings);
   let revision = 0;
@@ -43,6 +44,7 @@ function loadPaymentSettingsRepo(initialSettings) {
   };
 }
 
+// Function สร้าง fixture payment settings สำหรับ test
 function paymentSettingsFixture() {
   return {
     methods: [

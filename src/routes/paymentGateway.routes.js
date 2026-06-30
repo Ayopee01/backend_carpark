@@ -4,7 +4,7 @@ const { isPaymentSimulationEnabled, processOmiseWebhookEvent, simulateOmiseCharg
 
 const router = express.Router();
 
-// GET ค่า Config Public Config ของ Omise ให้ Frontend ใช้สร้าง source ผ่าน Omise.js
+// Route query public config ของ Omise ให้ Frontend ใช้สร้าง source ผ่าน Omise.js
 router.get('/omise/config', (req, res) => {
   const publicKey = process.env.OMISE_PUBLIC_KEY || null;
   res.json({

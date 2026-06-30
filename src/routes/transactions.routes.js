@@ -218,6 +218,7 @@ async function handleCameraTransactionRequest(req, res, next) {
   }
 }
 
+// Route รับ transaction จาก camera/LPR
 router.post('/', handleCameraTransactionRequest);
 
 // Route get one transaction by plateNo.

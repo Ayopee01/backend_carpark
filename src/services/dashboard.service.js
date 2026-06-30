@@ -2,8 +2,8 @@
 const { listAllTransactions } = require('../data/repositories/transactions.repo');
 const { getPaymentAmount, getPaymentChannel, getTransactionPayments, isCashierCashPayment, isScanPayment } = require('../utils/payments');
 
-// Constant ช่องทาง scan ที่แสดงบน dashboard
-const DASHBOARD_SCAN_CHANNELS = [
+// Constant ช่องทางชำระเงินที่แสดงบน dashboard
+const DASHBOARD_CHANNELS = [
   {
     id: 'ch_cashier',
     code: 'cashier',
@@ -87,7 +87,7 @@ function isDateInRange(value, startDate, endDate) {
 }
 
 // Function สร้าง dashboard summary response
-async function getDashboardSummary(currentUserId = 'u1') {
+async function getDashboardSummary() {
   const { startDate, endDate } = getTodayRange();
   const [transactionsRaw, paymentTransactionsRaw] = await Promise.all([
     listAllTransactions({ startDate, endDate }),
@@ -146,7 +146,7 @@ async function getDashboardSummary(currentUserId = 'u1') {
       .map((transaction) => transaction.id)
   );
 
-  const channelRows = DASHBOARD_SCAN_CHANNELS.map((channel) => {
+  const channelRows = DASHBOARD_CHANNELS.map((channel) => {
     const filteredPayments = paidPayments.filter((payment) => {
       return getPaymentChannel(payment) === channel.code;
     });

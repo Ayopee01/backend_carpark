@@ -170,6 +170,7 @@ router.get('/transaction/:id', async (req, res, next) => {
   }
 });
 
+// Route สร้าง Omise charge สำหรับ mobile/kiosk/barrier gate
 router.post('/payment/omise/charge', async (req, res, next) => {
   try {
     const {
@@ -225,6 +226,7 @@ router.post('/payment/omise/charge', async (req, res, next) => {
   }
 });
 
+// Route ดึงรูป QR ของ Omise สำหรับ client flow
 router.get('/payment/omise/qr', async (req, res, next) => {
   try {
     const { chargeId, documentPath } = req.query || {};
@@ -281,12 +283,16 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
     const onThemeUpdated = (newTheme) => {
       stream.write({ type: 'theme_updated', theme: newTheme });
     };
+
+    // Function ส่ง LPR event เฉพาะ gate/direction/camera ที่ subscribe
     const onLprDetected = (event) => {
       if (gateId && event.gateId !== gateId) return;
       if (normalizedDirection && event.direction !== normalizedDirection) return;
       if (normalizedCameraId && event.cameraId !== normalizedCameraId) return;
       stream.write(event);
     };
+
+    // Function refresh heartbeat ระหว่างเปิด SSE ค้างไว้
     const refreshDeviceHeartbeat = async () => {
       if (!deviceId || !req.device) return;
       try {

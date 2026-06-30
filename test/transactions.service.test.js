@@ -9,6 +9,7 @@ const repository = require(repositoryPath);
 const { prisma } = require('../src/db/prisma');
 const appEvents = require('../src/utils/events');
 
+// Function โหลด transactions service พร้อม mock repository
 function loadServiceWithRepository(stubs) {
   const originals = {};
   for (const [name, stub] of Object.entries(stubs)) {
@@ -284,6 +285,53 @@ test('client plate lookup candidates exclude terminal and exited transactions', 
   }
 });
 
+test('blocks OUT when the transaction is pending or partially paid', async () => {
+  const messages = {
+    pending: 'รายการนี้ยังชำระเงินไม่ครบ กรุณาชำระเงินก่อนออก',
+    partially_paid: 'หมดเวลาออกหลังชำระเงินแล้ว กรุณาชำระเงินใหม่ก่อนออก',
+  };
+
+  for (const status of ['pending', 'partially_paid']) {
+    const transaction = {
+      id: `t_${status}`,
+      plateNo: 'ABC1234',
+      status,
+      exitTimeLimit: null,
+      receipt: { camera: { direction: 'IN' } },
+    };
+    let createCalled = false;
+    const fixture = loadServiceWithRepository({
+      findDuplicateCameraTransaction: async () => null,
+      findOpenTransactionByPlateNo: async () => transaction,
+      createCameraTransaction: async () => {
+        createCalled = true;
+        return transaction;
+      },
+    });
+
+    try {
+      const result = await fixture.service.createTransactionFromCamera({
+        plateNo: 'ABC1234',
+        cameraId: 'CAM-OUT-01',
+        gateId: 'GATE-A',
+        direction: 'OUT',
+        capturedAt: '2026-05-01T10:10:00.000Z',
+      });
+
+      assert.equal(result.statusCode, 200);
+      assert.equal(result.body.success, false);
+      assert.equal(result.body.action, 'PAYMENT_REQUIRED');
+      assert.equal(result.body.message, messages[status]);
+      assert.equal(result.body.data.status, status);
+      assert.equal(result.body.data.paymentRequired, true);
+      assert.equal(result.body.data.reason, status);
+      assert.equal(createCalled, false);
+    } finally {
+      fixture.restore();
+    }
+  }
+});
+
 test('blocks OUT when the paid exit window has expired', async () => {
   const transaction = {
     id: 't_expired',
@@ -339,6 +387,8 @@ test('allows OUT when the transaction is paid and still inside the exit window',
     },
   });
   let lprEvent = null;
+
+  // Function รับ LPR event ล่าสุดจาก service
   const onLprDetected = (event) => {
     lprEvent = event;
   };

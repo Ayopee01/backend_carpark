@@ -11,15 +11,18 @@ function createSseStream(req, res, { connected, pingIntervalMs = DEFAULT_PING_IN
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  // Function เขียน payload ลง SSE stream
   const write = (payload) => {
     if (closed) return;
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
+  // Function เพิ่ม cleanup callback ตอน connection ปิด
   const addCleanup = (cleanup) => {
     if (typeof cleanup === 'function') cleanups.push(cleanup);
   };
 
+  // Function เพิ่ม interval และผูก cleanup อัตโนมัติ
   const addInterval = (callback, intervalMs) => {
     const interval = setInterval(callback, intervalMs);
     cleanups.push(() => clearInterval(interval));

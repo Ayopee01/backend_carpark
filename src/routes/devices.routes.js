@@ -320,6 +320,7 @@ router.post('/printers/provision', async (req, res, next) => {
   }
 });
 
+// Route reissue activation code สำหรับ kiosk/barrier gate เดิม
 router.post('/:deviceId/reissue-activation-code', async (req, res, next) => {
   try {
     const result = await reissueActivationCode(req.params.deviceId);
