@@ -208,6 +208,7 @@ async function handleCameraTransactionRequest(req, res, next) {
     const transactionDto = {
       ...validation.dto,
       gateId: validation.dto.gateId || binding.barrierGate.gateId || null,
+      barrierGateDeviceId: binding.barrierGate.deviceId || binding.barrierGate.id || null,
     };
 
     const result = await createTransactionFromCamera(transactionDto);

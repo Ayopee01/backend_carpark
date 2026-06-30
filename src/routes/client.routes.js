@@ -263,15 +263,17 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
   try {
     const { deviceId, gateId, direction, cameraId } = req.query;
     let clientType = 'public';
+    const normalizedDeviceId = deviceId ? String(deviceId).trim() : null;
+    const normalizedGateId = gateId ? String(gateId).trim() : null;
     const normalizedDirection = direction ? String(direction).trim().toUpperCase() : null;
     const normalizedCameraId = cameraId ? String(cameraId).trim() : null;
 
-    if (deviceId) {
+    if (normalizedDeviceId) {
       if (!req.device) return res.status(401).json({ message: 'Unauthorized device' });
       if (req.device.status === 'maintenance') {
         return res.status(403).json({ message: 'This device is currently under maintenance', status: req.device.status });
       }
-      await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
+      await updateRegisteredDeviceHeartbeat(normalizedDeviceId, { ip: req.ip });
       clientType = req.device.deviceType;
     }
 
@@ -286,7 +288,7 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
 
     // Function ส่ง LPR event เฉพาะ gate/direction/camera ที่ subscribe
     const onLprDetected = (event) => {
-      if (gateId && event.gateId !== gateId) return;
+      if (normalizedGateId && event.gateId !== normalizedGateId) return;
       if (normalizedDirection && event.direction !== normalizedDirection) return;
       if (normalizedCameraId && event.cameraId !== normalizedCameraId) return;
       stream.write(event);
@@ -294,9 +296,9 @@ router.get('/events', optionalDeviceAuth(['kiosk', 'barrier_gate']), async (req,
 
     // Function refresh heartbeat ระหว่างเปิด SSE ค้างไว้
     const refreshDeviceHeartbeat = async () => {
-      if (!deviceId || !req.device) return;
+      if (!normalizedDeviceId || !req.device) return;
       try {
-        await updateRegisteredDeviceHeartbeat(deviceId, { ip: req.ip });
+        await updateRegisteredDeviceHeartbeat(normalizedDeviceId, { ip: req.ip });
       } catch (err) {
         console.error('Client event heartbeat failed:', err);
       }
