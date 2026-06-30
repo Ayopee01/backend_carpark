@@ -156,7 +156,10 @@ test('does not create another IN transaction while the plate has an open transac
     assert.equal(result.body.data.direction, 'IN');
     assert.equal(lprEvent.direction, 'IN');
     assert.equal(lprEvent.paymentRequired, false);
-    assert.equal(lprEvent.remainingAmount, null);
+    assert.equal(lprEvent.remainingAmount, 0);
+    assert.equal(lprEvent.netAmount, 0);
+    assert.equal(lprEvent.totalPaid, 0);
+    assert.ok(lprEvent.checkedAt);
     assert.equal(createCalled, false);
   } finally {
     appEvents.off('lpr_detected', onLprDetected);
@@ -489,7 +492,10 @@ test('allows OUT when the transaction is paid and still inside the exit window',
     assert.equal(lprEvent.transactionId, transaction.id);
     assert.equal(lprEvent.paymentRequired, false);
     assert.equal(lprEvent.reason, null);
-    assert.equal(lprEvent.remainingAmount, null);
+    assert.equal(lprEvent.remainingAmount, 0);
+    assert.equal(lprEvent.netAmount, 0);
+    assert.equal(lprEvent.totalPaid, 0);
+    assert.ok(lprEvent.checkedAt);
   } finally {
     appEvents.off('lpr_detected', onLprDetected);
     fixture.restore();
