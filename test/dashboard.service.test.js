@@ -132,10 +132,12 @@ test('dashboard uses entry date for tickets and paidAt date for payment totals',
     assert.equal('personalAmount' in summary.revenueGroups.find((group) => group.id === 'staff'), false);
 
     const breakdown = Object.fromEntries(summary.channelBreakdown.map((item) => [item.code, item]));
-    assert.equal(breakdown.cashier, undefined);
+    assert.equal(breakdown.cashier.amount, 75);
+    assert.equal(breakdown.cashier.count, 2);
     assert.equal(breakdown.kiosk.amount, 40);
     assert.equal(breakdown.gate.amount, 30);
     assert.equal(breakdown.mobile.amount, 100);
+    assert.deepEqual(breakdown.cashier.allowedMethods, ['cash', 'qr', 'promptpay']);
     assert.deepEqual(breakdown.kiosk.allowedMethods, ['qr', 'promptpay']);
   } finally {
     fixture.restore();

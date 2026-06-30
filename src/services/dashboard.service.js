@@ -5,12 +5,22 @@ const { getPaymentAmount, getPaymentChannel, getTransactionPayments, isCashierCa
 // Constant ช่องทาง scan ที่แสดงบน dashboard
 const DASHBOARD_SCAN_CHANNELS = [
   {
+    id: 'ch_cashier',
+    code: 'cashier',
+    icon: 'user',
+    name: 'Cashier',
+    label: 'Cashier',
+    subLabel: '',
+    allowedMethods: ['cash', 'qr', 'promptpay'],
+  },
+  {
     id: 'ch_kiosk',
     code: 'kiosk',
     icon: 'vending',
     name: 'Kiosk',
     label: 'Kiosk',
     subLabel: '',
+    allowedMethods: ['qr', 'promptpay'],
   },
   {
     id: 'ch_mobile',
@@ -19,6 +29,7 @@ const DASHBOARD_SCAN_CHANNELS = [
     name: 'Mobile',
     label: 'Mobile',
     subLabel: '',
+    allowedMethods: ['qr', 'promptpay'],
   },
   {
     id: 'ch_gate',
@@ -27,10 +38,9 @@ const DASHBOARD_SCAN_CHANNELS = [
     name: 'Barrier Gate',
     label: 'Barrier Gate',
     subLabel: '',
+    allowedMethods: ['qr', 'promptpay'],
   },
 ];
-
-const DASHBOARD_SCAN_METHODS = ['qr', 'promptpay'];
 
 // Function แปลง date เป็น year/month/day ตาม timezone Bangkok
 function getBangkokParts(value = new Date()) {
@@ -147,7 +157,6 @@ async function getDashboardSummary(currentUserId = 'u1') {
 
     return {
       ...channel,
-      allowedMethods: DASHBOARD_SCAN_METHODS,
       amount,
       count: filteredPayments.length,
       percent: 0
