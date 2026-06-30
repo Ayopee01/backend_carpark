@@ -303,6 +303,7 @@ test('blocks OUT when the transaction is pending or partially paid', async () =>
     const fixture = loadServiceWithRepository({
       findDuplicateCameraTransaction: async () => null,
       findOpenTransactionByPlateNo: async () => transaction,
+      getTransactionApiById: async () => transaction,
       createCameraTransaction: async () => {
         createCalled = true;
         return transaction;
@@ -332,6 +333,52 @@ test('blocks OUT when the transaction is pending or partially paid', async () =>
   }
 });
 
+test('blocks OUT when current calculated remaining amount is still due', async () => {
+  const rawTransaction = {
+    id: 't_paid_but_due',
+    plateNo: 'ABC1234',
+    status: 'paid_waiting_exit',
+    exitTimeLimit: '2099-05-01T10:15:00.000Z',
+    receipt: { camera: { direction: 'IN' } },
+  };
+  const pricedTransaction = {
+    ...rawTransaction,
+    status: 'partially_paid',
+    remainingAmount: 20,
+  };
+  let createCalled = false;
+  const fixture = loadServiceWithRepository({
+    findDuplicateCameraTransaction: async () => null,
+    findOpenTransactionByPlateNo: async () => rawTransaction,
+    getTransactionApiById: async () => pricedTransaction,
+    createCameraTransaction: async () => {
+      createCalled = true;
+      return rawTransaction;
+    },
+  });
+
+  try {
+    const result = await fixture.service.createTransactionFromCamera({
+      plateNo: 'ABC1234',
+      cameraId: 'CAM-OUT-01',
+      gateId: 'GATE-A',
+      direction: 'OUT',
+      capturedAt: '2026-05-01T10:10:00.000Z',
+    });
+
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.body.success, false);
+    assert.equal(result.body.action, 'PAYMENT_REQUIRED');
+    assert.equal(result.body.data.status, 'partially_paid');
+    assert.equal(result.body.data.paymentRequired, true);
+    assert.equal(result.body.data.reason, 'partially_paid');
+    assert.equal(result.body.data.remainingAmount, 20);
+    assert.equal(createCalled, false);
+  } finally {
+    fixture.restore();
+  }
+});
+
 test('blocks OUT when the paid exit window has expired', async () => {
   const transaction = {
     id: 't_expired',
@@ -344,6 +391,7 @@ test('blocks OUT when the paid exit window has expired', async () => {
   const fixture = loadServiceWithRepository({
     findDuplicateCameraTransaction: async () => null,
     findOpenTransactionByPlateNo: async () => transaction,
+    getTransactionApiById: async () => transaction,
     createCameraTransaction: async () => {
       createCalled = true;
       return transaction;
@@ -374,13 +422,14 @@ test('allows OUT when the transaction is paid and still inside the exit window',
     id: 't_paid',
     plateNo: 'ABC1234',
     status: 'paid_waiting_exit',
-    exitTimeLimit: '2026-05-01T10:15:00.000Z',
+    exitTimeLimit: '2099-05-01T10:15:00.000Z',
     receipt: { camera: { direction: 'IN' } },
   };
   let createCalled = false;
   const fixture = loadServiceWithRepository({
     findDuplicateCameraTransaction: async () => null,
     findOpenTransactionByPlateNo: async () => transaction,
+    getTransactionApiById: async () => transaction,
     createCameraTransaction: async () => {
       createCalled = true;
       return { ...transaction, status: 'completed', receipt: { camera: { direction: 'OUT' } } };

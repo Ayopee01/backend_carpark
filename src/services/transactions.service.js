@@ -2,6 +2,7 @@ const {
   createCameraTransaction,
   findDuplicateCameraTransaction,
   findOpenTransactionByPlateNo,
+  getTransactionApiById,
 } = require('../data/repositories/transactions.repo');
 const appEvents = require('../utils/events');
 
@@ -43,7 +44,7 @@ function getExitTimeLimit(transaction) {
 }
 
 // Function ตรวจว่า transaction ออกได้หรือยังต้องจ่ายเพิ่ม
-function validateExitEligibility(transaction, capturedTime) {
+function validateExitEligibility(transaction, capturedTime, checkedAt = new Date()) {
   if (!transaction) {
     return { ok: false, action: 'TRANSACTION_NOT_FOUND', message: 'ไม่พบรายการจอดที่ยังเปิดอยู่' };
   }
@@ -68,8 +69,20 @@ function validateExitEligibility(transaction, capturedTime) {
     };
   }
 
+  const remainingAmount = Number(transaction.remainingAmount ?? 0);
+  if (Number.isFinite(remainingAmount) && remainingAmount > 0) {
+    return {
+      ok: false,
+      action: 'PAYMENT_REQUIRED',
+      message: 'รายการนี้ยังชำระเงินไม่ครบ กรุณาชำระเงินก่อนออก',
+      paymentRequired: true,
+      reason: 'remaining_amount',
+      remainingAmount,
+    };
+  }
+
   const exitTimeLimit = getExitTimeLimit(transaction);
-  if (!exitTimeLimit || capturedTime > exitTimeLimit) {
+  if (!exitTimeLimit || checkedAt > exitTimeLimit) {
     return {
       ok: false,
       action: 'PAYMENT_REQUIRED',
@@ -138,9 +151,11 @@ async function createTransactionFromCamera(dto) {
   }
 
   if (dto.direction === 'OUT') {
-    const activeTransaction = await findOpenTransactionByPlateNo(dto.plateNo);
+    const activeRow = await findOpenTransactionByPlateNo(dto.plateNo);
+    const activeTransaction = activeRow ? await getTransactionApiById(activeRow.id) : null;
     const capturedTime = getCapturedTime(dto);
-    const eligibility = validateExitEligibility(activeTransaction, capturedTime);
+    const checkedAt = new Date();
+    const eligibility = validateExitEligibility(activeTransaction, capturedTime, checkedAt);
 
     if (!eligibility.ok) {
       return emitLprDetected(dto, {
@@ -154,8 +169,10 @@ async function createTransactionFromCamera(dto) {
           {
             exitTimeLimit: eligibility.exitTimeLimit || null,
             capturedAt: capturedTime.toISOString(),
+            checkedAt: checkedAt.toISOString(),
             paymentRequired: Boolean(eligibility.paymentRequired),
             reason: eligibility.reason || null,
+            remainingAmount: eligibility.remainingAmount ?? activeTransaction?.remainingAmount ?? null,
           }
         ),
       });
